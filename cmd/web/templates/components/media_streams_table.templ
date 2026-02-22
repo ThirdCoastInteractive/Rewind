@@ -1,0 +1,135 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/pkg/videoinfo"
+)
+
+// ============================================================================
+// MEDIA STREAMS TABLE
+// Video track as a summary row at top, audio/subtitle as comparison columns.
+// ============================================================================
+
+// VideoStreamSummary renders the video track as a detail grid at the top.
+templ VideoStreamSummary(rows []videoinfo.InfoPair, hdrRows []videoinfo.InfoPair) {
+	<div class="border-2 border-white/10 mb-4">
+		<div class="flex items-center gap-3 px-3 py-2 border-b border-white/10 bg-white/5">
+			<span class="px-1.5 py-0.5 text-xs font-bold uppercase font-mono bg-blue-500/20 text-blue-400">VIDEO</span>
+			<span class="text-white/40 text-xs font-mono uppercase tracking-wider">Primary Video Track</span>
+		</div>
+		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-1 px-3 py-3 text-xs font-mono">
+			for _, row := range rows {
+				<div class="flex items-baseline gap-2">
+					<span class="text-white/40 uppercase tracking-wider shrink-0">{ row.Label }</span>
+					<span class="text-white/80">{ row.Value }</span>
+				</div>
+			}
+			for _, row := range hdrRows {
+				<div class="flex items-baseline gap-2">
+					<span class="text-white/40 uppercase tracking-wider shrink-0">{ row.Label }</span>
+					<span class="text-white/80">{ row.Value }</span>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// StreamComparisonTable renders a column-per-stream comparison table.
+// Used for audio and subtitle streams. streamType is "audio" or "subtitle".
+templ StreamComparisonTable(streamType string, labels []string, columns []videoinfo.StreamColumn) {
+	if len(columns) > 0 {
+		<div class="border-2 border-white/10 mb-4">
+			<div class="flex items-center gap-3 px-3 py-2 border-b border-white/10 bg-white/5">
+				<span
+					class={
+						"px-1.5 py-0.5 text-xs font-bold uppercase font-mono",
+						templ.KV("bg-green-500/20 text-green-400", streamType == "audio"),
+						templ.KV("bg-yellow-500/20 text-yellow-400", streamType == "subtitle"),
+					}
+				>
+					{ streamType }
+				</span>
+				<span class="text-white/40 text-xs font-mono uppercase tracking-wider">
+					{ fmt.Sprintf("%d %s tracks", len(columns), streamType) }
+				</span>
+			</div>
+			<div class="overflow-x-auto">
+				<table class="w-full font-mono text-xs">
+					<thead>
+						<tr class="border-b border-white/10">
+							<th class="px-3 py-2 text-left text-white/40 uppercase tracking-wider sticky left-0 bg-black z-10 min-w-28">Property</th>
+							for _, col := range columns {
+								<th class="px-3 py-2 text-left min-w-36">
+									<div class="flex items-center gap-2 flex-wrap">
+										<span class="text-white/40">#{ fmt.Sprintf("%d", col.Index) }</span>
+										if col.IsDefault {
+											<span class="text-white/30 text-xs">(default)</span>
+										}
+									</div>
+									<div class="flex items-center gap-2 mt-1">
+										if col.Language != "" {
+											<span class="bg-white/5 px-1.5 py-0.5 text-xs text-white/60">{ col.Language }</span>
+										}
+										if col.Title != "" {
+											<span class="text-white/50 text-xs truncate max-w-36">{ col.Title }</span>
+										}
+									</div>
+									// Stream toggle control
+									<div class="mt-2">
+										if col.CodecType == "audio" {
+											<button
+												type="button"
+												class="px-2 py-0.5 text-xs font-mono uppercase border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 active:scale-95 transition-all"
+												data-stream-toggle
+												data-stream-index={ fmt.Sprintf("%d", col.Index) }
+												data-stream-type={ col.CodecType }
+												title="Toggle this audio track"
+											>
+												<i class="fa-sharp fa-solid fa-volume-high mr-1"></i>
+												<span>ACTIVE</span>
+											</button>
+										}
+										if col.CodecType == "subtitle" {
+											<button
+												type="button"
+												class="px-2 py-0.5 text-xs font-mono uppercase border border-yellow-500/30 text-yellow-400 hover:border-yellow-400 hover:bg-yellow-500/10 active:scale-95 transition-all"
+												data-stream-toggle
+												data-stream-index={ fmt.Sprintf("%d", col.Index) }
+												data-stream-type={ col.CodecType }
+												title="Toggle this subtitle track"
+											>
+												<i class="fa-sharp fa-solid fa-closed-captioning mr-1"></i>
+												<span>SHOW</span>
+											</button>
+										}
+									</div>
+								</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						for _, label := range labels {
+							<tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
+								<td class="px-3 py-1.5 text-white/40 uppercase tracking-wider sticky left-0 bg-black">{ label }</td>
+								for _, col := range columns {
+									<td class="px-3 py-1.5 text-white/80">
+										if val, ok := col.Properties[label]; ok && val != "" {
+											{ val }
+										} else {
+											<span class="text-white/15">—</span>
+										}
+									</td>
+								}
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
+}
+
+// MediaStreamsTable renders a column-per-stream comparison table (legacy, kept for compatibility).
+templ MediaStreamsTable(labels []string, columns []videoinfo.StreamColumn) {
+	@StreamComparisonTable("stream", labels, columns)
+}

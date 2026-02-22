@@ -1,0 +1,103 @@
+package templates
+
+import "time"
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+import "thirdcoast.systems/rewind/internal/db"
+
+type SessionInfo struct {
+	ID             string
+	SessionCode    string
+	CurrentVideoID string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+	LastActivity   time.Time
+	IsExpired      bool
+}
+
+templ Sessions(sessions []SessionInfo, username string) {
+	@Layout("Manage Sessions", username) {
+		@Container("normal") {
+			<div class="mb-8 flex justify-between items-center">
+				<div>
+					<h1 class="text-3xl font-mono uppercase tracking-wider text-white mb-2">Manage Sessions</h1>
+					<p class="text-white/60">View and manage your producer sessions</p>
+				</div>
+				@components.LinkButton("/producer", "primary", "md", "fa-plus", false) {
+					New Session
+				}
+			</div>
+			if len(sessions) == 0 {
+				@EmptyState("fa-circle-info", "No sessions found", "Create a new session to get started")
+			} else {
+				@components.Card(false) {
+					@components.Table([]string{"Session Code", "Status", "Created", "Last Activity", "Expires", "Actions"}, false) {
+						<tbody>
+							for _, session := range sessions {
+								<tr>
+									<td class="px-6 py-4">
+										<span class="font-mono text-lg font-bold text-white">{ session.SessionCode }</span>
+									</td>
+									<td class="px-6 py-4">
+										if session.IsExpired {
+											@StatusBadge(db.JobStatusFailed)
+										} else {
+											@StatusBadge(db.JobStatusSucceeded)
+										}
+									</td>
+									<td class="px-6 py-4 text-sm text-white/60">
+										{ session.CreatedAt.Format("Jan 2, 3:04 PM") }
+									</td>
+									<td class="px-6 py-4 text-sm text-white/60">
+										{ session.LastActivity.Format("Jan 2, 3:04 PM") }
+									</td>
+									<td class="px-6 py-4 text-sm text-white/60">
+										{ session.ExpiresAt.Format("Jan 2, 3:04 PM") }
+									</td>
+									<td class="px-6 py-4 text-right">
+										<div class="flex justify-end gap-2">
+											if !session.IsExpired {
+												@components.LinkButton("/producer/"+session.SessionCode, "secondary", "sm", "fa-arrow-right-to-bracket", false) {
+													Open
+												}
+											}
+											<button
+												type="button"
+												onclick={ templ.JSFuncCall("deleteSession", session.ID, session.SessionCode) }
+												class="font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-red-500 hover:bg-red-500 hover:text-white active:scale-95 px-3 py-1.5 text-xs inline-flex items-center justify-center"
+											>
+												<i class="fa-sharp fa-solid fa-trash mr-2"></i>
+												Delete
+											</button>
+										</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					}
+				}
+			}
+			<script>
+				function deleteSession(sessionId, sessionCode) {
+					if (!confirm(`Delete session ${sessionCode}?`)) {
+						return;
+					}
+
+					fetch(`/api/player-sessions/${sessionId}`, {
+						method: 'DELETE',
+					})
+					.then(response => {
+						if (response.ok) {
+							window.location.reload();
+						} else {
+							alert('Failed to delete session');
+						}
+					})
+					.catch(err => {
+						console.error('Error deleting session:', err);
+						alert('Failed to delete session');
+					});
+				}
+			</script>
+		}
+	}
+}

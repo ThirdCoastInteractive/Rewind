@@ -1,0 +1,48 @@
+package components
+
+import "thirdcoast.systems/rewind/cmd/web/viewtypes"
+
+// ============================================================================
+// INFO ROW COMPONENTS
+// Key-value display pairs for metadata sections (video info, job details, etc.)
+// ============================================================================
+
+// InfoRow renders a label/value pair in a horizontal flex row.
+templ InfoRow(label, value string) {
+	<div class="flex justify-between font-mono">
+		<span class="text-white/40 uppercase tracking-wider">{ label }</span>
+		<span class="text-white/80">{ value }</span>
+	</div>
+}
+
+// InfoRowWide renders a label/value pair with gap-4 for long values that may wrap.
+templ InfoRowWide(label, value string) {
+	<div class="flex justify-between font-mono gap-4">
+		<span class="text-white/40 uppercase tracking-wider">{ label }</span>
+		<span class="text-white/80 text-right break-words">{ value }</span>
+	</div>
+}
+
+// InfoRowLink renders a label with a linked value, gap-4 for long URLs.
+templ InfoRowLink(label string, url templ.SafeURL, text string) {
+	<div class="flex justify-between font-mono gap-4">
+		<span class="text-white/40 uppercase tracking-wider">{ label }</span>
+		<a href={ url } target="_blank" rel="noopener" class="text-white/80 hover:text-white break-all text-right">{ text }</a>
+	</div>
+}
+
+// AdminPageHeader renders a page title with a "Back" link, used on admin sub-pages.
+templ AdminPageHeader(title, backHref string) {
+	<div class="flex items-center justify-between mb-4">
+		<h1 class={ viewtypes.PageHeading }>{ title }</h1>
+		<a href={ templ.SafeURL(backHref) } class="text-white/80 hover:text-white text-xs font-mono uppercase tracking-wider" data-transition="slide">Back</a>
+	</div>
+}
+
+// AdminNavCard renders a dashboard navigation tile with title and description.
+templ AdminNavCard(href, title, description string) {
+	<a href={ templ.SafeURL(href) } class="block bg-black border-2 border-white/10 p-4 hover:border-white/20 transition" data-transition="slide">
+		<h2 class={ viewtypes.SubHeading + " text-white mb-1" }>{ title }</h2>
+		<p class="text-white/60 text-xs font-mono">{ description }</p>
+	</a>
+}

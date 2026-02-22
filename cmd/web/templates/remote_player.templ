@@ -1,0 +1,164 @@
+
+package templates
+
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+
+templ RemotePlayer(sessionCode string, username string) {
+	if sessionCode == "" {
+		@Layout("Remote Player", username) {
+			@RemotePlayerCodeEntry()
+		}
+	} else {
+		@RemotePlayerFullscreen(sessionCode)
+	}
+}
+
+templ RemotePlayerCodeEntry() {
+	<div class="min-h-screen bg-black flex items-center justify-center p-4">
+		@components.Card(false) {
+			@components.CardHeader("Enter Session Code", "")
+			@components.CardBody(true) {
+				<form action="/player/join" method="POST">
+					<input
+						type="text"
+						name="session_code"
+						placeholder="000000"
+						maxlength="6"
+						pattern="[0-9]{6}"
+						required
+						class="w-full bg-black border-2 border-white/10 text-white text-center text-4xl font-mono py-4 px-6 mb-4 focus:border-white focus:outline-none"
+						autofocus
+					/>
+					<div class="md:hidden">
+						@components.FormButton("primary", "mobile-action", "", true) {
+							Join Session
+						}
+					</div>
+					<div class="hidden md:block">
+						@components.FormButton("primary", "lg", "", true) {
+							Join Session
+						}
+					</div>
+				</form>
+			}
+		}
+	</div>
+}
+
+templ RemotePlayerFullscreen(sessionCode string) {
+	<!DOCTYPE html>
+	<html lang="en" class="dark">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>Remote Player - { sessionCode }</title>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="stylesheet" href="/static/dist/main.css"/>
+		</head>
+		<body
+			class="bg-black text-white font-mono"
+			data-session-code={ sessionCode }
+			data-telemetry-url={ "/api/player-sessions/" + sessionCode + "/player/telemetry" }
+		>
+			<canvas id="remote-player-bg-canvas" class="fixed inset-0 w-full h-full pointer-events-none"></canvas>
+			<div
+				id="remote-player-video-frame"
+				class="fixed left-1/2 top-1/2 bg-black z-0 pointer-events-none"
+				style="transform: translate(-50%, -50%); width: 90vw; height: 90vh;"
+			>
+				<div class="w-full h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-wider">
+					Video Frame
+				</div>
+			</div>
+			@PlayerScene("")
+			@PlayerRemoteKey("")
+			<div
+				class="min-h-screen flex items-center justify-center relative z-10"
+				data-init={ "@get('/api/player-sessions/" + sessionCode + "/player/stream', {openWhenHidden: true})" }
+			>
+				<div class="text-white/40 text-sm">Waiting for producer telemetry...</div>
+			</div>
+			<script type="module" src="/static/dist/datastar.js"></script>
+			<script type="module" src="/static/dist/remote-player-background.js"></script>
+			<script>
+				(function () {
+					const root = document.body;
+					const telemetryUrl = root.dataset.telemetryUrl;
+					if (!telemetryUrl) return;
+
+					const getRemoteKey = () => {
+						const el = document.getElementById('player-remote-key');
+						return (el && el.dataset && el.dataset.remoteKey) ? el.dataset.remoteKey : '';
+					};
+
+					let lastRtt = null;
+
+					async function postTelemetry() {
+						const remoteKey = getRemoteKey();
+						if (!remoteKey) return;
+
+						const start = performance.now();
+						try {
+							await fetch(telemetryUrl, {
+								method: 'POST',
+								headers: { 'content-type': 'application/json' },
+								body: JSON.stringify({
+									remote_key: remoteKey,
+									rtt_ms: 0,
+									jitter_ms: 0,
+									offset_ms: 0,
+									visibility: document.visibilityState || 'unknown',
+								}),
+							});
+						} catch {
+							return;
+						}
+
+						const rtt = Math.max(0, Math.round(performance.now() - start));
+						const jitter = lastRtt == null ? 0 : Math.abs(rtt - lastRtt);
+						lastRtt = rtt;
+
+						try {
+							await fetch(telemetryUrl, {
+								method: 'POST',
+								headers: { 'content-type': 'application/json' },
+								body: JSON.stringify({
+									remote_key: remoteKey,
+									rtt_ms: rtt,
+									jitter_ms: jitter,
+									offset_ms: 0,
+									visibility: document.visibilityState || 'unknown',
+								}),
+							});
+						} catch {
+							return;
+						}
+					}
+
+					setInterval(postTelemetry, 2000);
+					document.addEventListener('visibilitychange', () => { void postTelemetry(); });
+				})();
+			</script>
+			<div class="fixed bottom-4 right-4 border-2 border-white/10 bg-black px-4 py-3 max-w-[90vw] z-10">
+				<div class="text-xs text-white/60 uppercase tracking-wider">Session</div>
+				<div class="text-2xl font-bold">{ sessionCode }</div>
+				<div class="mt-1">
+					@PlayerSSEStatus("Connecting...", "text-white/60")
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+templ PlayerSSEStatus(status string, class string) {
+	<div id="player-sse-status" class={ "text-xs font-mono", class }>{ status }</div>
+}
+
+templ PlayerRemoteKey(remoteKey string) {
+	<div id="player-remote-key" class="hidden" data-remote-key={ remoteKey }></div>
+}
+
+templ PlayerScene(sceneB64 string) {
+	<div id="player-scene" class="hidden" data-scene-b64={ sceneB64 }></div>
+}

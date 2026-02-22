@@ -1,0 +1,499 @@
+/* Custom Video Player Styles */
+
+.custom-video-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  overflow: hidden;
+}
+
+.custom-video-player video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.custom-video-player.theater-mode {
+  width: 100vw;
+  max-width: none;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  border-radius: 0;
+}
+
+.custom-video-player.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  aspect-ratio: unset;
+}
+
+/* Video Controls */
+.video-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+  padding: 40px 16px 12px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.video-controls.hidden {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+.custom-video-player:hover .video-controls {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Progress Bar */
+.progress-container {
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+}
+
+/* Seek thumbnail tooltip */
+.seek-tooltip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.seek-tooltip.hidden {
+  display: none;
+}
+
+.seek-tooltip-thumb {
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background-color: #000;
+}
+
+.seek-tooltip-time {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  position: relative;
+  transition: height 0.15s ease;
+}
+
+/* Increase clickable area without changing visual height */
+.progress-bar::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  cursor: pointer;
+}
+
+/* Marker ticks on timeline */
+.marker-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  opacity: 0.7;
+  transform: translateX(-2px);
+  cursor: pointer;
+  z-index: 2;
+  transition: transform 0.2s;
+}
+
+.marker-tick:hover {
+  opacity: 1;
+  transform: translateX(-2px) scaleX(2);
+}
+
+/* Marker ranges for SponsorBlock segments */
+.marker-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #00d400;
+  opacity: 0.4;
+  pointer-events: all;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  z-index: 1;
+}
+
+.marker-range:hover {
+  opacity: 0.6;
+}
+
+/* Clip ranges on timeline */
+.clip-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.25);
+  opacity: 0.25;
+  pointer-events: all;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  z-index: 0;
+}
+
+.clip-range:hover {
+  opacity: 0.35;
+}
+
+.progress-container:hover .progress-bar {
+  height: 13px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #696969;
+  border-right: 2px solid #fff;
+  border-radius: 2px;
+  position: relative;
+  transition: width 0.1s linear;
+}
+
+.progress-handle {
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.progress-container:hover .progress-handle {
+  opacity: 1;
+}
+
+/* Controls Row */
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+}
+
+.control-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 12px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: opacity 0.2s;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.control-btn:hover {
+  opacity: 0.8;
+}
+
+.control-btn:active {
+  opacity: 0.6;
+}
+
+.control-btn i {
+  font-size: 24px;
+  line-height: 24px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Time Display */
+.time-display {
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 15px;
+  font-weight: 500;
+  user-select: none;
+  min-width: 110px;
+  padding: 0 12px;
+}
+
+/* Volume Control */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.volume-slider {
+  width: 0;
+  opacity: 0;
+  transition: width 0.2s ease, opacity 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  accent-color: white;
+}
+
+.volume-control:hover .volume-slider {
+  width: 80px;
+  opacity: 1;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+/* Playback Rate Control */
+.playback-rate-select {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  min-width: 70px;
+  min-height: 40px;
+}
+
+.playback-rate-select:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.playback-rate-select:focus {
+  border-color: #3b82f6;
+}
+
+.playback-rate-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* Quality picker */
+.quality-select {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  min-width: 70px;
+  min-height: 40px;
+}
+
+.quality-select:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.quality-select:focus {
+  border-color: #3b82f6;
+}
+
+.quality-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* Controls Spacer */
+.controls-spacer {
+  flex: 1;
+  min-width: 16px;
+}
+
+/* Skip notification (SponsorBlock) */
+.skip-notification {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  z-index: 1000;
+  pointer-events: none;
+  animation: slideUp 0.3s ease-out forwards;
+  white-space: nowrap;
+}
+
+.skip-notification.fade-out {
+  animation: fadeOut 0.3s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .control-btn {
+    font-size: 22px;
+    padding: 14px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+  
+  .progress-bar {
+    height: 8px;
+  }
+  
+  .progress-handle {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .time-display {
+    font-size: 14px;
+    min-width: 100px;
+  }
+  
+  /* Hide volume slider on mobile (use device volume) */
+  .volume-slider {
+    display: none;
+  }
+  
+  .playback-rate-select {
+    font-size: 15px;
+    padding: 10px 14px;
+    min-height: 44px;
+  }
+
+  .quality-select {
+    font-size: 15px;
+    padding: 10px 14px;
+    min-height: 44px;
+  }
+  
+  .controls-row {
+    gap: 8px;
+    padding: 8px 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Ultra-compact for small phones */
+  .time-display {
+    font-size: 13px;
+    padding: 0 8px;
+    min-width: 90px;
+  }
+  
+  .control-btn {
+    font-size: 20px;
+    padding: 10px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  
+  .playback-rate-select {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+
+  .quality-select {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  
+  .controls-row {
+    gap: 4px;
+  }
+}
+
+/* Loading state */
+.custom-video-player.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* Hide native controls */
+.custom-video-player video::-webkit-media-controls {
+  display: none !important;
+}
+
+.custom-video-player video::-webkit-media-controls-enclosure {
+  display: none !important;
+}

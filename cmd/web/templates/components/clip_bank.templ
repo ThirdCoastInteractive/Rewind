@@ -1,0 +1,216 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// ============================================================================
+// CLIP EXPORT STATUS COMPONENT
+// ============================================================================
+templ ClipExportStatus(clipID string, text string, state string, downloadURL string) {
+	<span
+		id={ "clip-export-status-" + clipID }
+		data-export-state={ state }
+		class="text-xs font-mono"
+	>
+		if state == "ready" && downloadURL != "" {
+			<a
+				href={ templ.SafeURL(downloadURL) }
+				class="inline-flex items-center gap-1 px-1.5 py-0.5 border-2 border-green-500/40 text-green-400 hover:border-green-500 hover:text-green-300 transition-colors"
+				download
+			>
+				<i class="fa-sharp fa-solid fa-download" aria-hidden="true"></i>
+				<span>Download</span>
+			</a>
+		} else if state == "queued" {
+			<span class="text-yellow-400/80">{ text }</span>
+		} else if state == "processing" {
+			<span class="text-blue-400/80">{ text }</span>
+		} else if state == "error" {
+			<span class="text-red-400/80">{ text }</span>
+		} else {
+			<span class="text-white/60">{ text }</span>
+		}
+	</span>
+}
+
+// ============================================================================
+// CLIP BANK COMPONENTS - Shared between Watch and Cut interfaces
+// ============================================================================
+
+// ============================================================================
+// ClipRow - Single clip row component
+// ============================================================================
+// variant: "watch" | "cut"
+// Pure SSR + DataStar - no custom JavaScript
+templ ClipRow(clip *db.Clip, variant string) {
+	if variant == "cut" {
+		<div
+			class="flex flex-nowrap items-center gap-2 text-sm border-b border-white/10 py-1 transition-all cursor-pointer"
+			data-clip-row
+			data-clip-id={ clip.ID.String() }
+			data-on:click={ fmt.Sprintf("@get('/api/videos/%s/clips/%s/select')", clip.VideoID.String(), clip.ID.String()) }
+			data-class={ fmt.Sprintf("{'bg-white/10 border-white/30': $_selectedClipId === '%s', 'hover:bg-white/5': $_selectedClipId !== '%s'}", clip.ID.String(), clip.ID.String()) }
+		>
+			@ClipRowContent(clip, variant)
+		</div>
+	} else {
+		<div
+			class="flex flex-nowrap items-center gap-2 text-sm border-b border-white/10 py-1 hover:bg-white/5 transition-all"
+			data-clip-row
+			data-clip-id={ clip.ID.String() }
+		>
+			@ClipRowContent(clip, variant)
+		</div>
+	}
+}
+
+// ClipRowContent - Shared content for both variants
+templ ClipRowContent(clip *db.Clip, variant string) {
+	if variant == "watch" {
+		<button
+			type="button"
+			class="shrink-0 w-24 px-1 py-0.5 text-xs font-mono tabular-nums text-center transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+			data-clip-range
+			data-on:click={ fmt.Sprintf("@get('/api/videos/%s/clips/%s/seek')", clip.VideoID.String(), clip.ID.String()) }
+		>
+			{ format.Duration(clip.StartTs) }–{ format.Duration(clip.EndTs) }
+		</button>
+	} else {
+		<button
+			type="button"
+			class="shrink-0 w-24 px-1 py-0.5 text-xs font-mono tabular-nums text-center transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95 pointer-events-none"
+			data-clip-range
+		>
+			{ format.Duration(clip.StartTs) }–{ format.Duration(clip.EndTs) }
+		</button>
+	}
+	if variant == "cut" {
+		if clip.Color != "" {
+			<div
+				class="flex-1 text-neutral-300 truncate text-xs pointer-events-none"
+				data-clip-title
+				title={ clip.Title }
+				style={ "color: " + clip.Color }
+			>
+				if clip.Title != "" {
+					{ clip.Title }
+				} else {
+					<span class="italic text-white/40">(untitled)</span>
+				}
+			</div>
+		} else {
+			<div
+				class="flex-1 text-neutral-300 truncate text-xs pointer-events-none"
+				data-clip-title
+				title={ clip.Title }
+			>
+				if clip.Title != "" {
+					{ clip.Title }
+				} else {
+					<span class="italic text-white/40">(untitled)</span>
+				}
+			</div>
+		}
+	} else {
+		if clip.Color != "" {
+			<div
+				class="flex-1 text-neutral-300 truncate text-xs"
+				data-clip-title
+				title={ clip.Title }
+				style={ "color: " + clip.Color }
+			>
+				if clip.Title != "" {
+					{ clip.Title }
+				} else {
+					<span class="italic text-white/40">(untitled)</span>
+				}
+			</div>
+		} else {
+			<div
+				class="flex-1 text-neutral-300 truncate text-xs"
+				data-clip-title
+				title={ clip.Title }
+			>
+				if clip.Title != "" {
+					{ clip.Title }
+				} else {
+					<span class="italic text-white/40">(untitled)</span>
+				}
+			</div>
+		}
+	}
+	<div class="shrink-0 flex items-center gap-1">
+		if variant == "watch" {
+			<button
+				type="button"
+				class="px-1 py-0.5 text-xs font-mono uppercase transition-all border-2 bg-transparent text-white/60 border-white/10 hover:border-white/40 hover:text-white active:scale-95"
+				data-on:click={ fmt.Sprintf("@post('/api/clips/%s/exports?variant=full', {openWhenHidden: true})", clip.ID.String()) }
+				title="Quick export (Full Frame, MP4)"
+			>
+				<i class="fa-sharp fa-solid fa-file-export" aria-hidden="true"></i>
+			</button>
+		}
+		@ClipExportStatus(clip.ID.String(), "", "", "")
+		<button
+			type="button"
+			class="px-1 py-0.5 text-xs font-mono uppercase transition-all border-2 bg-transparent text-white/60 border-white/10 hover:border-red-500/40 hover:text-red-500 active:scale-95"
+			data-on:click={ fmt.Sprintf("confirm('Delete this clip?') && @delete('/api/clips/%s')", clip.ID.String()) }
+			data-indicator:deleting
+			data-attr:disabled="$deleting"
+		>
+			<i class="fa-sharp fa-solid fa-trash" aria-hidden="true"></i>
+		</button>
+	</div>
+}
+
+// ============================================================================
+// ClipList - List of clips with empty state
+// ============================================================================
+templ ClipList(clips []*db.Clip, variant string) {
+	<div class="space-y-2" data-clip-list>
+		if len(clips) == 0 {
+			<div class="text-xs text-white/40 font-mono">No clips yet.</div>
+		} else {
+			for _, clip := range clips {
+				@ClipRow(clip, variant)
+			}
+		}
+	</div>
+}
+
+// ============================================================================
+// ClipBankCard - Full card for cut interface
+// ============================================================================
+templ ClipBankCard(clips []*db.Clip) {
+	@CardBox(false, "flex-1 min-h-0 flex flex-col") {
+		@CardHeader("CLIP BANK", "Clips pulled from this Video")
+		<div class="p-4 flex-1 min-h-0 overflow-y-auto">
+			<div data-clip-bank>
+				@ClipList(clips, "cut")
+			</div>
+		</div>
+	}
+}
+
+// ============================================================================
+// ClipBankList - Just the list, no card wrapper (for new flat layout)
+// ============================================================================
+templ ClipBankList(clips []*db.Clip) {
+	<div class="p-2" data-clip-bank>
+		<div class={ viewtypes.SectionLabel + " mb-1" }>CLIP BANK</div>
+		@ClipList(clips, "cut")
+	</div>
+}
+
+// ============================================================================
+// ClipListContainer - Simple container for watch interface
+// ============================================================================
+templ ClipListContainer(clips []*db.Clip) {
+	<div class="space-y-2" data-clips-list>
+		@ClipList(clips, "watch")
+	</div>
+}

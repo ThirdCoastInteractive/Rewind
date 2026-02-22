@@ -1,0 +1,79 @@
+package components
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// ============================================================================
+// PAGINATION COMPONENT
+// Reusable pagination controls with DataStar integration
+// ============================================================================
+
+// Pagination holds the state for pagination controls
+type Pagination struct {
+	CurrentPage int
+	TotalPages  int
+	TotalItems  int
+	PageSize    int
+	HasPrev     bool
+	HasNext     bool
+}
+
+// PaginationControls renders prev/next navigation with page info
+templ PaginationControls(p Pagination) {
+	<nav id="videos-pagination" class="flex items-center justify-between border-t-2 border-white/10 pt-4 mt-6" aria-label="Pagination">
+		<div class="text-sm font-mono text-white/60">
+			Page { strconv.Itoa(p.CurrentPage) } of { strconv.Itoa(p.TotalPages) }
+			<span class="text-white/40">({ strconv.Itoa(p.TotalItems) } videos)</span>
+		</div>
+		<div class="flex gap-2">
+			if p.HasPrev {
+				<button
+					type="button"
+					class="px-3 py-1.5 border-2 border-white/20 hover:border-white/40 text-sm font-mono uppercase active:scale-95 transition-all"
+					data-on:click={ fmt.Sprintf("document.getElementById('videos-page')?.scrollIntoView({behavior:'smooth'}); $page = %d; window.updateVideoListUrl && window.updateVideoListUrl($q, $sort, $duration, $uploader, $tagsText, $dateType, $dateFrom, $dateTo, $hasClips, $hasMarkers, $page, $pageSize); @get('/api/videos/index')", p.CurrentPage-1) }
+				>
+					@Icon("arrow-left", "mr-1")
+					Prev
+				</button>
+			}
+			if p.HasNext {
+				<button
+					type="button"
+					class="px-3 py-1.5 border-2 border-white/20 hover:border-white/40 text-sm font-mono uppercase active:scale-95 transition-all"
+					data-on:click={ fmt.Sprintf("document.getElementById('videos-page')?.scrollIntoView({behavior:'smooth'}); $page = %d; window.updateVideoListUrl && window.updateVideoListUrl($q, $sort, $duration, $uploader, $tagsText, $dateType, $dateFrom, $dateTo, $hasClips, $hasMarkers, $page, $pageSize); @get('/api/videos/index')", p.CurrentPage+1) }
+				>
+					Next
+					@Icon("arrow-right", "ml-1")
+				</button>
+			}
+		</div>
+	</nav>
+}
+
+// PageSizeSelector renders page size options (24/48/96)
+// Uses signal-based styling via data-class to highlight the current selection
+templ PageSizeSelector(current int) {
+	<div class="flex items-center gap-2 text-xs font-mono text-white/40">
+		<span>Show:</span>
+		for _, size := range []int{24, 48, 96} {
+			<button
+				type="button"
+				class="hover:text-white transition-colors"
+				data-class={ fmt.Sprintf("{'text-white': $pageSize == %d}", size) }
+				data-on:click={ fmt.Sprintf("window.scrollToVideosTop && window.scrollToVideosTop(); $pageSize = %d; $page = 1; window.saveVideoListPrefs && window.saveVideoListPrefs($q, $sort, $duration, $uploader, $tagsText, $dateType, $dateFrom, $dateTo, $hasClips, $hasMarkers, $page, $pageSize); @get('/api/videos/index')", size) }
+			>
+				{ strconv.Itoa(size) }
+			</button>
+			if size != 96 {
+				<span>|</span>
+			}
+		}
+	</div>
+}
+
+// EmptyPagination renders an empty pagination placeholder
+templ EmptyPagination() {
+	<div id="videos-pagination"></div>
+}

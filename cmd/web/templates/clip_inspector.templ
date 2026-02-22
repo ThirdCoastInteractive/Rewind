@@ -1,0 +1,201 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+templ ClipInspectorForm(clip *db.Clip) {
+	<div
+		class="space-y-2"
+		data-cut-clip-form
+		data-signals={ templ.JSONString(map[string]interface{}{
+			"clipTitle": clip.Title,
+			"clipDescription": clip.Description,
+			"clipColor": clip.Color,
+			"clipColorL": 62,
+			"clipColorC": 0.2,
+			"clipColorH": 30,
+			"_selectedCropId": "",
+			"_selectedCropName": "",
+			"_selectedCropAspect": "",
+			"_cropX": 0.5,
+			"_cropY": 0.5,
+			"_cropWidth": 1,
+			"_cropHeight": 1,
+			"_cropSaveToken": 0,
+			"_clipDirty": false,
+			"_clipStartTs": clip.StartTs,
+			"_clipEndTs": clip.EndTs,
+			"_localMetaOpen": true,
+			"_localColorOpen": false,
+			"_localCropsOpen": true,
+		}) }
+		data-init="const m = String($clipColor || '').trim().match(/^oklch\(\s*([0-9.]+)%\s+([0-9.]+)\s+([0-9.]+)\s*\)$/i); if (m) { $clipColorL = parseFloat(m[1]); $clipColorC = parseFloat(m[2]); $clipColorH = parseFloat(m[3]); }"
+	>
+		<div class="flex items-center justify-between mb-2">
+			<h3 class="text-sm font-medium text-white uppercase tracking-wider">Clip Inspector</h3>
+			<button
+				type="button"
+				class="text-xs text-white/40 hover:text-white/60"
+				data-on:click="window.cutEditor?.clearSelectedClip()"
+			>
+				<i class="fa-sharp fa-solid fa-xmark mr-1" aria-hidden="true"></i>
+				Close
+			</button>
+		</div>
+		@components.InspectorSection("Metadata", "$_localMetaOpen") {
+			<div class="space-y-2">
+				<div>
+					<div class={ viewtypes.SectionLabel + " mb-1" }>TITLE</div>
+					<input
+						type="text"
+						class="w-full px-3 py-2 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+						placeholder="Clip title"
+						data-bind="clipTitle"
+						data-on:input="$_clipDirty = true"
+						data-on:keydown__stop="true"
+						data-on:keyup__stop="true"
+					/>
+				</div>
+				<div>
+					<div class={ viewtypes.SectionLabel + " mb-1" }>DESCRIPTION</div>
+					<textarea
+						class="w-full px-3 py-2 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none min-h-[72px]"
+						placeholder="Clip description"
+						data-bind="clipDescription"
+						data-on:input="$_clipDirty = true"
+						data-on:keydown__stop="true"
+						data-on:keyup__stop="true"
+					></textarea>
+				</div>
+			</div>
+		}
+		@components.InspectorSection("Color", "$_localColorOpen") {
+			<div>
+				<div class="flex items-center gap-3">
+					<div class="w-10 h-10 border-2 border-white/20" style={ fmt.Sprintf("background: %s", clip.Color) } data-attr:style="`background: ${$clipColor}`"></div>
+					<input
+						type="text"
+						class="flex-1 px-3 py-2 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+						placeholder="oklch(62% 0.20 30)"
+						data-bind="clipColor"
+						data-on:input="const v = String($clipColor || '').trim(); const m = v.match(/^oklch\(\s*([0-9.]+)%\s+([0-9.]+)\s+([0-9.]+)\s*\)$/i); if (m) { $clipColorL = parseFloat(m[1]); $clipColorC = parseFloat(m[2]); $clipColorH = parseFloat(m[3]); }"
+						data-on:change="$_clipDirty = true"
+						data-on:keydown__stop="true"
+						data-on:keyup__stop="true"
+					/>
+				</div>
+				<div class="mt-2 flex items-center gap-2">
+					<input
+						type="text"
+						class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+						placeholder="Swatch name"
+						data-color-swatch-name
+						data-on:keydown__stop="true"
+						data-on:keyup__stop="true"
+					/>
+					<button
+						type="button"
+						class={ viewtypes.GhostButtonSm }
+						data-color-swatch-save
+					>
+						SAVE SWATCH
+					</button>
+				</div>
+				<div class="mt-2 grid grid-cols-2 gap-2" data-color-swatch-list></div>
+				<div class="mt-2 space-y-2">
+					<div>
+						<div class={ viewtypes.SectionLabel + " flex justify-between" }>
+							<span>L</span>
+							<span data-text="$clipColorL"></span>
+						</div>
+						<input
+							type="range"
+							min="0"
+							max="100"
+							step="1"
+							class="w-full"
+							data-bind="clipColorL"
+							data-on:input="$clipColor = `oklch(${$clipColorL}% ${$clipColorC} ${$clipColorH})`"
+							data-on:change="$_clipDirty = true"
+						/>
+					</div>
+					<div>
+						<div class={ viewtypes.SectionLabel + " flex justify-between" }>
+							<span>C</span>
+							<span data-text="$clipColorC.toFixed(3)"></span>
+						</div>
+						<input
+							type="range"
+							min="0"
+							max="0.4"
+							step="0.001"
+							class="w-full"
+							data-bind="clipColorC"
+							data-on:input="$clipColor = `oklch(${$clipColorL}% ${$clipColorC} ${$clipColorH})`"
+							data-on:change="$_clipDirty = true"
+						/>
+					</div>
+					<div>
+						<div class={ viewtypes.SectionLabel + " flex justify-between" }>
+							<span>H</span>
+							<span data-text="$clipColorH"></span>
+						</div>
+						<input
+							type="range"
+							min="0"
+							max="360"
+							step="1"
+							class="w-full"
+							data-bind="clipColorH"
+							data-on:input="$clipColor = `oklch(${$clipColorL}% ${$clipColorC} ${$clipColorH})`"
+							data-on:change="$_clipDirty = true"
+						/>
+					</div>
+				</div>
+			</div>
+		}
+		<!-- Inline SAVE / REVERT -->
+		<div class="flex items-center gap-2 pt-1">
+			<button
+				type="button"
+				class="flex-1 px-3 py-1.5 text-xs font-mono uppercase tracking-wider border-2 active:scale-95 transition-all bg-white text-black border-black hover:bg-black hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+				data-attr:disabled="!$_selectedClipId || !$_clipDirty"
+				data-class="{'border-amber-400 text-amber-400 bg-black save-pulse-glow': $_clipDirty}"
+				data-on:click="@put('/api/clips/' + $_selectedClipId, {filterSignals:{exclude:/^$/}})"
+			>
+				<i class="fa-sharp fa-solid fa-floppy-disk mr-1" aria-hidden="true"></i>
+				SAVE
+			</button>
+			<button
+				type="button"
+				class="px-3 py-1.5 text-xs font-mono uppercase tracking-wider border-2 active:scale-95 transition-all bg-black text-white border-white/20 hover:border-white/40"
+				data-show="$_clipDirty"
+				data-on:click={ fmt.Sprintf("@get('/api/videos/%s/clips/' + $_selectedClipId + '/select')", clip.VideoID.String()) }
+			>
+				REVERT
+			</button>
+		</div>
+		@components.InspectorSection("Crops", "$_localCropsOpen") {
+			@components.CropManager(clip.ID.String(), clip.Crops)
+		}
+		<div
+			class="hidden"
+			data-crop-save-panel
+			data-effect={ fmt.Sprintf("if ($_cropSaveToken && $_selectedCropId) { @put('/api/clips/%s/crops/' + $_selectedCropId, {payload: {x: $_cropX, y: $_cropY, width: $_cropWidth, height: $_cropHeight}}); }", clip.ID.String()) }
+		>
+			<input type="hidden" data-bind="_clipDirty" data-cut-clip-dirty/>
+			<input type="hidden" data-bind="_clipStartTs" data-cut-clip-start-ts/>
+			<input type="hidden" data-bind="_clipEndTs" data-cut-clip-end-ts/>
+			<input type="hidden" data-bind="_selectedCropId" data-cut-selected-crop-id/>
+			<input type="hidden" data-bind="_cropX" data-cut-crop-x/>
+			<input type="hidden" data-bind="_cropY" data-cut-crop-y/>
+			<input type="hidden" data-bind="_cropWidth" data-cut-crop-width/>
+			<input type="hidden" data-bind="_cropHeight" data-cut-crop-height/>
+			<input type="hidden" data-bind="_cropSaveToken" data-cut-crop-save-token/>
+		</div>
+	</div>
+}

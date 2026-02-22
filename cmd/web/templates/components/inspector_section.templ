@@ -1,0 +1,18 @@
+package components
+
+// InspectorSection is a collapsible sub-section within the clip inspector.
+templ InspectorSection(title string, signalExpr string) {
+	<div class="border-t-2 border-white/10 pt-2">
+		<button
+			type="button"
+			class="w-full flex items-center justify-between text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white/80 mb-2"
+			data-on:click={ signalExpr + " = !" + signalExpr }
+		>
+			<span>{ title }</span>
+			<span data-text={ signalExpr + " ? '▼' : '▶'" }></span>
+		</button>
+		<div data-show={ signalExpr }>
+			{ children... }
+		</div>
+	</div>
+}

@@ -1,0 +1,76 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// MarkerItem describes a single marker for templ rendering.
+type MarkerItem struct {
+	ID             string
+	Timestamp      float64
+	Duration       float64 // 0 = point marker
+	Title          string
+	Description    string
+	IsSponsorBlock bool
+}
+
+// MarkerList renders the full marker list, targeted by SSE (id="markers-list-inner").
+// Includes a hidden button for programmatic SSE re-render triggers.
+templ MarkerList(videoID string, markers []MarkerItem) {
+	<div id="markers-list-inner">
+		if len(markers) == 0 {
+			<div class="text-sm text-neutral-400">No markers yet.</div>
+		}
+		for _, m := range markers {
+			@MarkerRow(videoID, m)
+		}
+		<!-- Hidden refresh trigger - JS can click this to re-render markers via SSE -->
+		<button
+			class="hidden"
+			data-markers-refresh
+			data-on:click={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", videoID) }
+		></button>
+	</div>
+}
+
+// MarkerRow renders a single marker row.
+templ MarkerRow(videoID string, m MarkerItem) {
+	<div class="flex items-center gap-3 text-sm">
+		<button
+			type="button"
+			class="text-neutral-200 hover:text-neutral-100 font-mono"
+			{ templ.Attributes{"onclick": fmt.Sprintf("window.seekToTime(%f)", m.Timestamp)}... }
+		>
+			if m.Duration > 0 {
+				{ format.Duration(m.Timestamp) } - { format.Duration(m.Timestamp + m.Duration) }
+			} else {
+				{ format.Duration(m.Timestamp) }
+			}
+		</button>
+		<div class="flex-1 text-neutral-300 truncate" title={ markerTitle(m) }>
+			{ markerTitle(m) }
+		</div>
+		if m.IsSponsorBlock {
+			<div class="text-xs text-neutral-400">SB</div>
+		} else {
+			<button
+				type="button"
+				class="text-xs text-neutral-400 hover:text-neutral-200"
+				{ templ.Attributes{"onclick": fmt.Sprintf("fetch('/api/markers/%s',{method:'DELETE'}).then(()=>document.querySelector('[data-markers-refresh]')?.click())", m.ID)}... }
+			>
+				Delete
+			</button>
+		}
+	</div>
+}
+
+func markerTitle(m MarkerItem) string {
+	if m.Title != "" {
+		return m.Title
+	}
+	if m.Description != "" {
+		return m.Description
+	}
+	return "(untitled)"
+}

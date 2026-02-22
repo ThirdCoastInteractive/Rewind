@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rewind</title>
+    <style>
+      :root { color-scheme: dark; font-size: larger; }
+      body {
+        margin: 0;
+        width: 340px;
+        background: #000;
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .wrap { padding: 14px; }
+      .row { border: 2px solid rgba(255,255,255,0.12); padding: 10px; margin-bottom: 10px; }
+      .title { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; text-align: center; font-size: x-large; }
+      .muted { color: rgba(255,255,255,0.65); font-size: 12px; margin-top: 6px; }
+      .btn {
+        width: 100%;
+        border: 2px solid rgba(255,255,255,0.2);
+        background: transparent;
+        color: #fff;
+        padding: 10px 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn.primary { border-color: rgba(255,255,255,0.6); }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .stack { display: grid; gap: 8px; }
+      .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+      .kv .k { color: rgba(255,255,255,0.65); }
+      .kv .v { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .err { color: #fff; background: rgba(220,38,38,0.25); border: 2px solid rgba(220,38,38,0.5); padding: 8px; font-size: 12px; }
+
+      .toggle {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        border: 2px solid rgba(255,255,255,0.12);
+        padding: 10px;
+        font-size: 12px;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+      }
+      .toggle input { transform: scale(1.1); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row">
+        <div class="title">Rewind</div>
+      </div>
+
+      <div class="row">
+        <div class="stack">
+          <div class="kv"><div class="k">SERVER</div><div id="server" class="v">—</div></div>
+          <div class="kv"><div class="k">AUTH</div><div id="auth" class="v">—</div></div>
+          <div class="kv"><div class="k">ACTIVE JOBS</div><div id="jobs" class="v">—</div></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="stack">
+          <div class="kv"><div class="k">SITE</div><div id="site" class="v">—</div></div>
+          <label class="toggle">
+            <input id="sendCookies" type="checkbox" />
+            <span>SEND COOKIES FOR THIS SITE</span>
+          </label>
+          <div class="kv"><div class="k">COOKIES SAVED</div><div id="cookieCount" class="v">—</div></div>
+        </div>
+      </div>
+
+      <div id="error" class="err" style="display:none"></div>
+
+      <div class="stack">
+        <button id="archiveBtn" class="btn primary" disabled>Archive current tab</button>
+        <button id="loginBtn" class="btn" style="display:none">Log in</button>
+        <button id="settingsBtn" class="btn">Settings</button>
+      </div>
+    </div>
+
+    <script src="adapter.js"></script>
+    <script src="common/rewind_common.js"></script>
+    <script src="common/popup_impl.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

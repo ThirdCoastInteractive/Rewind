@@ -1,0 +1,62 @@
+# Ignore version control
+.git
+.gitignore
+
+# Ignore development files
+.env
+.env.local
+*.swp
+*.swo
+*~
+
+# Ignore build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Ignore test cache
+*.test
+*.out
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.iml
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore documentation
+*.md
+!README.md
+
+# Ignore Docker files (no need to copy them into the image)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Ignore Makefile
+Makefile
+
+# Ignore frontend source files (keep built dist/)
+node_modules/
+pnpm-lock.yaml
+package.json
+build.js
+tailwind.config.js
+static/css/input.css
+static/js/*.js
+!static/dist/
+
+# Ignore other service Dockerfiles to prevent cache invalidation
+*.Dockerfile
+!web.Dockerfile
+
+# Ignore screenshots and scripts
+screenshots/
+scripts/
+chrome-extension/
+contrib/

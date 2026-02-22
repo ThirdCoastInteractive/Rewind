@@ -1,0 +1,15 @@
+package templates
+
+import "encoding/json"
+
+templ KeybindingsData(bindings map[string]string) {
+	{{
+		data := []byte("{}")
+		if bindings != nil {
+			if encoded, err := json.Marshal(bindings); err == nil {
+				data = encoded
+			}
+		}
+	}}
+	<div id="rewind-keybindings" class="hidden" data-keybindings={ string(data) }></div>
+}

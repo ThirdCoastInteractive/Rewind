@@ -1,0 +1,470 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+templ Jobs(jobs []*db.DownloadJob, username string) {
+	@Layout("My Jobs", username) {
+		@JobsContent(jobs)
+	}
+}
+
+templ JobsContent(jobs []*db.DownloadJob) {
+	@Container("") {
+		<div class="mb-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-xl font-mono uppercase tracking-tight text-white mb-0.5">Download Jobs</h1>
+					<p class="text-xs font-mono text-white/60">All submitted download jobs and their status</p>
+				</div>
+				<button
+					id="toggle-checkboxes-btn"
+					type="button"
+					onclick={ templ.ComponentScript{Call: "toggleCheckboxes()"} }
+					class={ viewtypes.GhostButtonSm + " text-white/60 border-white/40 hover:border-white hover:text-white" }
+				>
+					<i class="fa-sharp fa-solid fa-check-square mr-1" aria-hidden="true"></i>
+					Select Mode
+				</button>
+			</div>
+		</div>
+		<div id="bulk-actions-bar" class="hidden mb-4 p-2 border-2 border-white/20 bg-white/5">
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						id="select-all-checkbox"
+						class="job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer"
+						style="display: none;"
+						onchange={ templ.ComponentScript{Call: "toggleSelectAll(event)"} }
+					/>
+					<span id="selection-count" class="text-xs font-mono text-white">0 selected</span>
+				</div>
+				<button
+					id="bulk-archive-btn"
+					type="button"
+					onclick={ templ.ComponentScript{Call: "bulkArchiveJobs()"} }
+					class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95"
+				>
+					Archive Selected
+				</button>
+			</div>
+		</div>
+		<div class="flex gap-0 mb-4 border-b-2 border-white/10">
+			<button
+				class="tab-button px-2 py-1 text-xs font-mono uppercase tracking-wider text-white border-b-2 border-white -mb-0.5"
+				data-status="all"
+			>
+				All
+			</button>
+			<button
+				class="tab-button px-2 py-1 text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white/70 border-b-2 border-transparent -mb-0.5"
+				data-status="queued"
+			>
+				Queued
+			</button>
+			<button
+				class="tab-button px-2 py-1 text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white/70 border-b-2 border-transparent -mb-0.5"
+				data-status="processing"
+			>
+				Processing
+			</button>
+			<button
+				class="tab-button px-2 py-1 text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white/70 border-b-2 border-transparent -mb-0.5"
+				data-status="succeeded"
+			>
+				Succeeded
+			</button>
+			<button
+				class="tab-button px-2 py-1 text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white/70 border-b-2 border-transparent -mb-0.5"
+				data-status="failed"
+			>
+				Failed
+			</button>
+		</div>
+		if jobs == nil {
+			<div id="jobs-list" class="border-2 border-white/10" data-init="@get('/api/jobs/index')">
+				<div class="p-2 text-xs font-mono text-white/40">Loading…</div>
+			</div>
+		} else {
+			@JobsList(jobs)
+		}
+	}
+	<script>
+		// Multi-select state
+		const selectedJobs = new Set();
+		let checkboxesVisible = false;
+		let lastCheckedIndex = null;
+
+		function toggleCheckboxes() {
+			checkboxesVisible = !checkboxesVisible;
+			const checkboxes = document.querySelectorAll('.job-checkbox');
+			const btn = document.getElementById('toggle-checkboxes-btn');
+			
+			checkboxes.forEach(checkbox => {
+				checkbox.style.display = checkboxesVisible ? 'block' : 'none';
+			});
+			
+			if (checkboxesVisible) {
+				btn.classList.remove('text-white/60', 'border-white/40');
+				btn.classList.add('text-white', 'border-white');
+			} else {
+				btn.classList.remove('text-white', 'border-white');
+				btn.classList.add('text-white/60', 'border-white/40');
+				// Clear selections when hiding
+				selectedJobs.clear();
+				checkboxes.forEach(checkbox => checkbox.checked = false);
+				updateSelectionUI();
+			}
+		}
+
+		function updateSelectionUI() {
+			const count = selectedJobs.size;
+			const bar = document.getElementById('bulk-actions-bar');
+			const countText = document.getElementById('selection-count');
+			
+			if (count > 0) {
+				bar.classList.remove('hidden');
+				countText.textContent = `${count} selected`;
+			} else {
+				bar.classList.add('hidden');
+			}
+
+			// Update select-all checkbox state
+			const allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');
+			const selectAllCheckbox = document.getElementById('select-all-checkbox');
+			if (selectAllCheckbox) {
+				selectAllCheckbox.checked = allCheckboxes.length > 0 && allCheckboxes.length === selectedJobs.size;
+				selectAllCheckbox.indeterminate = selectedJobs.size > 0 && selectedJobs.size < allCheckboxes.length;
+			}
+		}
+
+		function toggleJobSelection(event, jobId) {
+			event.stopPropagation();
+			
+			const allCheckboxes = Array.from(document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)'));
+			const currentIndex = allCheckboxes.findIndex(cb => cb.dataset.jobId === jobId);
+			
+			// Shift-click range selection
+			if (event.shiftKey && lastCheckedIndex !== null && currentIndex !== -1) {
+				const start = Math.min(lastCheckedIndex, currentIndex);
+				const end = Math.max(lastCheckedIndex, currentIndex);
+				const shouldSelect = event.target.checked;
+				
+				for (let i = start; i <= end; i++) {
+					const checkbox = allCheckboxes[i];
+					checkbox.checked = shouldSelect;
+					if (shouldSelect) {
+						selectedJobs.add(checkbox.dataset.jobId);
+					} else {
+						selectedJobs.delete(checkbox.dataset.jobId);
+					}
+				}
+			} else {
+				// Normal click
+				if (event.target.checked) {
+					selectedJobs.add(jobId);
+				} else {
+					selectedJobs.delete(jobId);
+				}
+			}
+			
+			if (currentIndex !== -1) {
+				lastCheckedIndex = currentIndex;
+			}
+			
+			updateSelectionUI();
+		}
+
+		function toggleSelectAll(event) {
+			const allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');
+			const shouldSelect = event.target.checked;
+			
+			selectedJobs.clear();
+			allCheckboxes.forEach(checkbox => {
+				checkbox.checked = shouldSelect;
+				if (shouldSelect) {
+					selectedJobs.add(checkbox.dataset.jobId);
+				}
+			});
+			updateSelectionUI();
+		}
+
+		async function bulkArchiveJobs() {
+			if (selectedJobs.size === 0) return;
+			
+			const count = selectedJobs.size;
+			if (!confirm(`Archive ${count} job${count > 1 ? 's' : ''}?`)) return;
+
+			const btn = document.getElementById('bulk-archive-btn');
+			btn.disabled = true;
+			btn.textContent = 'Archiving...';
+
+			try {
+				const response = await fetch('/api/jobs/archive', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ job_ids: Array.from(selectedJobs) })
+				});
+
+				if (response.ok) {
+					// Remove archived jobs from view
+					selectedJobs.forEach(jobId => {
+						const card = document.getElementById(`job-card-${jobId}`);
+						if (card) card.remove();
+					});
+					selectedJobs.clear();
+					updateSelectionUI();
+				} else {
+					const text = await response.text();
+					alert('Failed to archive jobs: ' + text);
+				}
+			} catch (error) {
+				alert('Error: ' + error.message);
+			} finally {
+				btn.disabled = false;
+				btn.textContent = 'Archive Selected';
+			}
+		}
+
+		async function archiveJob(event, jobId) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!confirm('Archive this job?')) return;
+
+			const btn = event.target;
+			btn.disabled = true;
+
+			try {
+				const response = await fetch(`/api/jobs/${jobId}/archive`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+				});
+
+				if (response.ok) {
+					const card = document.getElementById(`job-card-${jobId}`);
+					if (card) card.remove();
+				} else {
+					const text = await response.text();
+					alert('Failed to archive job: ' + text);
+				}
+			} catch (error) {
+				alert('Error: ' + error.message);
+			} finally {
+				btn.disabled = false;
+			}
+		}
+
+		function applyJobsFilter(filterStatus) {
+			document.querySelectorAll('.job-card').forEach(card => {
+				const cardStatus = (card.getAttribute('data-status') || '').toLowerCase();
+				if (filterStatus === 'all' || cardStatus === filterStatus) {
+					card.style.display = 'block';
+				} else {
+					card.style.display = 'none';
+				}
+			});
+		}
+
+		function setActiveTab(activeButton) {
+			const tabButtons = document.querySelectorAll('.tab-button');
+			tabButtons.forEach(btn => {
+				if (btn === activeButton) {
+					btn.classList.remove('text-white/40', 'hover:text-white/70', 'border-transparent');
+					btn.classList.add('text-white', 'border-white');
+				} else {
+					btn.classList.remove('text-white', 'border-white');
+					btn.classList.add('text-white/40', 'hover:text-white/70', 'border-transparent');
+				}
+			});
+		}
+
+		async function postJobAction(jobId, action) {
+			const response = await fetch(`/api/jobs/${jobId}/${action}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(text || `Failed to ${action} job`);
+			}
+			return response.json().catch(() => ({}));
+		}
+
+		// Called by onclick handlers from templ.JSFuncCall
+		async function retryJob(event, jobId) {
+			event.preventDefault();
+			event.stopPropagation();
+			const btn = event.target;
+			btn.disabled = true;
+			try {
+				await postJobAction(jobId, 'retry');
+				// No reload; SSE will refresh the job card
+			} catch (err) {
+				console.error(err);
+				alert(err.message || 'Failed to retry job');
+			} finally {
+				btn.disabled = false;
+			}
+		}
+
+		async function cancelJob(event, jobId) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!confirm('Are you sure you want to cancel this job?')) {
+				return;
+			}
+			const btn = event.target;
+			btn.disabled = true;
+			try {
+				await postJobAction(jobId, 'cancel');
+				// No reload; SSE will refresh the job card
+			} catch (err) {
+				console.error(err);
+				alert(err.message || 'Failed to cancel job');
+			} finally {
+				btn.disabled = false;
+			}
+		}
+
+		function upsertJobCardHTML(html) {
+			if (!html) return;
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(html, 'text/html');
+			const node = doc.body.firstElementChild;
+			if (!node) return;
+			const id = node.getAttribute('id');
+			if (!id) return;
+			
+			// Preserve checkbox visibility when updating cards
+			const checkbox = node.querySelector('.job-checkbox');
+			if (checkbox && checkboxesVisible) {
+				checkbox.style.display = 'block';
+			}
+			
+			const existing = document.getElementById(id);
+			if (existing) {
+				existing.replaceWith(node);
+			} else {
+				const list = document.getElementById('jobs-list');
+				if (list) list.prepend(node);
+			}
+		}
+
+		document.addEventListener('DOMContentLoaded', function() {
+			// Tabs
+			document.querySelectorAll('.tab-button').forEach(button => {
+				button.addEventListener('click', function() {
+					const filterStatus = this.getAttribute('data-status');
+					setActiveTab(this);
+					applyJobsFilter(filterStatus || 'all');
+				});
+			});
+
+			// Live updates via SSE
+			try {
+				const es = new EventSource('/api/jobs/stream');
+				es.addEventListener('download_job', (evt) => {
+					try {
+						const payload = JSON.parse(evt.data);
+						upsertJobCardHTML(payload.jobs_card_html);
+						const active = document.querySelector('.tab-button.text-white');
+						const status = active ? active.getAttribute('data-status') : 'all';
+						applyJobsFilter(status || 'all');
+					} catch (e) {
+						console.warn('bad SSE payload', e);
+					}
+				});
+			} catch (e) {
+				console.warn('SSE unavailable', e);
+			}
+		});
+	</script>
+}
+
+templ JobsList(jobs []*db.DownloadJob) {
+	<div id="jobs-list" class="border-2 border-white/10">
+		if len(jobs) > 0 {
+			for _, job := range jobs {
+				@DownloadJobCard(job)
+			}
+		} else {
+			<div class="p-8">
+				@EmptyState("inbox", "No jobs", "No download jobs have been submitted.")
+			</div>
+		}
+	</div>
+}
+
+templ DownloadJobCard(job *db.DownloadJob) {
+	<a
+		href={ templ.SafeURL("/jobs/" + job.ID.String()) }
+		id={ "job-card-" + job.ID.String() }
+		class="job-card block border-b-2 border-white/10 p-2 hover:bg-white/5 transition-colors cursor-pointer"
+		data-status={ job.Status }
+	>
+		<div class="flex items-center gap-3">
+			<div class="flex-shrink-0" onclick={ templ.ComponentScript{Call: "event.stopPropagation()"} }>
+				<input
+					type="checkbox"
+					class="job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer"
+					style="display: none;"
+					data-job-id={ job.ID.String() }
+					onchange={ templ.JSFuncCall("toggleJobSelection", templ.JSExpression("event"), job.ID.String()) }
+				/>
+			</div>
+			<div class="flex-shrink-0">
+				@StatusBadge(job.Status)
+			</div>
+			<div class="flex-1 min-w-0">
+				<p class="text-xs font-mono text-white truncate">{ job.URL }</p>
+			</div>
+			<div class="flex items-center gap-4 text-xs font-mono text-white/60">
+				<span>{ job.CreatedAt.Time.Format("Jan 2 15:04") }</span>
+				<span>×{ fmt.Sprintf("%d", job.Attempts) }</span>
+			</div>
+			<div class="flex items-center gap-2">
+				if job.Status == "failed" || job.Status == "succeeded" {
+					<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
+						<button
+							type="button"
+							onclick={ templ.JSFuncCall("retryJob", templ.JSExpression("event"), job.ID.String()) }
+							class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95"
+						>
+							RETRY
+						</button>
+					</div>
+				}
+				if job.Status == "processing" {
+					<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
+						<button
+							type="button"
+							onclick={ templ.JSFuncCall("cancelJob", templ.JSExpression("event"), job.ID.String()) }
+							class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-white text-black border-black hover:bg-black hover:text-white active:scale-95"
+						>
+							CANCEL
+						</button>
+					</div>
+				}
+				<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
+					<button
+						type="button"
+						onclick={ templ.JSFuncCall("archiveJob", templ.JSExpression("event"), job.ID.String()) }
+						class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white/60 border-white/40 hover:border-white hover:text-white active:scale-95"
+						title="Archive job (soft delete)"
+					>
+						ARCHIVE
+					</button>
+				</div>
+			</div>
+		</div>
+		if job.LastError != nil && *job.LastError != "" {
+			<div class="mt-1 ml-8 text-xs font-mono text-white/60 truncate">
+				ERROR: { *job.LastError }
+			</div>
+		}
+	</a>
+}

@@ -1,0 +1,124 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/pkg/utils/crops"
+)
+
+// cropLabel returns a human-readable label for a crop, used as a data attribute.
+func cropLabel(crop crops.Crop) string {
+	if crop.Name != "" {
+		return crop.Name
+	}
+	if crop.AspectRatio != "" {
+		return crop.AspectRatio + " Crop"
+	}
+	return "Crop"
+}
+
+// Crop preset button component
+templ CropPresetButton(clipID, aspectRatio string) {
+	<button
+		type="button"
+		data-on:click={ fmt.Sprintf("@post('/api/clips/%s/crops', {payload: {aspect_ratio: '%s', name: '%s'}})", clipID, aspectRatio, aspectRatio) }
+		class={ viewtypes.GhostButtonSm }
+	>
+		{ aspectRatio }
+	</button>
+}
+
+templ CropManager(clipID string, clipCrops crops.CropArray) {
+	<div class="space-y-3 pt-3 border-t-2 border-white/10" id="crop-manager">
+		<div class="flex items-center justify-between gap-2">
+			<div class={ viewtypes.SectionLabel }>Multi-Crop Presets</div>
+			<div class="text-xs text-white/60 font-mono" data-show="$_selectedCropId">
+				Selected:
+				<span class="text-white/80" data-text="$_selectedCropName"></span>
+				<span class="text-white/40" data-text="$_selectedCropAspect ? '(' + $_selectedCropAspect + ')' : ''"></span>
+			</div>
+		</div>
+		<div class="flex flex-wrap gap-1">
+			@CropPresetButton(clipID, "16:9")
+			@CropPresetButton(clipID, "9:16")
+			@CropPresetButton(clipID, "1:1")
+			@CropPresetButton(clipID, "5:4")
+			@CropPresetButton(clipID, "4:3")
+			@CropPresetButton(clipID, "21:9")
+		</div>
+		<div class="flex gap-2 items-center">
+			<input
+				type="text"
+				placeholder="2.39:1"
+				id={ "custom-aspect-" + clipID }
+				class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+				data-on:keydown__stop="true"
+				data-on:keyup__stop="true"
+			/>
+			<button
+				type="button"
+				data-on:click={ fmt.Sprintf("const input = document.getElementById('custom-aspect-%s'); const val = input.value.trim(); if (!val) return; const name = val.toUpperCase() + ' Custom'; @post('/api/clips/%s/crops', {payload: {aspect_ratio: val, name: name}}); input.value = '';", clipID, clipID) }
+				class={ viewtypes.GhostButtonSm + " whitespace-nowrap" }
+			>
+				Add Custom
+			</button>
+		</div>
+		<div class="space-y-2" id="crop-list">
+			if len(clipCrops) == 0 {
+				<p class="text-xs text-white/40 font-mono">
+					Click a preset above or enter a custom ratio like 2.39:1.
+				</p>
+			} else {
+				for _, crop := range clipCrops {
+					@CropRow(clipID, crop)
+				}
+			}
+		</div>
+	</div>
+}
+
+templ CropRow(clipID string, crop crops.Crop) {
+	<div
+		class="flex items-center gap-2 p-2 bg-neutral-900 rounded border border-transparent hover:bg-neutral-800 transition-colors"
+		data-crop-id={ crop.ID }
+		data-crop-label={ cropLabel(crop) }
+		data-class={ fmt.Sprintf("{'bg-white/10': $_selectedCropId === '%s', 'border-white/30': $_selectedCropId === '%s'}", crop.ID, crop.ID) }
+	>
+		<button
+			type="button"
+			class="flex-1 text-left"
+			data-crop-name={ crop.Name }
+			data-crop-aspect={ crop.AspectRatio }
+			data-crop-x={ fmt.Sprintf("%f", crop.X) }
+			data-crop-y={ fmt.Sprintf("%f", crop.Y) }
+			data-crop-w={ fmt.Sprintf("%f", crop.Width) }
+			data-crop-h={ fmt.Sprintf("%f", crop.Height) }
+			data-on:click="cropRowSelect(el)"
+		>
+			<div class="text-xs text-white font-mono">
+				if crop.Name != "" {
+					{ crop.Name }
+				} else if crop.AspectRatio != "" {
+					{ crop.AspectRatio } Crop
+				} else {
+					Crop
+				}
+			</div>
+			<div class="text-xs text-neutral-500 font-mono">
+				if crop.AspectRatio != "" {
+					{ crop.AspectRatio }
+				} else {
+					custom
+				}
+			</div>
+		</button>
+		<button
+			type="button"
+			data-crop-delete-name={ cropLabel(crop) }
+			data-on:click={ fmt.Sprintf("confirm('Delete ' + evt.currentTarget.dataset.cropDeleteName + '?') && @delete('/api/clips/%s/crops/%s')", clipID, crop.ID) }
+			class="px-2 py-1 text-xs transition-all border-2 bg-transparent text-white/60 border-white/10 hover:border-red-500/40 hover:text-red-500 active:scale-95"
+		>
+			<i class="fa-sharp fa-solid fa-trash" aria-hidden="true"></i>
+		</button>
+	</div>
+}

@@ -1,0 +1,149 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+templ VideoCutPage(video VideoDetail, clips []*db.Clip, username string, keybindings map[string]string) {
+	@LayoutFullscreen("Cut: "+video.Title, username) {
+		@VideoCutContent(video, clips, keybindings)
+	}
+}
+
+templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string]string) {
+	<div
+		class="flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden"
+		data-cut-page
+		data-video-id={ video.ID }
+		data-video-fps={ fmt.Sprintf("%.5f", video.Info.GetFPS()) }
+		data-signals="{_localClipBankOpen: true, _localInspectorOpen: true, _localFiltersOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}"
+		data-init={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }
+	>
+		<div class="shrink-0">
+			@CutTopBar(video)
+		</div>
+		<div class="flex-1 min-h-0 flex gap-2 overflow-hidden">
+			<!-- LEFT SIDEBAR: scrollable tool panels -->
+			<div class="w-full md:w-1/3 lg:w-1/4 xl:w-1/5 shrink-0 min-h-0 flex flex-col gap-0 overflow-y-auto overflow-x-hidden">
+				@components.SidebarPanel("CLIP BANK", "_localClipBankOpen") {
+					@components.ClipBankList(clips)
+				}
+				@components.SidebarPanel("INSPECTOR", "_localInspectorOpen") {
+					@CutClipInspector()
+				}
+				@components.SidebarPanel("COLOR / FILTERS", "_localFiltersOpen") {
+					<div class="p-2">
+						@components.FilterStack(video.ID)
+					</div>
+				}
+				@components.SidebarPanel("EXPORT", "_localExportOpen") {
+					@components.CutExportPanel(nil)
+				}
+				<div class="mt-auto shrink-0">
+					@FooterInline()
+				</div>
+			</div>
+			<!-- RIGHT: video + tools + timelines - pure flex, no overflow hiding -->
+			<div class="flex-1 min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden">
+				<!-- Video player: only flex-1 child, shrinks when tools appear -->
+				<div class="flex-1 min-h-0 flex flex-col">
+					@CutVideoPane(video)
+					<div class="shrink-0 flex justify-center">
+						<div class="inline-flex items-center gap-2 px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900">
+							@components.CutIconButton("backward-step", "default", templ.Attributes{"data-cut-transport-start": true, "title": "Go to start"})
+							@components.CutIconButton("caret-left", "default", templ.Attributes{"data-cut-transport-prev-frame": true, "title": "Previous frame"})
+							@components.CutIconButton("play", "default", templ.Attributes{"data-cut-transport-play": true, "title": "Play/Pause"})
+							@components.CutIconButton("caret-right", "default", templ.Attributes{"data-cut-transport-next-frame": true, "title": "Next frame"})
+							@components.CutIconButton("forward-step", "default", templ.Attributes{"data-cut-transport-end": true, "title": "Go to end"})
+							<div class="w-px h-6 bg-white/20"></div>
+							@components.CutIconButton("rotate-right", "default", templ.Attributes{"data-cut-transport-loop": true, "title": "Loop"})
+							<div class="w-px h-6 bg-white/20"></div>
+							<div class="text-sm text-white/80 font-mono tabular-nums text-right" data-cut-transport-time>00:00:00.000 / 00:00:00.000</div>
+						</div>
+					</div>
+				</div>
+				<!-- Audio tools: flat - 1 div, 3 canvases, no sub-wrappers -->
+				<div id="audio-tools-container" class="hidden shrink-0 h-24 flex gap-1 border-2 border-white/10 bg-neutral-900 p-1" data-audio-tools>
+					<canvas class="w-10 border border-white/10 bg-neutral-950" data-audio-meter title="Levels" width="56" height="120"></canvas>
+					<canvas class="flex-1 min-w-0 border border-white/10 bg-neutral-950" data-audio-spectrum title="Spectrum" width="400" height="120"></canvas>
+					<canvas class="w-32 border border-white/10 bg-neutral-950" data-audio-scope title="Scope" width="192" height="120"></canvas>
+				</div>
+				<!-- Overview timeline: fixed height -->
+				<div class="shrink-0 h-10">
+					<div class={ viewtypes.SectionLabel }>OVERVIEW</div>
+					<div class="relative h-6 border-2 border-white/10 bg-neutral-900 overflow-hidden" data-cut-overview>
+						<div class="absolute inset-0" data-cut-overview-layer></div>
+					</div>
+				</div>
+				<!-- Work area: fixed height, NOT flex-1 -->
+				<div class="shrink-0 h-32">
+					<div class={ viewtypes.SectionLabel }>WORK AREA</div>
+					<div class="relative border-2 border-white/10 bg-neutral-900 overflow-hidden" style="height: calc(100% - 1.25rem);" data-cut-work>
+						<div class="absolute inset-0" data-cut-work-layer></div>
+					</div>
+				</div>
+				<!-- Button bar -->
+				<div class="shrink-0 flex items-center gap-1 flex-wrap">
+					@components.CutIconButton("angles-left", "default", templ.Attributes{"data-cut-pan-left": true, "title": "Pan left"})
+					@components.CutIconButton("angles-right", "default", templ.Attributes{"data-cut-pan-right": true, "title": "Pan right"})
+					@components.CutIconButton("magnifying-glass-minus", "default", templ.Attributes{"data-cut-zoom-out": true, "title": "Zoom out"})
+					@components.CutIconButton("magnifying-glass-plus", "default", templ.Attributes{"data-cut-zoom-in": true, "title": "Zoom in"})
+					@components.CutIconButton("images", "default", templ.Attributes{"data-cut-toggle-filmstrip": true, "title": "Toggle thumbnails"})
+					@components.CutIconButton("bars", "default", templ.Attributes{"data-on:click": "document.getElementById('audio-tools-container').classList.toggle('hidden')", "title": "Audio tools"})
+					<div class="grow"></div>
+					@components.CutButton("SET IN", "default", templ.Attributes{"data-cut-set-in": true})
+					@components.CutButton("SET OUT", "default", templ.Attributes{"data-cut-set-out": true})
+					@components.CutButton("LOOP", "default", templ.Attributes{"data-cut-loop": true})
+					@components.CutButton("PLAY SEL", "default", templ.Attributes{"data-cut-play-selection": true})
+					@components.CutButton("REVERT", "default", templ.Attributes{
+						"data-show":     "$_clipDirty && !$_localAutoSave",
+						"data-on:click": fmt.Sprintf("@get('/api/videos/%s/clips/' + $_selectedClipId + '/select')", video.ID),
+					})
+					@components.CutButton("SAVE", "primary", templ.Attributes{
+						"data-show":          "!$_localAutoSave",
+						"data-attr:disabled": "!$_selectedClipId || !$_clipDirty",
+						"data-class":         "{'border-amber-400 text-amber-400 save-pulse-glow': $_clipDirty}",
+						"data-on:click":      "@put('/api/clips/' + $_selectedClipId, {filterSignals:{exclude:/^$/}})",
+					})
+					<button
+						type="button"
+						class="px-2 py-1 text-xs font-mono uppercase tracking-wider border-2 active:scale-95 transition-all"
+						data-class="{'bg-amber-400/20 text-amber-400 border-amber-400/40': $_localAutoSave, 'bg-black text-white/40 border-white/10 hover:border-white/30': !$_localAutoSave}"
+						data-on:click="$_localAutoSave = !$_localAutoSave"
+						title="Toggle autosave"
+					>
+						AUTOSAVE
+					</button>
+					@components.CutButton("CREATE", "primary", templ.Attributes{"data-cut-create-clip": true})
+					<div class="text-xs text-white/40 font-mono tabular-nums" data-cut-range></div>
+				</div>
+			</div>
+		</div>
+		<div class="hidden">
+			<!-- Signal → JS bridges (replaces setInterval polling) -->
+			<div data-on-signal-patch="window.cutEditor?.clipBank?.handleSignalPatch()"></div>
+			<div data-effect="window.cutEditor?.applyFilterStack($_filterStack)"></div>
+			<div data-effect="window.cutEditor?.onClipColorChange($clipColor)"></div>
+			<div data-effect="window.cutEditor?.onAutosaveCheck($_clipDirty, $_localAutoSave, $_selectedClipId)"></div>
+			<input type="hidden" data-bind="_createClipStart" data-cut-create-start/>
+			<input type="hidden" data-bind="_createClipEnd" data-cut-create-end/>
+			<button
+				type="button"
+				data-cut-create-submit
+				data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID) }
+			></button>
+			<button
+				type="button"
+				data-cut-autosave-trigger
+				data-on:click={ fmt.Sprintf("if ($_selectedClipId) { @put('/api/clips/' + $_selectedClipId, {filterSignals:{exclude:/^$/}}) }") }
+			></button>
+		</div>
+	</div>
+	<link rel="stylesheet" href="/static/dist/video-player.css"/>
+	@KeybindingsData(keybindings)
+	<script src="/static/dist/video-player.js"></script>
+	<script src="/static/dist/cut-page.js"></script>
+}

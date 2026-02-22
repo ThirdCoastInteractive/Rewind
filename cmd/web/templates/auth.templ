@@ -1,0 +1,86 @@
+package templates
+
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+
+templ Login(errorMsg string) {
+	@Layout("Login", "") {
+		@LoginContent(errorMsg)
+	}
+}
+
+templ LoginContent(errorMsg string) {
+	<div class="min-h-[calc(100vh-200px)] flex items-center justify-center">
+		<div class="max-w-md w-full">
+			@components.Card(false) {
+				@components.CardHeader("LOGIN", "Access this self-hosted instance")
+				@components.CardBody(true) {
+					if errorMsg != "" {
+						@Alert("error", errorMsg)
+					}
+					<form method="POST" class="space-y-4">
+						@components.Input("USERNAME OR EMAIL", "username", "text", true, "Enter your username or email")
+						@components.Input("PASSWORD", "password", "password", true, "Enter your password")
+						<div class="flex items-center">
+							@components.Checkbox("Remember me", "remember", false)
+						</div>
+						@components.FormButton("primary", "md", "", true) {
+							SIGN IN
+						}
+					</form>
+					<div class="mt-4 text-center">
+						<p class="text-white/60 text-xs font-mono uppercase tracking-wider">
+							Don't have an account?
+							<a href="/register" class="text-white hover:text-white/80 transition">
+								Create an account
+							</a>
+						</p>
+					</div>
+				}
+			}
+		</div>
+	</div>
+}
+
+templ Register(errorMsg string) {
+	@Layout("Register", "") {
+		@RegisterContent(errorMsg)
+	}
+}
+
+templ RegisterContent(errorMsg string) {
+	<div class="min-h-[calc(100vh-200px)] flex items-center justify-center py-12">
+		<div class="max-w-md w-full">
+			@components.Card(false) {
+				@components.CardHeader("REGISTER", "Create a user account on this instance")
+				@components.CardBody(true) {
+					if errorMsg != "" {
+						@Alert("error", errorMsg)
+					}
+					<form method="POST" action="/register" class="space-y-4">
+						<div>
+							@components.Input("USERNAME", "username", "text", true, "Choose a username")
+							<p class="mt-1 text-xs text-white/40 font-mono">3-30 characters, letters, numbers, - and _ only</p>
+						</div>
+						@components.Input("EMAIL ADDRESS", "email", "email", true, "you@example.com")
+						<div>
+							@components.Input("PASSWORD", "password", "password", true, "Create a strong password")
+							<p class="mt-1 text-xs text-white/40 font-mono">Minimum 8 characters</p>
+						</div>
+						@components.Input("CONFIRM PASSWORD", "confirm_password", "password", true, "Confirm your password")
+						@components.FormButton("primary", "md", "", true) {
+							CREATE ACCOUNT
+						}
+					</form>
+					<div class="mt-4 text-center">
+						<p class="text-white/60 text-xs font-mono uppercase tracking-wider">
+							Already have an account?
+							<a href="/login" class="text-white hover:text-white/80 transition">
+								Sign in
+							</a>
+						</p>
+					</div>
+				}
+			}
+		</div>
+	</div>
+}

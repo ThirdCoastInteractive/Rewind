@@ -1,0 +1,65 @@
+package templates
+
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+
+templ CutTopBar(video VideoDetail) {
+	<div class="flex items-center justify-between gap-4">
+		@components.LinkButton("/videos/"+video.ID, "ghost", "sm", "arrow-left", false) {
+			BACK TO WATCH
+		}
+		<div class="flex items-center gap-2">
+			@components.LinkButton("/videos", "ghost", "sm", "list", false) {
+				ALL VIDEOS
+			}
+			@components.LinkButton("/producer?video="+video.ID, "ghost", "sm", "tv", false) {
+				OPEN IN PRODUCER
+			}
+		</div>
+	</div>
+}
+
+templ CutVideoPane(video VideoDetail) {
+	<div class="flex-1 min-h-0 relative bg-black border-2 border-white/10">
+		<video
+			id="cutVideoPlayer"
+			class="absolute inset-0 w-full h-full object-contain"
+			preload="metadata"
+			playsinline
+		>
+			<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
+			<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>
+			Your browser does not support the video tag.
+		</video>
+		<!-- Filter preview overlay container - slots for vignette/text overlays -->
+		<div class="filter-preview-overlays" data-filter-preview-overlays style="position:absolute;inset:0;pointer-events:none;z-index:5;display:none;">
+			<div data-overlay-vignette style="position:absolute;inset:0;display:none;"></div>
+			<div data-overlay-text style="position:absolute;padding:0.5em;color:white;font-family:monospace;text-shadow:0 1px 3px rgba(0,0,0,0.8);display:none;"></div>
+		</div>
+		<div class="absolute inset-0 z-30 pointer-events-none hidden" data-cut-crop-layer>
+			<div class="absolute overflow-hidden pointer-events-none" data-cut-crop-surface>
+				<div class="absolute border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] pointer-events-auto cursor-move" data-cut-crop-rect>
+					<!-- Rule-of-thirds grid -->
+					<div class="absolute inset-0 pointer-events-none">
+						<div class="absolute top-0 bottom-0 w-px bg-white/20" style="left: 33.3333%;"></div>
+						<div class="absolute top-0 bottom-0 w-px bg-white/20" style="left: 66.6667%;"></div>
+						<div class="absolute left-0 right-0 h-px bg-white/20" style="top: 33.3333%;"></div>
+						<div class="absolute left-0 right-0 h-px bg-white/20" style="top: 66.6667%;"></div>
+					</div>
+					<!-- Resize handle (bottom-right corner) -->
+					<div class="absolute bottom-0 right-0 w-4 h-4 bg-white cursor-nwse-resize pointer-events-auto" data-cut-crop-handle></div>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+templ CutClipInspector() {
+	<div class="p-2">
+		<div data-cut-clip-inspector>
+			<div class="text-xs text-white/40 font-mono" data-cut-clip-inspector-empty data-show="!$_selectedClipId">
+				Select a clip to edit
+			</div>
+			<div class="space-y-2" data-cut-clip-form data-show="$_selectedClipId"></div>
+		</div>
+	</div>
+}

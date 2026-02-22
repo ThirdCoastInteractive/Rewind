@@ -1,0 +1,1 @@
+RewindOptionsMain(RewindAdapter, RewindCommon);

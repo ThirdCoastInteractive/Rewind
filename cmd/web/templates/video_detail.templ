@@ -1,0 +1,540 @@
+package templates
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+	"thirdcoast.systems/rewind/pkg/videoinfo"
+)
+
+// VideoDetail is the view model for the video detail page.
+// Shared with the cut page — keep fields backward-compatible.
+type VideoDetail struct {
+	ID            string
+	Src           string
+	Title         string
+	Description   string
+	Info          videoinfo.VideoInfo
+	ProbeInfo     *videoinfo.ProbeInfo // Parsed ffprobe data (nil when absent)
+	SpoolDir      string
+	VideoPath     string // Absolute path to the main video file on disk
+	ThumbnailPath string
+	CreatedAt     string
+	SavedPosition float64 // Last playback position in seconds
+	FileSize      *int64  // File size in bytes from DB
+	CommentCount  int64   // Number of comments in DB
+	StreamHeights []int   // Heights of additional downloaded streams (from streams/manifest.json)
+	// StreamQualities holds info about additional downloaded stream files for
+	// the quality picker. Each entry has a label ("720p") and a filename used
+	// to build the streaming URL.
+	StreamQualities []StreamQuality
+	// ActiveRegenScopes tracks which asset regeneration scopes have active jobs.
+	// Keys: "" (all), "thumbnail", "preview", "seek", "waveform", "captions".
+	ActiveRegenScopes map[string]bool
+}
+
+// StreamQuality represents an additional downloaded video quality.
+type StreamQuality struct {
+	Label    string `json:"label"`
+	Filename string `json:"filename"`
+	Height   int    `json:"height"`
+}
+
+templ VideoDetailPage(video VideoDetail, clips []*db.Clip, username string, keybindings map[string]string) {
+	@Layout("Watch: "+video.Title, username) {
+		@VideoDetailContent(video, clips, keybindings)
+	}
+}
+
+templ VideoDetailContent(video VideoDetail, clips []*db.Clip, keybindings map[string]string) {
+	@Container("wide") {
+		@videoDetailNav(video)
+		@videoPlayer(video)
+		@videoTranscriptAndClips(video, clips)
+		<link rel="stylesheet" href="/static/dist/video-player.css"/>
+		@KeybindingsData(keybindings)
+		<script src="/static/dist/video-player.js"></script>
+		@videoMetadataCard(video)
+		@videoDescriptionCard(video)
+		@videoInfoCard(video)
+		@videoStreamsCard(video)
+		@videoJobsCard(video)
+		@videoCommentsCard(video)
+		@videoRedownloadScript()
+	}
+}
+
+// ============================================================================
+// PAGE SECTIONS — each is a focused templ component
+// ============================================================================
+
+// videoDetailNav renders the top navigation bar with back + action buttons.
+templ videoDetailNav(video VideoDetail) {
+	<div class="mb-4 flex flex-col sm:flex-row gap-2 sm:gap-0 sm:justify-between sm:items-center">
+		@components.LinkButton("/videos", "ghost", "sm", "arrow-left", false) {
+			BACK TO VIDEOS
+		}
+		<div class="flex flex-col sm:flex-row gap-2">
+			@components.LinkButton("/videos/"+video.ID+"/cut", "ghost", "sm", "scissors", false) {
+				OPEN CUT
+			}
+			@components.LinkButton("/producer?video="+video.ID, "primary", "sm", "tv", false) {
+				OPEN IN PRODUCER
+			}
+		</div>
+	</div>
+}
+
+// videoPlayer renders the video element and player controls.
+templ videoPlayer(video VideoDetail) {
+	<div
+		class="custom-video-player border-2 border-white/10 mb-4"
+		data-video-player
+		data-video-id={ video.ID }
+		data-saved-position={ fmt.Sprintf("%.3f", video.SavedPosition) }
+		if len(video.StreamQualities) > 0 {
+			data-qualities={ streamQualitiesJSON(video) }
+		}
+	>
+		<video
+			id="videoPlayer"
+			preload="metadata"
+			playsinline
+		>
+			<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
+			<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>
+			Your browser does not support the video tag.
+		</video>
+		@components.VideoPlayerControls()
+	</div>
+}
+
+// videoTranscriptAndClips renders the 2-column transcript + clips panel.
+templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
+	<div
+		class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4"
+		data-video-panel
+		data-video-id={ video.ID }
+		data-init={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }
+	>
+		@components.Card(false) {
+			@components.CardHeader("TRANSCRIPT", "Search + jump")
+			@components.CardBody(true) {
+				<div class="space-y-2" data-transcript-panel data-video-id={ video.ID }>
+					<input
+						type="text"
+						class="w-full px-3 py-2 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+						placeholder="Search transcript"
+						data-transcript-search
+					/>
+					<div
+						class="space-y-2 max-h-96 overflow-auto"
+						data-transcript-list
+						data-init={ fmt.Sprintf("@get('/api/videos/%s/transcript/render')", video.ID) }
+					>
+						<div id="transcript-list-inner">
+							<div class="text-xs text-white/40 font-mono">Loading…</div>
+						</div>
+					</div>
+				</div>
+			}
+		}
+		@components.Card(false) {
+			@components.CardHeader("CLIPS", "Shortcuts: Shift+I / Shift+O / Shift+C")
+			@components.CardBody(true) {
+				<div class="flex flex-wrap gap-2 mb-3">
+					<button type="button" data-clip-set-in class={ viewtypes.GhostButtonSm }>
+						SET IN
+					</button>
+					<button type="button" data-clip-set-out class={ viewtypes.GhostButtonSm }>
+						SET OUT
+					</button>
+					<button type="button" data-clip-create class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-white text-black border-black hover:bg-black hover:text-white active:scale-95">
+						CREATE CLIP
+					</button>
+					<div class="text-xs text-white/40 self-center font-mono" data-clip-range></div>
+				</div>
+				@components.ClipListContainer(clips)
+				<div class="hidden" data-signals="{_createClipStart: 0, _createClipEnd: 0}">
+					<input type="hidden" data-bind="_createClipStart" data-clip-create-start/>
+					<input type="hidden" data-bind="_createClipEnd" data-clip-create-end/>
+					<button
+						type="button"
+						data-clip-create-submit
+						data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID) }
+					></button>
+				</div>
+				<div class="mt-4 pt-4 border-t-2 border-white/10">
+					<div class={ viewtypes.SectionLabel + " mb-2" }>MARKERS</div>
+					<div class="space-y-2" data-markers-list data-init={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", video.ID) }>
+						<div class="text-xs text-white/40 font-mono">Loading…</div>
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
+// videoMetadataCard renders the title, source URL, actions, and regen buttons.
+templ videoMetadataCard(video VideoDetail) {
+	@components.Card(false) {
+		@components.CardBody(true) {
+			<h1 class="text-xl font-mono font-bold mb-3 uppercase tracking-wider">{ video.Title }</h1>
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+				<div>
+					<p class="text-white/40 mb-1 font-mono uppercase tracking-wider">SOURCE URL</p>
+					<a href={ templ.SafeURL(video.Src) } target="_blank" rel="noopener" class="text-white hover:text-white/80 break-all font-mono">
+						{ video.Src }
+					</a>
+				</div>
+				<div>
+					<p class="text-white/40 mb-1 font-mono uppercase tracking-wider">ARCHIVED</p>
+					<p class="text-white/80 font-mono">{ video.CreatedAt }</p>
+				</div>
+			</div>
+			@videoActionButtons(video)
+			@videoRegenButtons(video)
+		}
+	}
+}
+
+// videoActionButtons renders download, redownload, and delete buttons.
+templ videoActionButtons(video VideoDetail) {
+	<div class="mt-4 pt-4 border-t-2 border-white/10">
+		<div
+			class="flex flex-wrap gap-2"
+			data-signals={ regenSignals(video) }
+		>
+			@components.LinkButton("/api/videos/"+video.ID+"/download", "primary", "sm", "download", false) {
+				DOWNLOAD VIDEO
+			}
+			<button
+				type="button"
+				onclick={ templ.JSFuncCall("redownloadVideo", video.ID) }
+				class="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+			>
+				<i class="fa-sharp fa-solid fa-rotate"></i>
+				FORCE REDOWNLOAD
+			</button>
+			<button
+				type="button"
+				data-on:click="!$deleteArmed ? ($deleteArmed = true) : (confirm('Delete this video from the database? This cannot be undone.') ? @delete($deleteDisk ? $deleteUrlDisk : $deleteUrl) : ($deleteArmed = false, $deleteDisk = false))"
+				data-indicator:_deleting
+				data-attr:disabled="$_deleting"
+				class="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+			>
+				<i class="fa-sharp fa-solid fa-trash"></i>
+				<span
+					class="inline-flex items-center gap-2"
+					data-class:hidden="!$deleteArmed"
+					data-on:click__stop="true"
+				>
+					<input
+						type="checkbox"
+						data-bind:delete-disk
+						data-on:click__stop="true"
+						class="h-4 w-4 accent-white"
+					/>
+					<span class="text-white/80">DELETE CONTENT ON DISK</span>
+				</span>
+				<span data-text="$deleteArmed ? 'ARE YOU SURE?' : 'DELETE VIDEO'">DELETE VIDEO</span>
+			</button>
+		</div>
+	</div>
+}
+
+// videoRegenButtons renders asset regeneration buttons.
+templ videoRegenButtons(video VideoDetail) {
+	<div class="mt-4 pt-4 border-t-2 border-white/10">
+		<p class="text-white/40 mb-2 text-xs font-mono uppercase tracking-wider">REGENERATE ASSETS</p>
+		<div class="flex flex-wrap gap-2">
+			@regenButton(video.ID, "", "REGENERATE ALL", "wand-magic-sparkles", "_regenAll")
+			@regenButton(video.ID, "thumbnail", "THUMBNAIL", "image", "_regenThumb")
+			@regenButton(video.ID, "preview", "PREVIEW", "film", "_regenPreview")
+			@regenButton(video.ID, "seek", "SEEK SPRITES", "grip", "_regenSeek")
+			@regenButton(video.ID, "waveform", "WAVEFORM", "wave-square", "_regenWaveform")
+			@regenButton(video.ID, "captions", "CAPTIONS", "closed-captioning", "_regenCaptions")
+			@regenButton(video.ID, "hls", "HLS", "tower-broadcast", "_regenHLS")
+		</div>
+	</div>
+}
+
+// videoDescriptionCard renders the video description (if present).
+templ videoDescriptionCard(video VideoDetail) {
+	if strings.TrimSpace(video.Description) != "" {
+		@components.Card(false) {
+			@components.CardHeader("DESCRIPTION", "")
+			@components.CardBody(true) {
+				<div class="text-sm text-white/80 whitespace-pre-wrap break-words leading-relaxed">
+					{ video.Description }
+				</div>
+			}
+		}
+	}
+}
+
+// videoInfoCard renders the 3-column video information panel using data-driven loops.
+templ videoInfoCard(video VideoDetail) {
+	if video.Info.HasData() {
+		@components.Card(false) {
+			@components.CardHeader("VIDEO INFORMATION", "")
+			@components.CardBody(true) {
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+					// Column 1: Source & Engagement
+					@components.InfoColumn("Source", video.Info.SourceInfoRows(), video.Info.SourceLinkRows())
+					// Column 2: Technical (prefer ffprobe → fallback to yt-dlp)
+					if probe := video.ProbeInfo; probe != nil {
+						@components.InfoColumn("Technical", probe.TechnicalInfoRows(video.Info, video.FileSize), nil)
+					} else {
+						@components.InfoColumn("Technical", video.Info.TechnicalInfoRows(video.FileSize), nil)
+					}
+					// Column 3: Classification with tags
+					@components.InfoColumnWithTags("Classification", video.Info.ClassificationInfoRows(), video.Info.Tags)
+				</div>
+				// Audio tracks badge list
+				if audioTracks := video.Info.UniqueAudioLanguages(); len(audioTracks) > 1 {
+					@components.BadgeList(fmt.Sprintf("Audio Tracks (%d)", len(audioTracks)), audioTracks)
+				}
+				// Video quality chips: downloaded ones lit up, others clickable to download
+				if chips := video.Info.QualityChips(video.ProbeInfo, video.StreamHeights); len(chips) > 1 {
+					@components.QualityChips(
+						fmt.Sprintf("Available Qualities (%d)", len(chips)),
+						video.ID,
+						qualityChipsToComponent(chips),
+					)
+				}
+			}
+		}
+	}
+}
+
+// videoStreamsCard renders media streams: video summary row at top, then audio/subtitle comparison columns.
+templ videoStreamsCard(video VideoDetail) {
+	if probe := video.ProbeInfo; probe != nil && len(probe.Streams) > 0 {
+		@components.Card(false) {
+			@components.CardHeader("MEDIA STREAMS", fmt.Sprintf("%d streams detected via ffprobe", len(probe.Streams)))
+			@components.CardBody(true) {
+				// Video track summary (usually just 1)
+				if videoRows := videoinfo.BuildVideoSummaryRows(probe.Streams); len(videoRows) > 0 {
+					@components.VideoStreamSummary(videoRows, videoinfo.VideoStreamHDRInfo(probe.Streams))
+				}
+				// Audio tracks comparison table
+				@components.StreamComparisonTable(
+					"audio",
+					videoinfo.PropertyLabelsForType(probe.Streams, "audio"),
+					videoinfo.BuildColumnsForType(probe.Streams, "audio"),
+				)
+				// Subtitle tracks comparison table
+				@components.StreamComparisonTable(
+					"subtitle",
+					videoinfo.PropertyLabelsForType(probe.Streams, "subtitle"),
+					videoinfo.BuildColumnsForType(probe.Streams, "subtitle"),
+				)
+			}
+		}
+	}
+}
+
+// videoJobsCard renders the download jobs list.
+templ videoJobsCard(video VideoDetail) {
+	@components.Card(false) {
+		@components.CardHeader("DOWNLOAD JOBS", "All download attempts for this video")
+		@components.CardBody(true) {
+			<div
+				id="video-jobs-list"
+				class="space-y-2 text-xs"
+				data-init={ fmt.Sprintf("@get('/api/videos/%s/jobs')", video.ID) }
+			>
+				<div class="text-white/40 font-mono">Loading jobs...</div>
+			</div>
+		}
+	}
+}
+
+// videoCommentsCard renders the comments card (if any comments exist).
+templ videoCommentsCard(video VideoDetail) {
+	if video.CommentCount > 0 {
+		@components.Card(false) {
+			@components.CardHeader(fmt.Sprintf("COMMENTS (%s)", format.Number(int(video.CommentCount))), "User comments from the original video")
+			@components.CardBody(true) {
+				<div
+					data-comments-list
+					data-signals-ifmissing="{_commentSearch: '', _commentPage: 0}"
+					data-init={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", video.ID) }
+				>
+					<div class="text-white/40 font-mono text-xs">Loading comments...</div>
+				</div>
+			}
+		}
+	}
+}
+
+// videoRedownloadScript injects the redownload confirmation script.
+templ videoRedownloadScript() {
+	<script type="text/javascript">
+		async function redownloadVideo(videoId) {
+			if (!confirm('This will create a new download job to redownload this video. The existing video will be replaced. Continue?')) {
+				return;
+			}
+			
+			try {
+				const response = await fetch(`/api/videos/${videoId}/redownload`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' }
+				});
+				
+				if (response.ok) {
+					const data = await response.json();
+					window.location.href = `/jobs/${data.job_id}`;
+				} else {
+					const text = await response.text();
+					alert(`Failed to create redownload job: ${text}`);
+				}
+			} catch (error) {
+				alert(`Error: ${error.message}`);
+			}
+		}
+	</script>
+}
+
+// ============================================================================
+// SUB-TEMPLATES (jobs, regen)
+// ============================================================================
+templ VideoJobsList(jobs []*db.DownloadJob, ingestJobsByDJ map[string][]*db.IngestJob) {
+	if len(jobs) == 0 {
+		<div class="text-white/40 font-mono">No download jobs found for this video</div>
+	} else {
+		for _, job := range jobs {
+			@VideoJobCard(job, ingestJobsByDJ[job.ID.String()])
+		}
+	}
+}
+
+templ VideoJobCard(job *db.DownloadJob, ingestJobs []*db.IngestJob) {
+	<div class={ viewtypes.InfoBoxClass }>
+		<div class="flex items-center justify-between mb-2">
+			<a href={ templ.SafeURL("/jobs/" + job.ID.String()) } class="text-white/80 hover:text-white font-mono text-xs">
+				Job { job.ID.String()[:8] }...
+			</a>
+			@StatusBadge(job.Status)
+		</div>
+		<div class="text-white/60 font-mono text-xs space-y-1">
+			<div>Created: { job.CreatedAt.Time.Format("Jan 2, 2006 3:04 PM") }</div>
+			if job.FinishedAt.Valid {
+				<div>Finished: { job.FinishedAt.Time.Format("Jan 2, 2006 3:04 PM") }</div>
+			}
+			if job.Attempts > 0 {
+				<div>Attempts: { fmt.Sprintf("%d", job.Attempts) }</div>
+			}
+			if job.LastError != nil && *job.LastError != "" {
+				<div class="text-red-400 mt-1">Error: { *job.LastError }</div>
+			}
+		</div>
+		if len(ingestJobs) > 0 {
+			<div class="mt-2 pt-2 border-t border-white/10 space-y-1.5">
+				<div class="text-white/30 font-mono text-xs uppercase tracking-wider">Ingest Jobs</div>
+				for _, ij := range ingestJobs {
+					<div class="flex items-center justify-between text-xs font-mono">
+						<span class="text-white/50">
+							{ ij.ID.String()[:8] }...
+							if ij.AssetScope != nil && *ij.AssetScope != "" {
+								<span class="text-white/30">({ *ij.AssetScope })</span>
+							}
+						</span>
+						@StatusBadge(ij.Status)
+					</div>
+					if ij.LastError != nil && *ij.LastError != "" {
+						<div class="text-red-400 font-mono text-xs pl-2">{ *ij.LastError }</div>
+					}
+				}
+			</div>
+		}
+	</div>
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// streamQualitiesJSON serialises stream qualities to a JSON array of
+// {label, src, height} objects for the data-qualities attribute.
+func streamQualitiesJSON(video VideoDetail) string {
+	type qualityItem struct {
+		Label  string `json:"label"`
+		Src    string `json:"src"`
+		Height int    `json:"height"`
+	}
+	items := make([]qualityItem, 0, len(video.StreamQualities))
+	for _, q := range video.StreamQualities {
+		items = append(items, qualityItem{
+			Label:  q.Label,
+			Src:    "/api/videos/" + video.ID + "/streams/" + q.Filename,
+			Height: q.Height,
+		})
+	}
+	b, _ := json.Marshal(items)
+	return string(b)
+}
+
+// qualityChipsToComponent converts video_info QualityChips to components.QualityChipData.
+func qualityChipsToComponent(chips []videoinfo.QualityChip) []components.QualityChipData {
+	out := make([]components.QualityChipData, len(chips))
+	for i, c := range chips {
+		out[i] = components.QualityChipData{
+			Label:      c.Label,
+			Downloaded: c.Downloaded,
+			FormatIDs:  c.FormatIDs,
+		}
+	}
+	return out
+}
+
+// regenSignals builds the data-signals JSON for delete + regen buttons.
+func regenSignals(video VideoDetail) string {
+	allActive := video.ActiveRegenScopes[""]
+	isActive := func(scope string) bool {
+		return allActive || video.ActiveRegenScopes[scope]
+	}
+
+	signals := map[string]interface{}{
+		"deleteArmed":   false,
+		"deleteDisk":    false,
+		"deleteUrl":     "/api/videos/" + video.ID,
+		"deleteUrlDisk": "/api/videos/" + video.ID + "?delete_disk=1",
+
+		"_regenAll":      isActive(""),
+		"_regenThumb":    isActive("thumbnail"),
+		"_regenPreview":  isActive("preview"),
+		"_regenSeek":     isActive("seek"),
+		"_regenWaveform": isActive("waveform"),
+		"_regenCaptions": isActive("captions"),
+	}
+
+	j, err := templ.JSONString(signals)
+	if err != nil {
+		return "{}"
+	}
+	return j
+}
+
+// regenButton renders a single asset regeneration button.
+templ regenButton(videoID, scope, label, icon, signal string) {
+	<button
+		type="button"
+		if scope == "" {
+			data-on:click={ fmt.Sprintf("$%s = true; @post('/api/videos/%s/regenerate-assets')", signal, videoID) }
+		} else {
+			data-on:click={ fmt.Sprintf("$%s = true; @post('/api/videos/%s/regenerate-assets?scope=%s')", signal, videoID, scope) }
+		}
+		data-attr:disabled={ "$" + signal }
+		class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+	>
+		<i class={ "fa-sharp fa-solid fa-" + icon } data-class:fa-spin={ "$" + signal }></i>
+		<span data-show={ "!$" + signal }>{ label }</span>
+		<span data-show={ "$" + signal }>WORKING...</span>
+	</button>
+}

@@ -1,0 +1,8 @@
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\home.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\library.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\video-detail.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\cut-editor.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\filters.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\settings.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\admin.mp4'
+file 'Y:\rewind-app\screenshots\readme\video-clips\stitch\jobs.mp4'

@@ -1,0 +1,67 @@
+package components
+
+import "strconv"
+
+// ============================================================================
+// FORM COMPONENTS
+// ============================================================================
+
+// Input renders a text input with label
+templ Input(label, name, inputType string, required bool, placeholder string) {
+	<div class="space-y-2">
+		if label != "" {
+			<label for={ name } class="block font-mono text-xs uppercase tracking-wider text-white/80">
+				{ label }
+				if required {
+					<span class="text-white/40 ml-1">*</span>
+				}
+			</label>
+		}
+		<input
+			type={ inputType }
+			id={ name }
+			name={ name }
+			required?={ required }
+			placeholder={ placeholder }
+			class="w-full px-3 py-2 bg-black border-2 border-white/20 text-white font-mono text-sm placeholder:text-white/40 focus:outline-none focus:border-white/60 transition-colors"
+		/>
+	</div>
+}
+
+// Textarea renders a multi-line text input
+templ Textarea(label, name string, rows int, required bool, placeholder string) {
+	<div class="space-y-2">
+		if label != "" {
+			<label for={ name } class="block font-mono text-xs uppercase tracking-wider text-white/80">
+				{ label }
+				if required {
+					<span class="text-white/40 ml-1">*</span>
+				}
+			</label>
+		}
+		<textarea
+			id={ name }
+			name={ name }
+			rows={ strconv.Itoa(rows) }
+			required?={ required }
+			placeholder={ placeholder }
+			class="w-full px-3 py-2 bg-black border-2 border-white/20 text-white font-mono text-sm placeholder:text-white/40 focus:outline-none focus:border-white/60 transition-colors resize-vertical"
+		></textarea>
+	</div>
+}
+
+// Checkbox renders a checkbox with label
+templ Checkbox(label, name string, checked bool) {
+	<div class="flex items-center gap-3">
+		<input
+			type="checkbox"
+			id={ name }
+			name={ name }
+			checked?={ checked }
+			class="w-4 h-4 bg-black border-2 border-white/40 text-white focus:ring-2 focus:ring-white/20 transition-colors"
+		/>
+		<label for={ name } class="font-mono text-sm text-white/90 cursor-pointer">
+			{ label }
+		</label>
+	</div>
+}

@@ -1,0 +1,184 @@
+# golangci-lint configuration for rewind-app
+# Run with: golangci-lint run
+
+version = "2"
+
+[run]
+    timeout = "5m"
+    tests = true
+    build-tags = []
+    skip-dirs = [
+        "static",
+        "node_modules",
+        "chrome-extension",
+    ]
+    skip-files = [
+        ".*_gen\\.go$",        # sqlc generated files
+        ".*_templ\\.go$",      # templ generated files
+    ]
+    modules-download-mode = "readonly"
+
+[linters]
+    enable = [
+        # Core linters
+        "errcheck",      # Check for unchecked errors
+        "govet",         # Go vet
+        "ineffassign",   # Detect ineffectual assignments
+        "staticcheck",   # Staticcheck (replaces gosimple + unused)
+        
+        # Additional useful linters
+        "misspell",      # Fix common spelling mistakes
+        "unconvert",     # Remove unnecessary type conversions
+        "unparam",       # Report unused function parameters
+        "gosec",         # Security issues (G* checks)
+        "bodyclose",     # Check HTTP response body closed
+        "sqlclosecheck", # Check sql.Rows/sql.Stmt closed
+        "noctx",         # Check for sends to channels without context
+        "errname",       # Check error naming conventions
+        "errorlint",     # Error wrapping issues
+        "gochecknoinits", # Check for init functions
+        "goconst",       # Repeated strings that could be constants
+        "gocritic",      # Comprehensive diagnostics
+        "gocyclo",       # Cyclomatic complexity
+        "revive",        # Replacement for golint
+        "whitespace",    # Whitespace issues
+    ]
+
+[formatters]
+    enable = [
+        "gofmt",         # Check formatting
+        "goimports",     # Check import formatting
+    ]
+    
+    [formatters.goimports]
+        local-prefixes = "thirdcoast.systems/rewind"
+
+[linters-settings]
+    [linters-settings.errcheck]
+        check-blank = true
+        check-type-assertions = true
+        
+    [linters-settings.govet]
+        check-shadowing = false  # Too noisy in Echo handlers
+        
+    [linters-settings.gocyclo]
+        min-complexity = 15  # Reasonable for web handlers
+        
+    [linters-settings.goconst]
+        min-len = 3
+        min-occurrences = 3
+        ignore-tests = true
+        
+    [linters-settings.misspell]
+        locale = "US"
+        
+    [linters-settings.gosec]
+        excludes = [
+            "G304",  # File path from variable (common in file handling)
+            "G204",  # Subprocess with variable (yt-dlp execution)
+        ]
+        
+    [linters-settings.revive]
+        ignore-generated-header = true
+        severity = "warning"
+        confidence = 0.8
+        
+        [[linters-settings.revive.rules]]
+            name = "blank-imports"
+            
+        [[linters-settings.revive.rules]]
+            name = "context-as-argument"
+            
+        [[linters-settings.revive.rules]]
+            name = "dot-imports"
+            
+        [[linters-settings.revive.rules]]
+            name = "error-return"
+            
+        [[linters-settings.revive.rules]]
+            name = "error-strings"
+            
+        [[linters-settings.revive.rules]]
+            name = "error-naming"
+            
+        [[linters-settings.revive.rules]]
+            name = "exported"
+            
+        [[linters-settings.revive.rules]]
+            name = "increment-decrement"
+            
+        [[linters-settings.revive.rules]]
+            name = "var-naming"
+            
+        [[linters-settings.revive.rules]]
+            name = "package-comments"
+            
+        [[linters-settings.revive.rules]]
+            name = "range"
+            
+        [[linters-settings.revive.rules]]
+            name = "receiver-naming"
+            
+        [[linters-settings.revive.rules]]
+            name = "indent-error-flow"
+            
+        [[linters-settings.revive.rules]]
+            name = "empty-block"
+            
+        [[linters-settings.revive.rules]]
+            name = "superfluous-else"
+            
+        [[linters-settings.revive.rules]]
+            name = "unused-parameter"
+            
+        [[linters-settings.revive.rules]]
+            name = "unreachable-code"
+            
+        [[linters-settings.revive.rules]]
+            name = "redefines-builtin-id"
+
+[issues]
+    exclude-use-default = false
+    max-issues-per-linter = 0
+    max-same-issues = 0
+    
+    # Exclude generated files
+    [[issues.exclude-rules]]
+        path = ".*_gen\\.go$"
+        linters = ["all"]
+        
+    [[issues.exclude-rules]]
+        path = ".*_templ\\.go$"
+        linters = ["all"]
+        
+    # Exclude test files from certain checks
+    [[issues.exclude-rules]]
+        path = "_test\\.go"
+        linters = ["gocyclo", "errcheck", "gosec", "goconst"]
+        
+    # Exclude migrations from certain checks (raw SQL)
+    [[issues.exclude-rules]]
+        path = "internal/db/sql/migrations/.*\\.sql$"
+        linters = ["all"]
+        
+    # Allow underscore imports for database drivers
+    [[issues.exclude-rules]]
+        text = "blank-imports"
+        path = "cmd/.*/main\\.go"
+        
+    # Echo handlers often shadow 'err'
+    [[issues.exclude-rules]]
+        text = "shadow: declaration of \"err\""
+        path = "cmd/web/.*\\.go"
+        
+    # Worker loops intentionally infinite
+    [[issues.exclude-rules]]
+        text = "SA1019"  # Deprecated
+        path = "cmd/(downloader|ingest)/.*\\.go"
+
+[output]
+    format = "colored-line-number"
+    print-issued-lines = true
+    print-linter-name = true
+    uniq-by-line = true
+    sort-results = true

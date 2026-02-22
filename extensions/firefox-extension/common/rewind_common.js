@@ -1,0 +1,251 @@
+(function (root) {
+  'use strict';
+
+  const STORAGE_KEYS = {
+    serverUrl: 'serverUrl',
+    authToken: 'authToken',
+    cookiesEnabledBySite: 'cookiesEnabledBySite'
+  };
+
+  const ALARM_NAME = 'rewindStatusPoll';
+  const DEFAULT_POLL_MINUTES = 1;
+
+  function normalizeServerUrl(raw) {
+    const value = String(raw || '').trim();
+    if (!value) throw new Error('Server URL is required');
+    const u = new URL(value);
+    return u.origin;
+  }
+
+  function randomHex(bytesLen) {
+    const bytes = new Uint8Array(bytesLen);
+    crypto.getRandomValues(bytes);
+    let out = '';
+    for (const b of bytes) out += b.toString(16).padStart(2, '0');
+    return out;
+  }
+
+  function buildAuthStartUrl({ serverUrl, clientId, redirectUrl, state }) {
+    const authUrl = new URL(`${serverUrl}/api/extension/auth/start`);
+    authUrl.searchParams.set('client_id', String(clientId || ''));
+    authUrl.searchParams.set('redirect_uri', String(redirectUrl || ''));
+    authUrl.searchParams.set('state', String(state || ''));
+    return authUrl.toString();
+  }
+
+  function parseAuthResponseUrl({ responseUrl, expectedState }) {
+    const u = new URL(String(responseUrl || ''));
+    const rawHash = u.hash && u.hash.startsWith('#') ? u.hash.slice(1) : u.hash;
+    const params = new URLSearchParams(rawHash);
+
+    const token = params.get('token');
+    const returnedState = params.get('state');
+
+    if (!token) throw new Error('Login failed: missing token');
+    if (String(returnedState || '') !== String(expectedState || '')) throw new Error('Login failed: state mismatch');
+
+    return token;
+  }
+
+  async function fetchJson(url, { method = 'GET', headers = {}, body } = {}) {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        ...headers
+      },
+      body
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${text}`.trim());
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('Invalid JSON response');
+    }
+  }
+
+  async function getStatus({ serverUrl, authToken, siteKey }) {
+    const u = new URL(`${serverUrl}/api/extension/status`);
+    if (siteKey) u.searchParams.set('site', siteKey);
+
+    return fetchJson(u.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authToken}`
+      }
+    });
+  }
+
+  async function archiveUrl({ serverUrl, authToken, url }) {
+    return fetchJson(`${serverUrl}/api/extension/archive`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ url })
+    });
+  }
+
+  async function uploadCookiesContent({ serverUrl, authToken, cookiesContent }) {
+    return fetchJson(`${serverUrl}/api/extension/cookies`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ cookies_content: cookiesContent })
+    });
+  }
+
+  async function logout({ serverUrl, authToken }) {
+    try {
+      await fetchJson(`${serverUrl}/api/extension/logout`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  function siteKeyFromUrl(raw) {
+    if (!raw) return '';
+    let u;
+    try {
+      u = new URL(raw);
+    } catch {
+      return '';
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    const host = String(u.hostname || '').toLowerCase();
+    if (!host) return '';
+    if (host === 'localhost') return host;
+
+    // IPs
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.includes(':')) {
+      return host;
+    }
+
+    const parts = host.split('.').filter(Boolean);
+    if (parts.length <= 2) return host;
+
+    const last2 = parts.slice(-2).join('.');
+    const multipart = new Set([
+      'co.uk', 'org.uk', 'gov.uk', 'ac.uk',
+      'com.au', 'net.au', 'org.au',
+      'co.jp', 'ne.jp',
+      'co.kr', 'ne.kr',
+      'com.br', 'com.mx',
+      'com.cn', 'com.tw'
+    ]);
+
+    if (multipart.has(last2) && parts.length >= 3) {
+      return parts.slice(-3).join('.');
+    }
+
+    return last2;
+  }
+
+  function originsForSiteKey(siteKey) {
+    if (
+      siteKey === 'localhost' ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(siteKey) ||
+      siteKey.includes(':')
+    ) {
+      return [`http://${siteKey}/*`, `https://${siteKey}/*`];
+    }
+
+    return [
+      `http://${siteKey}/*`,
+      `https://${siteKey}/*`,
+      `http://*.${siteKey}/*`,
+      `https://*.${siteKey}/*`
+    ];
+  }
+
+  function cookiesToNetscape(cookies) {
+    if (!Array.isArray(cookies) || cookies.length === 0) return '';
+
+    const header = ['# Netscape HTTP Cookie File', '# This file was generated by Rewind extension', ''];
+
+    const lines = [];
+    for (const c of cookies) {
+      const domain = sanitizeNetscapeField(String(c.domain ?? ''));
+      if (!domain) continue;
+      const flag = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+      const path = sanitizeNetscapeField(String(c.path ?? '/'));
+      const secure = c.secure ? 'TRUE' : 'FALSE';
+      const exp = Number.isFinite(c.expirationDate) ? Math.floor(c.expirationDate) : 0;
+      const name = sanitizeNetscapeField(String(c.name ?? ''));
+      const value = sanitizeNetscapeField(String(c.value ?? ''));
+      if (!name) continue;
+      lines.push([domain, flag, path, secure, String(exp), name, value].join('\t'));
+    }
+
+    if (lines.length === 0) return '';
+    return header.concat(lines).join('\n');
+  }
+
+  function sanitizeNetscapeField(value) {
+    return String(value).replace(/[\t\r\n]/g, ' ');
+  }
+
+  async function ensureStatusAlarm(adapter) {
+    await adapter.alarmsEnsure({ name: ALARM_NAME, periodMinutes: DEFAULT_POLL_MINUTES });
+  }
+
+  async function updateBadge(adapter) {
+    try {
+      const { serverUrl, authToken } = await adapter.storageGet([STORAGE_KEYS.serverUrl, STORAGE_KEYS.authToken]);
+
+      if (!serverUrl) {
+        await adapter.badgeSet({ color: '#6B7280', text: '' });
+        return;
+      }
+
+      if (!authToken) {
+        await adapter.badgeSet({ color: '#DC2626', text: '' });
+        return;
+      }
+
+      const data = await getStatus({ serverUrl, authToken });
+      const running = Number(data?.running_jobs ?? 0);
+
+      if (data?.authenticated) {
+        await adapter.badgeSet({ color: '#16A34A', text: running > 0 ? String(running) : '✓' });
+        return;
+      }
+
+      await adapter.badgeSet({ color: '#DC2626', text: '' });
+    } catch {
+      await adapter.badgeSet({ color: '#DC2626', text: '!' });
+    }
+  }
+
+  root.RewindCommon = {
+    STORAGE_KEYS,
+    ALARM_NAME,
+    DEFAULT_POLL_MINUTES,
+    normalizeServerUrl,
+    randomHex,
+    buildAuthStartUrl,
+    parseAuthResponseUrl,
+    getStatus,
+    archiveUrl,
+    uploadCookiesContent,
+    logout,
+    siteKeyFromUrl,
+    originsForSiteKey,
+    cookiesToNetscape,
+    ensureStatusAlarm,
+    updateBadge
+  };
+})(typeof window !== 'undefined' ? window : self);

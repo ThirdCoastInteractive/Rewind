@@ -1,0 +1,97 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+)
+
+type KeybindingAction struct {
+	ID         string
+	Label      string
+	DefaultKey string
+}
+
+type KeybindingRowModel struct {
+	ID         string
+	Label      string
+	DefaultKey string
+	DisplayKey string
+	HasCustom  bool
+}
+
+templ SettingsKeybindingsPage(username string, rows []KeybindingRowModel, keybindings map[string]string) {
+	@Layout("Keyboard Shortcuts", username) {
+		@Container("") {
+			@KeybindingsData(keybindings)
+			<h1 class={ viewtypes.PageHeading + " mb-4" }>KEYBOARD SHORTCUTS</h1>
+			@components.Card(false) {
+				@components.CardHeader("KEYBINDINGS", "Click a field, press any key to rebind. Hardware keys (F14-F24) are recommended.")
+				@components.CardBody(true) {
+					@KeybindingSettingsContent(rows)
+				}
+			}
+			<div class="text-center mt-4">
+				@components.LinkButton("/settings", "ghost", "sm", "arrow-left", false) {
+					BACK TO SETTINGS
+				}
+			</div>
+		}
+	}
+}
+
+templ KeybindingSettingsContent(rows []KeybindingRowModel) {
+	<div id="keybinding-settings" class="space-y-3" data-signals="{keybindingAction: '', keybindingKey: ''}">
+		@KeybindingError("")
+		<div id="keybinding-rows" class="space-y-2">
+			for _, row := range rows {
+				@KeybindingRow(row)
+			}
+		</div>
+		<div class="pt-3 border-t-2 border-white/10">
+			<button
+				type="button"
+				class={ viewtypes.GhostButtonSm }
+				data-on:click="@post('/api/settings/keybindings/reset')"
+			>
+				RESET ALL TO DEFAULTS
+			</button>
+		</div>
+	</div>
+}
+
+templ KeybindingError(message string) {
+	<div
+		id="keybinding-error"
+		class={
+			"text-xs font-mono border-2 border-white/20 bg-black px-3 py-2",
+			templ.KV("hidden", message == ""),
+		}
+	>
+		{ message }
+	</div>
+}
+
+templ KeybindingRow(row KeybindingRowModel) {
+	<div id={ "kb-" + row.ID } class="flex flex-wrap items-center gap-3">
+		<label class="w-48 text-xs font-mono uppercase tracking-wider text-white/70">{ row.Label }</label>
+		<input
+			type="text"
+			readonly
+			value={ row.DisplayKey }
+			placeholder={ row.DefaultKey }
+			class="w-32 px-2 py-1 bg-black border-2 border-white/20 text-center font-mono text-xs cursor-pointer focus:border-white/60"
+			data-on:keydown__prevent={ fmt.Sprintf("$keybindingAction = '%s'; $keybindingKey = evt.key; @post('/api/settings/keybindings')", row.ID) }
+		/>
+		if row.HasCustom {
+			<button
+				type="button"
+				class="text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white"
+				data-on:click={ fmt.Sprintf("@delete('/api/settings/keybindings/%s')", row.ID) }
+			>
+				RESET
+			</button>
+		}
+		<div class="text-xs font-mono text-white/30">Default: { row.DefaultKey }</div>
+	</div>
+}

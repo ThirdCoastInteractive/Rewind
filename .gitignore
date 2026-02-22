@@ -1,0 +1,13 @@
+.env
+node_modules/
+.npmrc
+bin/*
+*.exe
+.vscode/
+
+# Test artifacts with binary data
+pkg/ffmpeg/testdata/*
+
+.github/docs
+.github/copilot-instructions.md
+docker-compose.yml

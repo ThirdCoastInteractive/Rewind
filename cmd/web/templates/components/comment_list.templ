@@ -1,0 +1,122 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// CommentItem holds the data needed to render a single comment.
+type CommentItem struct {
+	ID          string
+	Author      string
+	AuthorURL   string
+	Text        string
+	LikeCount   int64
+	PublishedAt string // pre-formatted
+	ReplyCount  int    // number of replies (0 = no replies)
+}
+
+// CommentListData holds everything for the comment section.
+type CommentListData struct {
+	VideoID     string
+	Comments    []CommentItem
+	TotalCount  int64
+	Page        int
+	PageSize    int
+	HasMore     bool
+	SearchQuery string
+}
+
+// CommentSection is the full comment section with search + list.
+templ CommentSection(data CommentListData) {
+	<div id="comments-section-inner">
+		<div class="flex items-center justify-between mb-3">
+			<div class="text-xs text-white/40 font-mono">
+				{ format.Number(int(data.TotalCount)) } COMMENTS
+			</div>
+			<div class="w-64">
+				<input
+					type="text"
+					class="w-full px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+					placeholder="Search comments..."
+					data-bind="_commentSearch"
+					data-on:input__debounce.300ms={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", data.VideoID) }
+					data-on:keydown__stop="true"
+				/>
+			</div>
+		</div>
+		<div id="comments-list-inner">
+			@CommentList(data)
+		</div>
+	</div>
+}
+
+// CommentList renders just the comment rows + pagination. Targeted by SSE for search/pagination.
+templ CommentList(data CommentListData) {
+	<div id="comments-list-content" class="space-y-3">
+		if len(data.Comments) == 0 {
+			if data.SearchQuery != "" {
+				<div class="text-xs text-white/40 font-mono py-4 text-center">
+					No comments matching "{ data.SearchQuery }"
+				</div>
+			} else {
+				<div class="text-xs text-white/40 font-mono py-4 text-center">
+					No comments yet.
+				</div>
+			}
+		}
+		for _, c := range data.Comments {
+			@CommentRow(c)
+		}
+		if data.HasMore {
+			<div class="pt-2 text-center">
+				<button
+					type="button"
+					class="px-4 py-1.5 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+					data-on:click={ fmt.Sprintf("$_commentPage = %d; @get('/api/videos/%s/comments/render')", data.Page+1, data.VideoID) }
+				>
+					LOAD MORE
+				</button>
+			</div>
+		}
+	</div>
+}
+
+// CommentRow renders a single comment.
+templ CommentRow(c CommentItem) {
+	<div class="border-b border-white/5 pb-2">
+		<div class="flex items-start gap-2">
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-2 mb-0.5">
+					if c.AuthorURL != "" {
+						<a
+							href={ templ.SafeURL(c.AuthorURL) }
+							target="_blank"
+							rel="noopener"
+							class="text-xs font-mono text-white/70 hover:text-white truncate"
+							title={ c.Author }
+						>
+							{ c.Author }
+						</a>
+					} else {
+						<span class="text-xs font-mono text-white/70 truncate" title={ c.Author }>
+							{ c.Author }
+						</span>
+					}
+					if c.PublishedAt != "" {
+						<span class="text-xs text-white/30 font-mono shrink-0">{ c.PublishedAt }</span>
+					}
+					if c.LikeCount > 0 {
+						<span class="text-xs text-white/30 font-mono shrink-0">
+							<i class="fa-sharp fa-solid fa-thumbs-up mr-0.5" aria-hidden="true"></i>
+							{ format.Number(int(c.LikeCount)) }
+						</span>
+					}
+				</div>
+				<div class="text-xs text-white/80 whitespace-pre-wrap break-words leading-relaxed">
+					{ c.Text }
+				</div>
+			</div>
+		</div>
+	</div>
+}

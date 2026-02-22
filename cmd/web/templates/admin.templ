@@ -1,0 +1,528 @@
+package templates
+
+import (
+	"strings"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+type AdminUserRow struct {
+	ID       string
+	UserName string
+	Email    string
+	Role     string
+	Enabled  bool
+	IsSelf   bool
+}
+
+// DashboardMetrics holds all the data for admin dashboard display.
+type DashboardMetrics struct {
+	TotalVideos          int64 `json:"-"`
+	TotalClips           int64 `json:"-"`
+	TotalMarkers         int64 `json:"-"`
+	TotalUsers           int64 `json:"-"`
+	TotalComments        int64 `json:"-"`
+	TotalStorageBytes    int64 `json:"-"`
+	TotalDurationSeconds int64 `json:"-"`
+	// Formatted display values
+	StorageDisplay  string `json:"-"`
+	DurationDisplay string `json:"-"`
+	// Chart data (serialized to JSON for D3)
+	ChartDataJSON string `json:"-"`
+}
+
+// DashboardChartData is the JSON structure passed to D3.
+type DashboardChartData struct {
+	VideosPerDay      []DayCount        `json:"videosPerDay"`
+	TopSources        []SourceCount     `json:"topSources"`
+	StorageByUploader []UploaderStorage `json:"storageByUploader"`
+}
+
+type DayCount struct {
+	Day   string `json:"day"`
+	Count int64  `json:"count"`
+}
+
+type SourceCount struct {
+	Source string `json:"source"`
+	Count  int64  `json:"count"`
+}
+
+type UploaderStorage struct {
+	Uploader   string `json:"uploader"`
+	TotalBytes int64  `json:"totalBytes"`
+}
+
+// JobStatusRow holds a single job type + status + count.
+type JobStatusRow struct {
+	JobType string
+	Status  string
+	Count   int64
+}
+
+templ AdminHome(username string, alertType string, alertMsg string, metrics DashboardMetrics, jobStatuses []JobStatusRow) {
+	@Layout("Admin", username) {
+		@AdminHomeContent(alertType, alertMsg, metrics, jobStatuses)
+		<script src="/static/dist/admin-dashboard.js"></script>
+	}
+}
+
+templ AdminHomeContent(alertType string, alertMsg string, metrics DashboardMetrics, jobStatuses []JobStatusRow) {
+	@Container("wide") {
+		<h1 class={ viewtypes.PageHeading + " mb-4" }>ADMIN</h1>
+		if alertMsg != "" {
+			@Alert(alertType, alertMsg)
+		}
+		<!-- Navigation Cards -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+			@components.AdminNavCard("/settings", "INSTANCE SETTINGS", "Enable or disable user registration.")
+			@components.AdminNavCard("/admin/users", "USERS", "View users, manage roles, and enable/disable accounts.")
+			@components.AdminNavCard("/admin/exports", "CLIP EXPORTS", "Manage export queue, view status, cleanup files.")
+			@components.AdminNavCard("/admin/asset-health", "ASSET HEALTH", "View asset generation errors and retry failed videos.")
+		</div>
+		<!-- Stat Cards -->
+		<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
+			@adminStatCard("VIDEOS", format.Itoa64(metrics.TotalVideos))
+			@adminStatCard("CLIPS", format.Itoa64(metrics.TotalClips))
+			@adminStatCard("MARKERS", format.Itoa64(metrics.TotalMarkers))
+			@adminStatCard("USERS", format.Itoa64(metrics.TotalUsers))
+			@adminStatCard("COMMENTS", format.Itoa64(metrics.TotalComments))
+			@adminStatCard("STORAGE", metrics.StorageDisplay)
+			@adminStatCard("DURATION", metrics.DurationDisplay)
+		</div>
+		<!-- Charts Row -->
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+			@adminChartCard("ARCHIVES (30 DAYS)", "chart-videos-per-day", "")
+			@adminChartCard("SOURCES", "chart-sources", "")
+		</div>
+		<!-- Bottom Row: Storage + Jobs -->
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+			@adminChartCard("STORAGE BY UPLOADER", "chart-storage", "")
+			@adminJobStatusCard(jobStatuses)
+		</div>
+		<!-- Hidden JSON data element for D3 -->
+		<div id="admin-dashboard-data" class="hidden" data-chart={ metrics.ChartDataJSON }></div>
+	}
+}
+
+templ adminStatCard(label, value string) {
+	<div class="bg-black border-2 border-white/10 p-3">
+		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">{ label }</div>
+		<div class="text-white text-lg font-mono font-bold">{ value }</div>
+	</div>
+}
+
+templ adminChartCard(title, chartID, extraClasses string) {
+	<div class={ "bg-black border-2 border-white/10 p-4", extraClasses }>
+		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-3">{ title }</div>
+		<div id={ chartID } class="w-full h-48"></div>
+	</div>
+}
+
+templ adminJobStatusCard(jobStatuses []JobStatusRow) {
+	<div class="bg-black border-2 border-white/10 p-4">
+		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-3">JOB STATUS</div>
+		<div class="grid grid-cols-2 gap-4">
+			@adminJobTypeColumn("DOWNLOAD", jobStatuses, "download")
+			@adminJobTypeColumn("INGEST", jobStatuses, "ingest")
+		</div>
+	</div>
+}
+
+templ adminJobTypeColumn(title string, jobStatuses []JobStatusRow, jobType string) {
+	<div>
+		<div class="text-white text-xs font-mono font-bold uppercase tracking-wider mb-2 border-b border-white/10 pb-1">{ title }</div>
+		<div class="space-y-1">
+			for _, js := range jobStatuses {
+				if js.JobType == jobType {
+					<div class="flex justify-between items-center font-mono text-sm">
+						<span class="flex items-center gap-2">
+							<span class={ adminJobStatusDot(js.Status) }></span>
+							<span class="text-white/60 text-xs uppercase">{ js.Status }</span>
+						</span>
+						<span class="text-white font-bold">{ format.Itoa64(js.Count) }</span>
+					</div>
+				}
+			}
+		</div>
+	</div>
+}
+
+func adminJobStatusDot(status string) string {
+	switch status {
+	case "queued":
+		return "w-2 h-2 rounded-full bg-yellow-500 inline-block"
+	case "processing":
+		return "w-2 h-2 rounded-full bg-blue-500 inline-block"
+	case "succeeded":
+		return "w-2 h-2 rounded-full bg-green-500 inline-block"
+	case "failed":
+		return "w-2 h-2 rounded-full bg-red-500 inline-block"
+	default:
+		return "w-2 h-2 rounded-full bg-white/20 inline-block"
+	}
+}
+
+templ AdminSettings(username string, registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, alertType string, alertMsg string) {
+	@Layout("Admin Settings", username) {
+		@AdminSettingsContent(registrationEnabled, clipExportStorageLimit, adminEmails, alertType, alertMsg)
+	}
+}
+
+templ AdminSettingsContent(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, alertType string, alertMsg string) {
+	@Container("") {
+		@components.AdminPageHeader("ADMIN SETTINGS", "/admin")
+		if alertMsg != "" {
+			@Alert(alertType, alertMsg)
+		}
+		@AdminSettingsForm(registrationEnabled, clipExportStorageLimit, adminEmails)
+	}
+}
+
+templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string) {
+	<form method="POST" action="/admin/settings" class="space-y-4">
+		@components.Card(false) {
+			@components.CardHeader("REGISTRATION", "When disabled, new users cannot register.")
+			@components.CardBody(true) {
+				@components.Checkbox("Registration enabled", "registration_enabled", registrationEnabled)
+			}
+		}
+		@components.Card(false) {
+			@components.CardHeader("CLIP EXPORTS", "Storage cap for exported clips. When the cap is exceeded, the oldest exports (least-recently accessed) are deleted until under the limit.")
+			@components.CardBody(true) {
+				<div>
+					<label class="block text-xs font-mono uppercase tracking-wider text-white mb-1" for="clip_export_storage_limit">EXPORT STORAGE LIMIT</label>
+					<input
+						id="clip_export_storage_limit"
+						name="clip_export_storage_limit"
+						type="text"
+						value={ clipExportStorageLimit }
+						placeholder="e.g., 10G, 500M, 1K"
+						class={ viewtypes.InputClass }
+					/>
+					<p class="mt-1 text-xs text-white/40 font-mono">Enter size like 10G, 500M, 1K. Leave empty for unlimited.</p>
+				</div>
+				@components.FormButton("primary", "md", "", false) {
+					SAVE
+				}
+			}
+		}
+		@components.Card(false) {
+			@components.CardHeader("ADMIN EMAILS", "List of email addresses to automatically promote to admin role upon registration.")
+			@components.CardBody(true) {
+				<div>
+					<label class="block text-xs font-mono uppercase tracking-wider text-white mb-1" for="admin_emails">ADMIN EMAILS (COMMA-SEPARATED)</label>
+					<input
+						id="admin_emails"
+						name="admin_emails"
+						type="text"
+						value={ strings.Join(adminEmails, ", ") }
+						placeholder="admin@example.com, boss@company.com"
+						class={ viewtypes.InputClass }
+					/>
+				</div>
+				@components.FormButton("primary", "md", "", false) {
+					SAVE
+				}
+			}
+		}
+	</form>
+}
+
+templ AdminUsers(username string, users []AdminUserRow, alertType string, alertMsg string) {
+	@Layout("Admin Users", username) {
+		@AdminUsersContent(users, alertType, alertMsg)
+	}
+}
+
+templ AdminUsersContent(users []AdminUserRow, alertType string, alertMsg string) {
+	@Container("wide") {
+		@components.AdminPageHeader("USERS", "/admin")
+		if alertMsg != "" {
+			@Alert(alertType, alertMsg)
+		}
+		@components.Card(false) {
+			<div class="overflow-x-auto">
+				@components.Table([]string{"USER", "EMAIL", "ROLE", "STATUS", "ACTIONS"}, false) {
+					for _, u := range users {
+						@components.TableRow(false, "") {
+							@components.TableCell(false) {
+								<div class="text-sm font-mono text-white">{ u.UserName }</div>
+								if u.IsSelf {
+									<div class="text-xs text-white/40 font-mono">YOU</div>
+								}
+							}
+							@components.TableCell(false) {
+								<span class="text-sm font-mono text-white/80">{ u.Email }</span>
+							}
+							@components.TableCell(false) {
+								if u.Role == "admin" {
+									<span class="inline-flex items-center px-2 py-1 border-2 border-white text-xs font-mono uppercase bg-white text-black">ADMIN</span>
+								} else {
+									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white">USER</span>
+								}
+							}
+							@components.TableCell(false) {
+								if u.Enabled {
+									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white">ENABLED</span>
+								} else {
+									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white/40">DISABLED</span>
+								}
+							}
+							@components.TableCell(false) {
+								<div class="flex justify-end gap-2">
+									if u.Role != "admin" {
+										<form method="POST" action={ "/admin/users/" + u.ID + "/role" }>
+											<input type="hidden" name="role" value="admin"/>
+											@components.FormButton("secondary", "sm", "", false) {
+												PROMOTE
+											}
+										</form>
+									} else {
+										if !u.IsSelf {
+											<form method="POST" action={ "/admin/users/" + u.ID + "/role" }>
+												<input type="hidden" name="role" value="user"/>
+												@components.FormButton("secondary", "sm", "", false) {
+													DEMOTE
+												}
+											</form>
+										}
+									}
+									if u.Role != "admin" {
+										if u.Enabled {
+											<form method="POST" action={ "/admin/users/" + u.ID + "/enable" }>
+												<input type="hidden" name="enabled" value="false"/>
+												@components.FormButton("danger", "sm", "", false) {
+													DISABLE
+												}
+											</form>
+										} else {
+											<form method="POST" action={ "/admin/users/" + u.ID + "/enable" }>
+												<input type="hidden" name="enabled" value="true"/>
+												@components.FormButton("primary", "sm", "", false) {
+													ENABLE
+												}
+											</form>
+										}
+									}
+								</div>
+							}
+						}
+					}
+				}
+			</div>
+		}
+	}
+}
+
+// AdminExportRow represents an export for the admin table
+type AdminExportRow struct {
+	ID           string
+	ClipID       string
+	VideoID      string
+	Status       string
+	Variant      string
+	FilePath     string
+	SizeBytes    int64
+	ProgressPct  int32
+	Attempts     int32
+	LastError    string
+	CreatedAt    string
+	ClipLabel    string
+	ClipDuration float64
+	VideoTitle   string
+}
+
+// AdminExportStats holds export statistics
+type AdminExportStats struct {
+	QueuedCount     int64
+	ProcessingCount int64
+	ReadyCount      int64
+	ErrorCount      int64
+	TotalSizeBytes  int64
+}
+
+templ AdminExports(username string, stats *AdminExportStats, alertType string, alertMsg string) {
+	@Layout("Admin Exports", username) {
+		@AdminExportsContent(stats, alertType, alertMsg)
+	}
+}
+
+templ AdminExportsContent(stats *AdminExportStats, alertType string, alertMsg string) {
+	@Container("wide") {
+		@components.AdminPageHeader("CLIP EXPORTS", "/admin")
+		if alertMsg != "" {
+			@Alert(alertType, alertMsg)
+		}
+		<!-- Stats Cards -->
+		if stats != nil {
+			<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+				@AdminExportStatCard("QUEUED", stats.QueuedCount, "white/60")
+				@AdminExportStatCard("PROCESSING", stats.ProcessingCount, "yellow-400")
+				@AdminExportStatCard("READY", stats.ReadyCount, "green-400")
+				@AdminExportStatCard("ERROR", stats.ErrorCount, "red-400")
+				<div class={ viewtypes.InfoBoxClass }>
+					<div class={ viewtypes.SectionLabel + " mb-1" }>DISK USAGE</div>
+					<div class="text-lg font-mono text-white">{ format.Bytes(stats.TotalSizeBytes) }</div>
+				</div>
+			</div>
+		}
+		<!-- Bulk Actions -->
+		<div class="flex flex-wrap gap-2 mb-4">
+			<form method="POST" action="/admin/exports/requeue-errors" onsubmit="return confirm('Requeue all failed exports?')">
+				@components.FormButton("primary", "sm", "", false) {
+					REQUEUE ERRORS
+				}
+			</form>
+			<form method="POST" action="/admin/exports/delete/ready" onsubmit="return confirm('Delete all ready exports and their files?')">
+				@components.FormButton("danger", "sm", "", false) {
+					DELETE READY
+				}
+			</form>
+			<form method="POST" action="/admin/exports/delete/error" onsubmit="return confirm('Delete all error exports?')">
+				@components.FormButton("danger", "sm", "", false) {
+					DELETE ERRORS
+				}
+			</form>
+			<form method="POST" action="/admin/exports/delete-all" onsubmit="return confirm('DELETE ALL EXPORTS? This cannot be undone!')">
+				@components.FormButton("danger", "sm", "", false) {
+					DELETE ALL
+				}
+			</form>
+		</div>
+		<!-- Exports Table -->
+		<div id="exports-table" data-init="@get('/admin/exports/index')">
+			<div class="text-white/60 font-mono text-sm py-8 text-center">Loading exports...</div>
+		</div>
+	}
+}
+
+templ AdminExportStatCard(label string, count int64, color string) {
+	<div class={ viewtypes.InfoBoxClass }>
+		<div class={ viewtypes.SectionLabel + " mb-1" }>{ label }</div>
+		<div class={ "text-xl font-mono text-" + color }>{ format.Itoa64(count) }</div>
+	</div>
+}
+
+templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, total int, page int, pageSize int) {
+	<div id="exports-table">
+		if len(exports) == 0 {
+			<div class="text-white/60 font-mono text-sm py-8 text-center border-2 border-white/10">No exports found</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm font-mono">
+					<thead>
+						<tr class="border-b-2 border-white/20 text-left">
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">STATUS</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">CLIP</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">VIDEO</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">VARIANT</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">SIZE</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">PROGRESS</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">ACTIONS</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, exp := range exports {
+							<tr class="border-b border-white/10 hover:bg-white/5">
+								<td class="py-2 px-2">
+									@AdminExportStatusBadge(exp.Status)
+								</td>
+								<td class="py-2 px-2 max-w-32">
+									<a href={ templ.SafeURL("/videos/" + exp.VideoID + "/cut#clip=" + exp.ClipID) } class="text-white/80 hover:text-white underline" title={ exp.ClipLabel }>
+										{ format.Truncate(exp.ClipLabel, 20) }
+									</a>
+									<div class="text-xs text-white/40">{ format.Duration(exp.ClipDuration) }</div>
+								</td>
+								<td class="py-2 px-2 max-w-48">
+									<a href={ templ.SafeURL("/videos/" + exp.VideoID) } class="text-white/60 hover:text-white underline" title={ exp.VideoTitle }>
+										{ format.Truncate(exp.VideoTitle, 30) }
+									</a>
+								</td>
+								<td class="py-2 px-2 text-white/60">{ exp.Variant }</td>
+								<td class="py-2 px-2 text-white/60">
+									if exp.SizeBytes > 0 {
+										{ format.Bytes(exp.SizeBytes) }
+									} else {
+										-
+									}
+								</td>
+								<td class="py-2 px-2">
+									if exp.Status == "processing" {
+										<span class="text-yellow-400">{ format.Itoa32(exp.ProgressPct) }%</span>
+									} else if exp.Status == "error" {
+										<span class="text-red-400 text-xs" title={ exp.LastError }>{ format.Truncate(exp.LastError, 20) }</span>
+									} else if exp.Status == "ready" {
+										<span class="text-green-400">100%</span>
+									} else {
+										<span class="text-white/40">-</span>
+									}
+								</td>
+								<td class="py-2 px-2">
+									<div class="flex gap-1">
+										if exp.Status == "error" || exp.Status == "ready" {
+											<button
+												type="button"
+												class="px-2 py-1 text-xs border border-white/20 hover:border-white/40 text-white/80"
+												data-on:click={ "@post('/admin/exports/" + exp.ID + "/requeue'); setTimeout(() => location.reload(), 500)" }
+											>
+												REQUEUE
+											</button>
+										}
+										<button
+											type="button"
+											class="px-2 py-1 text-xs border border-red-500/50 hover:border-red-500 text-red-400"
+											data-on:click={ "@delete('/admin/exports/" + exp.ID + "'); setTimeout(() => location.reload(), 500)" }
+										>
+											DELETE
+										</button>
+									</div>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			<!-- Pagination -->
+			if total > pageSize {
+				<div class="flex justify-center gap-2 mt-4">
+					if page > 1 {
+						<a
+							href={ templ.SafeURL("/admin/exports?page=" + format.Itoa(page-1)) }
+							class="px-3 py-1 border-2 border-white/20 hover:border-white/40 text-white/80 font-mono text-sm"
+						>
+							PREV
+						</a>
+					}
+					<span class="px-3 py-1 text-white/60 font-mono text-sm">
+						Page { format.Itoa(page) } of { format.Itoa((total + pageSize - 1) / pageSize) }
+					</span>
+					if page * pageSize < total {
+						<a
+							href={ templ.SafeURL("/admin/exports?page=" + format.Itoa(page+1)) }
+							class="px-3 py-1 border-2 border-white/20 hover:border-white/40 text-white/80 font-mono text-sm"
+						>
+							NEXT
+						</a>
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+templ AdminExportStatusBadge(status string) {
+	switch status {
+		case "queued":
+			<span class="px-2 py-0.5 text-xs bg-white/10 text-white/80">QUEUED</span>
+		case "processing":
+			<span class="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400">PROCESSING</span>
+		case "ready":
+			<span class="px-2 py-0.5 text-xs bg-green-500/20 text-green-400">READY</span>
+		case "error":
+			<span class="px-2 py-0.5 text-xs bg-red-500/20 text-red-400">ERROR</span>
+		default:
+			<span class="px-2 py-0.5 text-xs bg-white/10 text-white/60">{ status }</span>
+	}
+}

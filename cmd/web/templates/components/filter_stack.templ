@@ -1,0 +1,286 @@
+package components
+
+import (
+	"fmt"
+
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/pkg/filters"
+)
+
+// FilterMenuItem describes one filter entry in the add-filter menu.
+type FilterMenuItem struct {
+	Type  string
+	Label string
+	Icon  string
+}
+
+// FilterStack displays the ordered list of filters with inline config.
+// Cards are rendered server-side and patched via SSE when the stack changes.
+templ FilterStack(videoID string) {
+	<div class="space-y-1" id="filter-stack">
+		<div data-show="$_filterStack.length === 0" class="text-xs text-white/40 font-mono">
+			No filters. Click "Add Filter" below.
+		</div>
+		<div id="filter-stack-list"></div>
+		<details class="dropdown-menu" data-on:click__outside="el.open = false">
+			<summary class="w-full px-2 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95 cursor-pointer text-center list-none">
+				<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i> Add Filter
+			</summary>
+			<div class="left-0 right-0 mt-1 bg-neutral-900 border border-neutral-700 shadow-lg max-h-64 overflow-y-auto">
+				@FilterCategoryMenu(videoID, "Spatial", []FilterMenuItem{
+					{Type: "crop", Label: "Crop", Icon: "crop"},
+					{Type: "scale", Label: "Scale", Icon: "up-right-and-down-left-from-center"},
+					{Type: "transpose", Label: "Rotate 90°", Icon: "rotate-right"},
+					{Type: "rotate", Label: "Rotate (angle)", Icon: "rotate"},
+					{Type: "hflip", Label: "Flip Horizontal", Icon: "arrows-left-right"},
+					{Type: "vflip", Label: "Flip Vertical", Icon: "arrows-up-down"},
+					{Type: "pad", Label: "Pad / Letterbox", Icon: "border-all"},
+				})
+				@FilterCategoryMenu(videoID, "Color", []FilterMenuItem{
+					{Type: "brightness", Label: "Brightness", Icon: "sun"},
+					{Type: "contrast", Label: "Contrast", Icon: "circle-half-stroke"},
+					{Type: "saturation", Label: "Saturation", Icon: "palette"},
+					{Type: "gamma", Label: "Gamma", Icon: "sliders"},
+					{Type: "exposure", Label: "Exposure", Icon: "sun"},
+					{Type: "color_temp", Label: "Color Temperature", Icon: "temperature-half"},
+					{Type: "lift_gamma_gain", Label: "Lift / Gamma / Gain", Icon: "sliders"},
+					{Type: "color_balance", Label: "Color Balance", Icon: "swatchbook"},
+					{Type: "curves", Label: "Curves Preset", Icon: "bezier-curve"},
+					{Type: "lut", Label: "LUT Preset", Icon: "film"},
+					{Type: "grayscale", Label: "Grayscale", Icon: "droplet-slash"},
+					{Type: "sepia", Label: "Sepia", Icon: "image"},
+					{Type: "sharpen", Label: "Sharpen", Icon: "diamond"},
+					{Type: "denoise", Label: "Denoise", Icon: "wand-magic-sparkles"},
+					{Type: "vignette", Label: "Vignette", Icon: "bullseye"},
+				})
+				@FilterCategoryMenu(videoID, "Temporal", []FilterMenuItem{
+					{Type: "speed", Label: "Speed", Icon: "gauge-high"},
+					{Type: "fade_in", Label: "Fade In", Icon: "right-long"},
+					{Type: "fade_out", Label: "Fade Out", Icon: "left-long"},
+					{Type: "reverse", Label: "Reverse", Icon: "backward"},
+				})
+				@FilterCategoryMenu(videoID, "Audio", []FilterMenuItem{
+					{Type: "volume", Label: "Volume", Icon: "volume-high"},
+					{Type: "normalize", Label: "Normalize", Icon: "chart-bar"},
+					{Type: "equalizer", Label: "Equalizer", Icon: "sliders"},
+					{Type: "bass", Label: "Bass", Icon: "speaker"},
+					{Type: "treble", Label: "Treble", Icon: "music"},
+					{Type: "compressor", Label: "Compressor", Icon: "compress"},
+					{Type: "noise_gate", Label: "Noise Gate", Icon: "volume-off"},
+					{Type: "highpass", Label: "High Pass", Icon: "filter"},
+					{Type: "lowpass", Label: "Low Pass", Icon: "filter"},
+					{Type: "audio_fade_in", Label: "Audio Fade In", Icon: "volume-low"},
+					{Type: "audio_fade_out", Label: "Audio Fade Out", Icon: "volume-xmark"},
+					{Type: "mute", Label: "Mute Audio", Icon: "volume-xmark"},
+				})
+				@FilterCategoryMenu(videoID, "Overlay", []FilterMenuItem{
+					{Type: "text", Label: "Text / Watermark", Icon: "font"},
+				})
+			</div>
+		</details>
+	</div>
+}
+
+// FilterCategoryMenu renders a category header + list of filter items.
+templ FilterCategoryMenu(videoID string, category string, items []FilterMenuItem) {
+	<div class="border-b border-neutral-700 last:border-b-0">
+		<div class={ viewtypes.SectionLabel + " px-3 py-1" }>
+			{ category }
+		</div>
+		for _, item := range items {
+			<button
+				type="button"
+				class="w-full text-left px-3 py-1.5 text-xs text-white hover:bg-neutral-800 font-mono"
+				data-on:click={ filters.FilterAddExpr(item.Type, videoID) }
+			>
+				<i class={ "fa-sharp fa-solid fa-" + item.Icon + " mr-2 w-4 text-center" } aria-hidden="true"></i>
+				{ item.Label }
+			</button>
+		}
+	</div>
+}
+
+// FilterCardList renders the full ordered list of filter cards.
+// This component is the SSE patch target (id="filter-stack-list").
+templ FilterCardList(f []filters.FilterStackEntry, videoID string, cropOptions []filters.FilterOption) {
+	<div id="filter-stack-list">
+		for idx, filter := range f {
+			@FilterCard(filter, idx, len(f), videoID, cropOptions)
+		}
+	</div>
+}
+
+// FilterCard renders a single filter card with header + parameter controls.
+templ FilterCard(filter filters.FilterStackEntry, index int, total int, videoID string, cropOptions []filters.FilterOption) {
+	<div class={ "filter-card rounded mb-1.5 filter-cat-" + filters.CategoryForFilterType(filter.Type) } id={ fmt.Sprintf("filter-card-%d", index) }>
+		<div class="filter-card-header">
+			<i class={ "fa-sharp fa-solid fa-" + filters.IconForFilterType(filter.Type) + " w-4 text-center text-white/50 text-xs" } aria-hidden="true"></i>
+			<span class="flex-1 text-xs font-mono text-white/80 truncate font-semibold">{ filters.LabelForFilterType(filter.Type) }</span>
+			if index > 0 {
+				<button
+					type="button"
+					class="w-5 h-5 flex items-center justify-center text-xs text-white/30 hover:text-white/70 hover:bg-white/10 rounded transition-colors"
+					data-on:click={ filters.FilterMoveExpr(index, -1, videoID) }
+					title="Move up"
+				>
+					<i class="fa-sharp fa-solid fa-chevron-up" aria-hidden="true"></i>
+				</button>
+			}
+			if index < total - 1 {
+				<button
+					type="button"
+					class="w-5 h-5 flex items-center justify-center text-xs text-white/30 hover:text-white/70 hover:bg-white/10 rounded transition-colors"
+					data-on:click={ filters.FilterMoveExpr(index, 1, videoID) }
+					title="Move down"
+				>
+					<i class="fa-sharp fa-solid fa-chevron-down" aria-hidden="true"></i>
+				</button>
+			}
+			<button
+				type="button"
+				class="w-5 h-5 flex items-center justify-center text-xs text-white/30 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+				data-on:click={ filters.FilterRemoveExpr(index, videoID) }
+				title="Remove filter"
+			>
+				<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+			</button>
+		</div>
+		@FilterCardParams(filter, index, videoID, cropOptions)
+	</div>
+}
+
+// FilterCardParams renders the parameter controls for a single filter card.
+templ FilterCardParams(filter filters.FilterStackEntry, index int, videoID string, cropOptions []filters.FilterOption) {
+	if params := filters.ParamsForFilterType(filter.Type, cropOptions); len(params) > 0 {
+		<div class="px-2 pb-2 pt-1 space-y-1.5">
+			for _, p := range params {
+				<div class="space-y-0.5">
+					<div class="flex items-center gap-2">
+						<label class="text-xs text-white/40 font-mono uppercase w-14 shrink-0">{ p.Label }</label>
+						if p.Type == filters.FilterParamRange {
+							@filterParamRange(filter, index, p, videoID)
+						} else if p.Type == filters.FilterParamSelect {
+							@filterParamSelect(filter, index, p, videoID)
+						} else if p.Type == filters.FilterParamNumber {
+							@filterParamNumber(filter, index, p, videoID)
+						} else if p.Type == filters.FilterParamText {
+							@filterParamText(filter, index, p, videoID)
+						} else if p.Type == filters.FilterParamPreset {
+							@filterParamPreset(filter, index, p, videoID)
+						} else if p.Type == filters.FilterParamColor {
+							@filterParamColor(filter, index, p, videoID)
+						}
+					</div>
+				</div>
+			}
+		</div>
+	} else {
+		<div class="px-2 pb-1.5">
+			<div class="text-xs text-white/20 font-mono italic">No parameters</div>
+		</div>
+	}
+}
+
+// filterParamRange renders a range slider with a reactive readout.
+templ filterParamRange(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<input
+		type="range"
+		min={ filters.FmtNum(p.Min) }
+		max={ filters.FmtNum(p.Max) }
+		step={ filters.FmtNum(p.Step) }
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		class="flex-1 filter-slider"
+		data-on:input={ filters.FilterParamRangeExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(videoID) }
+	/>
+	<span
+		class="text-xs text-white/60 font-mono tabular-nums w-10 text-right shrink-0"
+		data-text={ filters.FilterParamReadoutExpr(index, p.Key, p.DefaultVal, p.Decimals) }
+	>
+		{ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+	</span>
+}
+
+// filterParamSelect renders a select dropdown.
+templ filterParamSelect(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<select
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-1 py-0.5"
+		data-on:change={ filters.FilterParamSelectExpr(index, p.Key) + "; " + filters.FilterParamSaveExpr(videoID) }
+	>
+		for _, opt := range p.Options {
+			<option
+				value={ opt.Value }
+				if opt.Value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal) {
+					selected
+				}
+			>
+				{ opt.Label }
+			</option>
+		}
+	</select>
+}
+
+// filterParamNumber renders a number input.
+templ filterParamNumber(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<input
+		type="number"
+		min={ filters.FmtNum(p.Min) }
+		max={ filters.FmtNum(p.Max) }
+		step={ filters.FmtNum(p.Step) }
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-2 py-0.5"
+		data-on:input={ filters.FilterParamNumberExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(videoID) }
+	/>
+}
+
+// filterParamText renders a text input.
+templ filterParamText(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<input
+		type="text"
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		placeholder={ p.Placeholder }
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-2 py-0.5"
+		data-on:input={ filters.FilterParamTextExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(videoID) }
+	/>
+}
+
+// filterParamPreset renders a preset dropdown that writes ALL param values at
+// once. The preset map is serialised into a data-presets attribute and read by
+// the DataStar expression on change.
+templ filterParamPreset(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<select
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-1 py-0.5 rounded-none"
+		data-presets={ filters.FilterPresetDataAttr(p.Presets) }
+		data-on:change={ filters.FilterPresetExpr(index) + "; " + filters.FilterParamSaveExpr(videoID) }
+	>
+		for _, opt := range p.Options {
+			<option
+				value={ opt.Value }
+				if opt.Value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal) {
+					selected
+				}
+			>
+				{ opt.Label }
+			</option>
+		}
+	</select>
+}
+
+// filterParamColor renders a color picker swatch with hex text readout.
+templ filterParamColor(filter filters.FilterStackEntry, index int, p filters.FilterParam, videoID string) {
+	<input
+		type="color"
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		class="filter-color shrink-0"
+		data-on:input={ filters.FilterParamColorExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(videoID) }
+	/>
+	<span
+		class="text-xs text-white/40 font-mono"
+		data-text={ fmt.Sprintf("$_filterStack[%d]?.params?.%s ?? '%s'", index, p.Key, p.DefaultVal) }
+	>
+		{ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+	</span>
+}

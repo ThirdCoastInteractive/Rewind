@@ -1,0 +1,91 @@
+package components
+
+// ============================================================================
+// BUTTON COMPONENTS
+// Black & White Design System - Reusable Button Components
+// ============================================================================
+
+// buttonClasses generates shared button styling classes
+// variant: "primary" (white bg), "secondary" (outlined), "ghost" (transparent), "danger"
+// size: "sm", "md", "lg"
+// fullWidth: true to make button full width
+func buttonClasses(variant, size string, fullWidth bool) string {
+	classes := "font-mono uppercase tracking-wider transition-all border-2 inline-flex items-center justify-center "
+
+	if fullWidth {
+		classes += "w-full "
+	}
+
+	// Variants
+	switch variant {
+	case "", "primary":
+		classes += "bg-white text-black border-white hover:bg-black hover:text-white active:scale-95 "
+	case "secondary":
+		classes += "bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 "
+	case "ghost":
+		classes += "bg-transparent text-white border-white/20 hover:border-white active:scale-95 "
+	case "danger":
+		classes += "bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 "
+	}
+
+	// Sizes
+	switch size {
+	case "sm":
+		classes += "px-3 py-1 text-xs"
+	case "", "md":
+		classes += "px-4 py-2 text-sm"
+	case "lg":
+		classes += "px-6 py-3 text-base"
+	case "mobile-primary":
+		// 56px tall button for mobile thumb-friendly primary actions
+		classes += "px-6 py-4 text-base min-h-[56px]"
+	case "mobile-action":
+		// 72px tall button for critical mobile actions (remote player, producer)
+		classes += "px-8 py-5 text-lg min-h-[72px]"
+	}
+
+	return classes
+}
+
+// FormButton - Button for form submissions (type="submit")
+// Use this for all form submit buttons
+templ FormButton(variant, size, icon string, fullWidth bool) {
+	<button
+		type="submit"
+		class={ buttonClasses(variant, size, fullWidth) }
+	>
+		if icon != "" {
+			<i class={ "fa-sharp fa-solid fa-" + icon + " mr-2" } aria-hidden="true"></i>
+		}
+		{ children... }
+	</button>
+}
+
+// LinkButton - Styled anchor tag that looks like a button
+// Use this for navigation (GET requests)
+templ LinkButton(href, variant, size, icon string, fullWidth bool) {
+	<a
+		href={ templ.SafeURL(href) }
+		class={ buttonClasses(variant, size, fullWidth) + " text-center" }
+		data-transition
+	>
+		if icon != "" {
+			<i class={ "fa-sharp fa-solid fa-" + icon + " mr-2" } aria-hidden="true"></i>
+		}
+		{ children... }
+	</a>
+}
+
+// Button - Generic button for JavaScript actions
+// Use this for buttons that trigger JS functionality
+templ Button(variant, size, icon string, fullWidth bool) {
+	<button
+		type="button"
+		class={ buttonClasses(variant, size, fullWidth) }
+	>
+		if icon != "" {
+			<i class={ "fa-sharp fa-solid fa-" + icon + " mr-2" } aria-hidden="true"></i>
+		}
+		{ children... }
+	</button>
+}

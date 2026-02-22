@@ -1,0 +1,57 @@
+package components
+
+// ============================================================================
+// TABLE COMPONENTS
+// ============================================================================
+
+// Table renders a data table with headers
+templ Table(headers []string, compact bool) {
+	<div class="border-2 border-white/10 overflow-x-auto">
+		<table class="w-full font-mono text-sm">
+			<thead>
+				<tr class="border-b-2 border-white/10">
+					for _, header := range headers {
+						<th
+							class={
+								"text-left font-bold uppercase tracking-wider text-white/80",
+								templ.KV("px-4 py-3 text-xs", compact),
+								templ.KV("px-6 py-4 text-sm", !compact),
+							}
+						>
+							{ header }
+						</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				{ children... }
+			</tbody>
+		</table>
+	</div>
+}
+
+// TableRow renders a table row with optional click handler
+templ TableRow(clickable bool, href string) {
+	if clickable && href != "" {
+		<tr class="border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer" style="cursor: pointer;" data-href={ href }>
+			{ children... }
+		</tr>
+	} else {
+		<tr class="border-b border-white/5">
+			{ children... }
+		</tr>
+	}
+}
+
+// TableCell renders a table cell
+templ TableCell(compact bool) {
+	<td
+		class={
+			"text-white/90",
+			templ.KV("px-2 py-2", compact),
+			templ.KV("px-3 py-2", !compact),
+		}
+	>
+		{ children... }
+	</td>
+}

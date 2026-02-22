@@ -1,0 +1,103 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/pkg/utils/crops"
+)
+
+// CutExportPanel is the export configuration panel in the cut page sidebar.
+// It is SSE-patched when a clip is selected so crop variants are up to date.
+templ CutExportPanel(cropList crops.CropArray) {
+	<div class="p-2 space-y-3" id="cut-export-panel" data-signals="{_exportFormat: 'mp4', _exportQuality: 'high', _exportVariant: 'full'}">
+		<div data-show="$_selectedClipId === ''" class="text-xs text-white/40 font-mono py-2 text-center">
+			Select a clip to export.
+		</div>
+		<div data-show="$_selectedClipId !== ''">
+			<div>
+				<div class={ viewtypes.SectionLabel + " mb-1" }>VARIANT</div>
+				<div class="flex flex-wrap gap-1">
+					@ExportVariantButton("full", "Full Frame", "")
+					for _, crop := range cropList {
+						@ExportVariantButton("crop:"+crop.ID, crop.Name, crop.AspectRatio)
+					}
+				</div>
+			</div>
+			<div class="mt-2">
+				<div class={ viewtypes.SectionLabel + " mb-1" }>FORMAT</div>
+				<div class="flex gap-1">
+					@ExportFormatButton("mp4", "MP4")
+					@ExportFormatButton("webm", "WebM")
+					@ExportFormatButton("gif", "GIF")
+				</div>
+			</div>
+			<div class="mt-2">
+				<div class={ viewtypes.SectionLabel + " mb-1" }>QUALITY</div>
+				<div class="flex gap-1">
+					@ExportQualityButton("high", "High", "CRF 21 / medium")
+					@ExportQualityButton("max", "Maximum", "CRF 17 / slow")
+				</div>
+			</div>
+			<div class="border-t-2 border-white/10 pt-2 mt-2">
+				<div class="text-xs text-white/40 font-mono mb-2">
+					<span data-text="$_filterStack.length"></span> filter(s) will be applied.
+					<span data-show="$_filterStack.length === 0" class="text-white/20">
+						Add filters in the FILTERS panel above.
+					</span>
+				</div>
+				<button
+					type="button"
+					class="w-full px-3 py-2 text-sm font-mono uppercase tracking-wider transition-all border-2 bg-white text-black border-white hover:bg-white/90 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+					data-on:click="@post('/api/clips/' + $_selectedClipId + '/exports', {payload: {format: $_exportFormat, quality: $_exportQuality, variant: $_exportVariant, filters: $_filterStack}})"
+					data-attr:disabled="$_selectedClipId === ''"
+					data-indicator:exporting
+				>
+					<i class="fa-sharp fa-solid fa-file-export mr-2" aria-hidden="true"></i>
+					<span data-show="!$exporting">EXPORT CLIP</span>
+					<span data-show="$exporting">EXPORTING...</span>
+				</button>
+			</div>
+			<div data-cut-export-status-slot></div>
+		</div>
+	</div>
+}
+
+// ExportVariantButton is a toggle button for selecting the export variant.
+templ ExportVariantButton(value, label, hint string) {
+	<button
+		type="button"
+		class="px-2 py-1 text-xs font-mono transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+		data-class={ fmt.Sprintf("{'border-white/60 bg-white/10': $_exportVariant === '%s'}", value) }
+		data-on:click={ fmt.Sprintf("$_exportVariant = '%s'", value) }
+	>
+		{ label }
+		if hint != "" {
+			<span class="text-white/40 ml-1">({ hint })</span>
+		}
+	</button>
+}
+
+// ExportFormatButton is a toggle button for selecting the export format.
+templ ExportFormatButton(value, label string) {
+	<button
+		type="button"
+		class="flex-1 px-2 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+		data-class={ fmt.Sprintf("{'border-white/60 bg-white/10': $_exportFormat === '%s'}", value) }
+		data-on:click={ fmt.Sprintf("$_exportFormat = '%s'", value) }
+	>
+		{ label }
+	</button>
+}
+
+// ExportQualityButton is a toggle button for selecting the export quality.
+templ ExportQualityButton(value, label, hint string) {
+	<button
+		type="button"
+		class="flex-1 px-2 py-1 text-xs font-mono transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+		data-class={ fmt.Sprintf("{'border-white/60 bg-white/10': $_exportQuality === '%s'}", value) }
+		data-on:click={ fmt.Sprintf("$_exportQuality = '%s'", value) }
+	>
+		<div class="uppercase tracking-wider">{ label }</div>
+		<div class="text-white/40 text-xs normal-case">{ hint }</div>
+	</button>
+}

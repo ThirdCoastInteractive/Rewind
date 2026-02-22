@@ -1,0 +1,116 @@
+package templates
+
+import (
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// AdminAssetErrorRow represents a video with asset generation errors.
+type AdminAssetErrorRow struct {
+	ID             string
+	Title          string
+	ErrorCount     int
+	LastErrorAt    string
+	Errors         map[string]string // asset name -> error message
+	AssetsBooleans map[string]bool   // asset name -> ok/not-ok
+}
+
+templ AdminAssetHealth(username string, errorCount int64, rows []*AdminAssetErrorRow, alertType string, alertMsg string) {
+	@Layout("Asset Health", username) {
+		@AdminAssetHealthContent(errorCount, rows, alertType, alertMsg)
+	}
+}
+
+templ AdminAssetHealthContent(errorCount int64, rows []*AdminAssetErrorRow, alertType string, alertMsg string) {
+	@Container("wide") {
+		@components.AdminPageHeader("ASSET HEALTH", "/admin")
+		if alertMsg != "" {
+			@Alert(alertType, alertMsg)
+		}
+		<!-- Stats -->
+		<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+			<div class={ viewtypes.InfoBoxClass }>
+				<div class={ viewtypes.SectionLabel + " mb-1" }>VIDEOS WITH ERRORS</div>
+				if errorCount > 0 {
+					<div class="text-xl font-mono text-red-400">{ format.Itoa64(errorCount) }</div>
+				} else {
+					<div class="text-xl font-mono text-green-400">0</div>
+				}
+			</div>
+		</div>
+		if errorCount > 0 {
+			<!-- Bulk Actions -->
+			<div class="flex flex-wrap gap-2 mb-4">
+				<form method="POST" action="/admin/asset-health/retry-all" onsubmit="return confirm('Clear all errors and retry asset generation for all failed videos?')">
+					@components.FormButton("primary", "sm", "", false) {
+						RETRY ALL
+					}
+				</form>
+			</div>
+		}
+		<!-- Error Table -->
+		if len(rows) == 0 {
+			@EmptyState("check", "ALL CLEAR", "No videos have asset generation errors.")
+		} else {
+			<div class="space-y-3">
+				for _, row := range rows {
+					@AdminAssetErrorCard(row)
+				}
+			</div>
+		}
+	}
+}
+
+templ AdminAssetErrorCard(row *AdminAssetErrorRow) {
+	<div class="bg-gray-10 border-2 border-white/10 p-4">
+		<div class="flex items-start justify-between gap-4 mb-3">
+			<div class="min-w-0 flex-1">
+				<a href={ templ.SafeURL("/videos/" + row.ID) } class="font-mono font-bold text-sm text-white hover:underline">
+					{ row.Title }
+				</a>
+				<div class="flex items-center gap-3 mt-1">
+					<span class="text-xs font-mono text-white/40">{ row.ID }</span>
+					<span class="px-2 py-0.5 text-xs bg-red-500/20 text-red-400">
+						{ format.Itoa(row.ErrorCount) } failures
+					</span>
+					if row.LastErrorAt != "" {
+						<span class="text-xs font-mono text-white/40">Last: { row.LastErrorAt }</span>
+					}
+				</div>
+			</div>
+			<form method="POST" action={ templ.SafeURL("/admin/asset-health/" + row.ID + "/retry") }>
+				<button type="submit" class="px-3 py-1 text-xs border-2 border-white/20 hover:border-white/40 text-white/80 font-mono uppercase">
+					RETRY
+				</button>
+			</form>
+		</div>
+		<!-- Per-asset error details -->
+		if len(row.Errors) > 0 {
+			<div class="border-t border-white/10 pt-2 mt-2">
+				<table class="w-full text-xs font-mono">
+					for asset, errMsg := range row.Errors {
+						<tr class="border-b border-white/5">
+							<td class="py-1 pr-3 text-white/60 uppercase whitespace-nowrap align-top w-24">{ asset }</td>
+							<td class="py-1 text-red-400/80 break-all">{ format.Truncate(errMsg, 200) }</td>
+						</tr>
+					}
+				</table>
+			</div>
+		}
+		<!-- Asset status overview -->
+		<div class="flex flex-wrap gap-2 mt-3">
+			for asset, ok := range row.AssetsBooleans {
+				if ok {
+					<span class="px-2 py-0.5 text-xs bg-green-500/10 text-green-400/80 border border-green-500/20">
+						{ asset }
+					</span>
+				} else {
+					<span class="px-2 py-0.5 text-xs bg-red-500/10 text-red-400/80 border border-red-500/20">
+						{ asset }
+					</span>
+				}
+			}
+		</div>
+	</div>
+}

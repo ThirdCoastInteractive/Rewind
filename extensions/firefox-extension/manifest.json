@@ -1,0 +1,33 @@
+{
+  "manifest_version": 2,
+  "name": "Rewind Video Archiver",
+  "version": "0.1.0",
+  "description": "Archive the current tab to your self-hosted Rewind server",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "rewind@local"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "identity",
+    "alarms"
+  ],
+  "optional_permissions": [
+    "cookies",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_action": {
+    "default_title": "Rewind",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

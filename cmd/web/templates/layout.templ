@@ -1,0 +1,245 @@
+package templates
+
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
+
+templ Layout(title string, username string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="view-transition" content="same-origin"/>
+			<title>{ title } - Rewind</title>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="stylesheet" href="/static/dist/fontawesome/all.min.css"/>
+			<link rel="stylesheet" href="/static/dist/main.css"/>
+			<script src="/static/dist/main.js" defer></script>
+			<script>
+				// Generate bookmarklet with current app URL baked in
+				window.addEventListener('DOMContentLoaded', function() {
+					const appUrl = window.location.protocol + '//' + window.location.host;
+					const bookmarkletCode = "javascript:(function(){window.open('" + appUrl + "/bookmarklet?url='+encodeURIComponent(window.location.href));})();";
+					
+					document.querySelectorAll('.bookmarklet-link').forEach(function(link) {
+						link.href = bookmarkletCode;
+					});
+					
+					document.querySelectorAll('.bookmarklet-code').forEach(function(code) {
+						code.textContent = bookmarkletCode;
+					});
+				});
+			</script>
+		</head>
+		<body class="flex flex-col min-h-screen bg-black text-white font-mono">
+			@Navbar(username)
+			<main class="flex-1 flex flex-col">
+				{ children... }
+			</main>
+			@Footer()
+			<script type="module" src="/static/dist/datastar.js"></script>
+			<script type="module">
+				import { getPath, mergePatch, mergePaths } from '/static/dist/datastar.js';
+				window.__dsAPI = { getPath, mergePatch, mergePaths };
+			</script>
+		</body>
+	</html>
+}
+
+templ LayoutFullscreen(title string, username string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="view-transition" content="same-origin"/>
+			<title>{ title } - Rewind</title>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="stylesheet" href="/static/dist/fontawesome/all.min.css"/>
+			<link rel="stylesheet" href="/static/dist/main.css"/>
+			<script src="/static/dist/main.js" defer></script>
+		</head>
+		<body class="h-screen overflow-hidden flex flex-col bg-black text-white font-mono">
+			@Navbar(username)
+			<main class="flex-1 min-h-0 flex flex-col">
+				{ children... }
+			</main>
+			<script type="module" src="/static/dist/datastar.js"></script>
+			<script type="module">
+				import { getPath, mergePatch, mergePaths } from '/static/dist/datastar.js';
+				window.__dsAPI = { getPath, mergePatch, mergePaths };
+			</script>
+		</body>
+	</html>
+}
+
+// Shared CSS class strings for navbar links
+var navLinkDesktop = "font-mono text-xs uppercase tracking-wider px-2 py-1.5 transition-colors border-2 border-transparent text-white/60 hover:text-white hover:border-white/20"
+var navLinkMobile = "font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 min-h-11 flex items-center hover:bg-white/5 transition border-b border-white/5"
+var navLinkMobileBlock = "font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 hover:bg-white/5 transition border-b border-white/5 block"
+var adminDropdownLink = "block px-4 py-3 font-mono text-xs text-white/80 hover:bg-white/5 hover:text-white transition border-b border-white/10"
+
+templ Navbar(username string) {
+	{{ accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string) }}
+	{{ registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool) }}
+	<nav class="border-b-2 border-white/10 bg-black">
+		<div class="mx-auto px-4">
+			<div class="flex justify-between items-center h-10">
+				<a href="/" class="flex items-center gap-3 group">
+					<div class="w-8 h-8 border-2 border-white flex items-center justify-center transition-colors group-hover:bg-white">
+						<i class="fa-sharp fa-solid fa-video text-white text-base group-hover:text-black transition-colors" aria-hidden="true"></i>
+					</div>
+					<span class="font-mono font-bold text-lg tracking-tighter text-white uppercase">
+						REWIND
+					</span>
+				</a>
+				if accessLevel != "unauthenticated" {
+					<div class="hidden md:flex items-center gap-1">
+						<a href="/" class={ navLinkDesktop }>Home</a>
+						<a href="/jobs" class={ navLinkDesktop }>Jobs</a>
+						<a href="/videos" class={ navLinkDesktop }>Videos</a>
+						<a href="/producer" class={ navLinkDesktop }>
+							<i class="fa-sharp fa-solid fa-tv mr-1" aria-hidden="true"></i>
+							Producer
+						</a>
+						<a href="/settings" class={ navLinkDesktop }>Settings</a>
+						if accessLevel == "admin" {
+							<div class="relative" onmouseover="showAdminDropdown()" onmouseout="hideAdminDropdown()">
+								<button class={ navLinkDesktop + " flex items-center gap-1" }>
+									<i class="fa-sharp fa-solid fa-crown" aria-hidden="true"></i>
+									Admin
+									<i class="fa-sharp fa-solid fa-chevron-down text-xs" aria-hidden="true"></i>
+								</button>
+								<div id="admin-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-black border-2 border-white/20 z-50">
+									<a href="/admin" class={ adminDropdownLink }>
+										<i class="fa-sharp fa-solid fa-gauge-high mr-2" aria-hidden="true"></i>Dashboard
+									</a>
+									<a href="/admin/users" class={ adminDropdownLink }>
+										<i class="fa-sharp fa-solid fa-users mr-2" aria-hidden="true"></i>Users
+									</a>
+									<a href="/settings" class={ adminDropdownLink }>
+										<i class="fa-sharp fa-solid fa-gear mr-2" aria-hidden="true"></i>Settings
+									</a>
+									<form method="POST" action="/admin/refresh-assets" class="block">
+										<button type="submit" class="w-full text-left px-4 py-3 font-mono text-xs text-white/80 hover:bg-white/5 hover:text-white transition">
+											<i class="fa-sharp fa-solid fa-arrows-rotate mr-2" aria-hidden="true"></i>Refresh Assets
+										</button>
+									</form>
+								</div>
+							</div>
+						}
+					</div>
+				}
+				<div class="flex items-center gap-3">
+					if accessLevel != "unauthenticated" {
+						<span class="hidden md:inline font-mono text-xs text-white/60 uppercase tracking-wider">
+							{ username }
+						</span>
+						<a href="/logout" class="hidden md:inline font-mono text-xs uppercase tracking-wider px-2 py-1.5 border-2 border-white/20 hover:border-white/60 transition-colors">
+							Logout
+						</a>
+						<button type="button" class="md:hidden text-white border-2 border-white/20 p-1.5" onclick="toggleMobileMenu()" aria-label="Toggle menu">
+							<i class="fa-sharp fa-solid fa-bars text-lg" aria-hidden="true"></i>
+						</button>
+					} else {
+						<a href="/login" class="font-mono text-xs uppercase tracking-wider px-2 py-1.5 border-2 border-white/20 hover:border-white/60 transition-colors">
+							Login
+						</a>
+						if registrationEnabled {
+							<a href="/register" class="font-mono text-xs uppercase tracking-wider px-2 py-1.5 bg-white text-black border-2 border-white hover:bg-black hover:text-white transition-colors">
+								Register
+							</a>
+						}
+					}
+				</div>
+			</div>
+			if accessLevel != "unauthenticated" {
+				<div id="mobile-menu" class="hidden md:hidden pb-4 border-t-2 border-white/10 mt-2">
+					<div class="flex flex-col space-y-1 pt-4">
+						<a href="/" class={ navLinkMobile }>Home</a>
+						<a href="/jobs" class={ navLinkMobile }>Jobs</a>
+						<a href="/videos" class={ navLinkMobile }>Videos</a>
+						<a href="/producer" class={ navLinkMobile }>
+							<i class="fa-sharp fa-solid fa-tv mr-1" aria-hidden="true"></i>Producer
+						</a>
+						<a href="/settings" class={ navLinkMobile }>Settings</a>
+						if accessLevel == "admin" {
+							<div class="border-t-2 border-white/10 pt-4 mt-2">
+								<p class="font-mono text-xs font-semibold px-3 py-2 uppercase tracking-wider text-white/60">Admin</p>
+								<a href="/admin" class={ navLinkMobileBlock }>
+									<i class="fa-sharp fa-solid fa-gauge-high mr-2" aria-hidden="true"></i>Dashboard
+								</a>
+								<a href="/admin/users" class={ navLinkMobileBlock }>
+									<i class="fa-sharp fa-solid fa-users mr-2" aria-hidden="true"></i>Users
+								</a>
+								<a href="/settings" class={ navLinkMobileBlock }>
+									<i class="fa-sharp fa-solid fa-gear mr-2" aria-hidden="true"></i>Settings
+								</a>
+								<form method="POST" action="/admin/refresh-assets" class="block">
+									<button type="submit" class="w-full text-left font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 hover:bg-white/5 transition border-b border-white/5">
+										<i class="fa-sharp fa-solid fa-arrows-rotate mr-2" aria-hidden="true"></i>Refresh Assets
+									</button>
+								</form>
+							</div>
+						}
+						<div class="border-t-2 border-white/10 pt-4 mt-2">
+							<p class="font-mono text-xs text-white/60 px-3 py-2 uppercase tracking-wider">{ username }</p>
+							<a href="/logout" class="font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 hover:bg-white/5 transition block">
+								Logout
+							</a>
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+	</nav>
+	<script>
+		function toggleMobileMenu() {
+			const menu = document.getElementById('mobile-menu');
+			if (menu) {
+				menu.classList.toggle('hidden');
+			}
+		}
+		
+		let adminDropdownTimeout;
+		function showAdminDropdown() {
+			clearTimeout(adminDropdownTimeout);
+			const dropdown = document.getElementById('admin-dropdown');
+			if (dropdown) {
+				dropdown.classList.remove('hidden');
+			}
+		}
+		
+		function hideAdminDropdown() {
+			adminDropdownTimeout = setTimeout(() => {
+				const dropdown = document.getElementById('admin-dropdown');
+				if (dropdown) {
+					dropdown.classList.add('hidden');
+				}
+			}, 200);
+		}
+	</script>
+}
+
+templ Footer() {
+	<footer class="bg-black mt-auto border-t-2 border-white/10">
+		<div class="mx-auto px-4 py-3">
+			<div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+				<p class="font-mono text-xs text-white/40 uppercase tracking-wider">
+					Archival Software &copy; 2026 <a class={ "underline","text-yellow-400 hover:text-yellow-300","underline-yellow-400/70 hover:underline-yellow-400/50" } href="https://thirdcoast.tv" target="_blank">Third Coast Interactive LLC.</a>.
+				</p>
+				<p class="font-mono text-xs text-white/40 tracking-tighter">
+					All content is the property of its respective owners. Use responsibly.
+				</p>
+			</div>
+		</div>
+	</footer>
+}
+
+templ FooterInline() {
+	<div class="px-2 py-1 text-xs font-mono text-white/20 leading-tight">
+		<p>&copy; 2026 <a class="text-yellow-400/40 hover:text-yellow-400/60" href="https://thirdcoast.tv" target="_blank">Third Coast Interactive LLC.</a></p>
+		<p>Content belongs to respective owners.</p>
+	</div>
+}

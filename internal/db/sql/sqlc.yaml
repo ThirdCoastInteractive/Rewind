@@ -1,0 +1,76 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries:
+      - "./queries"
+    schema: "./migrations"
+    gen:
+      go:
+        out: ".."
+        package: "db"
+        emit_all_enum_values: true
+        emit_db_tags: true
+        emit_enum_valid_method: true
+        emit_exact_table_names: false
+        emit_interface: true
+        emit_json_tags: true
+        emit_methods_with_db_argument: false
+        emit_params_struct_pointers: true
+        emit_pointers_for_null_types: true
+        emit_prepared_queries: false
+        emit_result_struct_pointers: true
+        emit_sql_as_comment: true
+        initialisms: ["id", "uuid", "uid", "srt", "url", "sse", "api"]
+        json_tags_case_style: pascal
+        json_tags_id_uppercase: true
+        omit_unused_structs: false
+        output_batch_file_name: "batch_gen.go"
+        output_copyfrom_file_name: "copyfrom_gen.go"
+        output_db_file_name: "db_gen.go"
+        output_files_suffix: "_gen"
+        output_models_file_name: "models_gen.go"
+        output_querier_file_name: "querier_gen.go"
+        query_parameter_limit: 1
+        sql_package: "pgx/v5"
+        overrides:
+          # Custom domain type mappings
+          - db_type: "asset_status_map"
+            go_type:
+              type: "AssetMap"
+          - db_type: "encrypted_string"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/crypto"
+              type: "EncryptedString"
+          - db_type: "encrypted_bytes"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/crypto"
+              type: "EncryptedBytes"
+          - db_type: "markdown_src"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/markdown"
+              type: "Markdown"
+          - db_type: "language_tag"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/language"
+              type: "Tag"
+          - db_type: "hashed_password"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/passwords"
+              type: "Password"
+          # PostgreSQL tsvector type - we never read the actual value, just query against it
+          - db_type: "tsvector"
+            go_type: "string"
+          # Column-specific overrides
+          - column: "clips.crops"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/crops"
+              type: "CropArray"
+          - column: "videos.info"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/videoinfo"
+              type: "VideoInfo"
+          - column: "videos.probe_data"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/videoinfo"
+              type: "ProbeInfo"
+              pointer: true

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rewind Extension Settings</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .wrap { max-width: 720px; margin: 0 auto; padding: 18px; }
+      .card { border: 2px solid rgba(255,255,255,0.12); padding: 14px; margin-bottom: 12px; }
+      .title { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+      label { display: block; margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.75); }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 6px;
+        padding: 10px;
+        border: 2px solid rgba(255,255,255,0.2);
+        background: transparent;
+        color: #fff;
+        font-family: inherit;
+      }
+      .btn {
+        border: 2px solid rgba(255,255,255,0.2);
+        background: transparent;
+        color: #fff;
+        padding: 10px 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .btn.primary { border-color: rgba(255,255,255,0.6); }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+      .row .btn { flex: 1; min-width: 180px; }
+      .muted { margin-top: 8px; font-size: 12px; color: rgba(255,255,255,0.65); }
+      .status { font-size: 12px; margin-top: 10px; }
+      .ok { color: #86efac; }
+      .bad { color: #fca5a5; }
+      .msg { margin-top: 10px; font-size: 12px; border: 2px solid rgba(255,255,255,0.2); padding: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="title">Rewind Extension</div>
+        <div class="muted">Configure your server and sign in.</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Server</div>
+        <label for="serverUrl">Server URL (example: https://rewind.example.com)</label>
+        <input id="serverUrl" type="text" placeholder="https://..." />
+        <div class="row">
+          <button id="saveBtn" class="btn primary">Save server</button>
+          <button id="testBtn" class="btn">Test status</button>
+        </div>
+        <div id="saveMsg" class="msg" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Auth</div>
+        <div class="row">
+          <button id="loginBtn" class="btn primary">Log in</button>
+          <button id="logoutBtn" class="btn">Log out</button>
+        </div>
+        <div class="muted">Signing in opens a secure browser window.</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Status</div>
+        <div id="status" class="status">—</div>
+      </div>
+
+      <script src="adapter.js"></script>
+      <script src="common/rewind_common.js"></script>
+      <script src="common/options_impl.js"></script>
+      <script src="options.js"></script>
+    </div>
+  </body>
+</html>

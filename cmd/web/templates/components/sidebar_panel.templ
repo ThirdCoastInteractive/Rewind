@@ -1,0 +1,26 @@
+package components
+
+// SidebarPanel is a collapsible panel wrapper for the cut page sidebar.
+// Uses CSS class toggle instead of data-show for reliable flex layout behavior.
+templ SidebarPanel(title string, signalName string) {
+	<div class="border-2 border-white/10 bg-neutral-900 shrink-0">
+		<button
+			type="button"
+			class="w-full px-3 py-1.5 flex items-center justify-between text-xs font-mono uppercase tracking-wider text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
+			data-on:click={ "$" + signalName + " = !$" + signalName }
+		>
+			<span>{ title }</span>
+			<i
+				class="fa-sharp fa-solid fa-chevron-down text-xs transition-transform duration-150"
+				data-class={ "{'rotate-0': $" + signalName + ", '-rotate-90': !$" + signalName + "}" }
+				aria-hidden="true"
+			></i>
+		</button>
+		<div
+			class="border-t border-white/5"
+			data-show={ "$" + signalName }
+		>
+			{ children... }
+		</div>
+	</div>
+}

@@ -1,0 +1,8 @@
+package templates
+
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+
+// ClipExportStatus is now in components package to avoid circular imports
+templ ClipExportStatus(clipID string, text string, state string, downloadURL string) {
+	@components.ClipExportStatus(clipID, text, state, downloadURL)
+}

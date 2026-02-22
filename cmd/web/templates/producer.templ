@@ -1,0 +1,354 @@
+package templates
+
+import "time"
+import "thirdcoast.systems/rewind/cmd/web/templates/components"
+
+// Shared CSS for aspect ratio toggle buttons in producer scene preview
+var aspectBtnClass = "font-mono uppercase tracking-wider transition-all border-2 inline-flex items-center justify-center bg-black text-white border-white/20 hover:border-white hover:bg-white hover:text-black active:scale-95 px-2 py-1 text-xs"
+
+type ScenePresetInfo struct {
+	ID        string
+	Name      string
+	SceneB64  string
+	UpdatedAt time.Time
+}
+
+templ Producer(sessionCode string, presets []ScenePresetInfo, currentSceneB64 string, username string) {
+	@Layout("Producer Control", username) {
+		@ProducerContent(sessionCode, presets, currentSceneB64)
+	}
+}
+
+templ ProducerContent(sessionCode string, presets []ScenePresetInfo, currentSceneB64 string) {
+	@Container("normal") {
+		<div class="mb-8 flex justify-between items-center">
+			<div>
+				<h1 class="text-3xl font-mono uppercase tracking-wider text-white mb-2">Producer Control</h1>
+				<p class="text-white/60">Remote playback control and session management</p>
+			</div>
+			@components.LinkButton("/producer/sessions/manage", "secondary", "md", "fa-list", false) {
+				Manage Sessions
+			}
+		</div>
+		if sessionCode == "" {
+			<div class="max-w-md mx-auto">
+				@components.Card(false) {
+					@components.CardHeader("Create Session", "")
+					@components.CardBody(true) {
+						<form action="/producer/sessions" method="POST">
+							@components.FormButton("primary", "lg", "fa-code", true) {
+								Generate Session Code
+							}
+						</form>
+					}
+				}
+			</div>
+		} else {
+			<div
+				data-init={ "@get('/api/player-sessions/" + sessionCode + "/producer/stream', {openWhenHidden: true})" }
+				class="grid grid-cols-1 gap-6"
+			>
+				@components.Card(false) {
+					@components.CardHeader("Session", "")
+					@components.CardBody(true) {
+						<div class="text-center">
+							<div class="text-6xl font-mono font-bold text-white mb-4">{ sessionCode }</div>
+							<p class="text-sm text-white/60 mb-4">Enter this code on the Remote Player</p>
+							<div class="flex gap-2 max-w-md mx-auto">
+								<button
+									type="button"
+									onclick={ templ.JSFuncCall("navigator.clipboard.writeText", sessionCode) }
+									class="flex-1 font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-4 py-2 text-sm inline-flex items-center justify-center"
+								>
+									<i class="fa-sharp fa-solid fa-copy mr-2"></i>
+									Copy Code
+								</button>
+								<a
+									href="/player"
+									target="_blank"
+									class="flex-1 inline-flex items-center justify-center font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-4 py-2 text-sm"
+								>
+									<i class="fa-sharp fa-solid fa-arrow-up-right-from-square mr-2"></i>
+									Open Player
+								</a>
+							</div>
+						</div>
+						<div class="mt-6 text-center">
+							@ProducerSSEStatus("Connecting...", "text-white/60")
+						</div>
+					}
+				}
+				@components.Card(false) {
+					@components.CardHeader("Remotes", "Live telemetry (row-level patches)")
+					@components.CardBody(true) {
+						<div class="flex items-center justify-between mb-4">
+							<div class="text-xs font-mono text-white/60 uppercase tracking-wider">
+								Connected:
+								@ProducerRemoteCount(0)
+							</div>
+						</div>
+						<div class="border-2 border-white/10 overflow-x-auto">
+							<table class="w-full text-xs font-mono">
+								<thead class="border-b-2 border-white/10 text-white/60 uppercase tracking-wider">
+									<tr>
+										<th class="text-left p-3">client</th>
+										<th class="text-left p-3">role</th>
+										<th class="text-left p-3">age</th>
+										<th class="text-left p-3">rtt</th>
+										<th class="text-left p-3">jitter</th>
+										<th class="text-left p-3">offset</th>
+									</tr>
+								</thead>
+								<tbody id="remotes-tbody" class="divide-y divide-white/10">
+									@ProducerRemoteEmptyRow(sessionCode)
+								</tbody>
+							</table>
+						</div>
+					}
+				}
+				@components.Card(false) {
+					@components.CardHeader("Scenes", "Producer-driven scene presets")
+					@components.CardBody(true) {
+						<div id="producer-current-scene" data-scene-b64={ currentSceneB64 } class="hidden"></div>
+						<div class="mb-6">
+							<div class="text-xs text-white/60 uppercase tracking-wider mb-2">Live preview</div>
+							<div id="producer-preview-stage" class="border-2 border-white/10 bg-black relative select-none w-full" style="aspect-ratio: 16 / 9;">
+								<canvas id="producer-scene-preview-canvas" class="absolute inset-0 w-full h-full"></canvas>
+								<div id="producer-video-frame-editor" class="absolute inset-0">
+									<div class="absolute inset-0 pointer-events-none">
+										<div class="absolute left-1/2 top-0 bottom-0 w-px bg-white/10"></div>
+										<div class="absolute top-1/2 left-0 right-0 h-px bg-white/10"></div>
+									</div>
+									<div
+										id="producer-video-frame-rect"
+										class="absolute border-2 border-white/60 bg-transparent"
+										style="left: 50%; top: 50%; width: 90%; height: 90%; transform: translate(-50%, -50%);"
+									>
+										<div id="producer-video-frame-handle" class="absolute right-[-8px] bottom-[-8px] w-4 h-4 border-2 border-white bg-black"></div>
+									</div>
+								</div>
+							</div>
+							<div class="mt-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+								<div class="text-xs text-white/40">Drag to move. Drag the corner to resize. Click preview to reset animation.</div>
+								<div class="flex flex-col md:flex-row md:items-center gap-2">
+									<div class="flex items-center gap-2">
+										<div class="text-xs text-white/60 uppercase tracking-wider">Preview</div>
+										<div class="flex gap-1">
+											<button type="button" data-stage-aspect="16:9" class={ aspectBtnClass }>16:9</button>
+											<button type="button" data-stage-aspect="21:9" class={ aspectBtnClass }>21:9</button>
+											<button type="button" data-stage-aspect="4:3" class={ aspectBtnClass }>4:3</button>
+											<button type="button" data-stage-aspect="9:16" class={ aspectBtnClass }>9:16</button>
+											<button type="button" data-stage-aspect="1:1" class={ aspectBtnClass }>1:1</button>
+										</div>
+									</div>
+									<div class="flex items-center gap-2">
+										<div class="text-xs text-white/60 uppercase tracking-wider">Frame</div>
+										<div class="flex gap-1">
+											<button type="button" data-video-aspect="16:9" class={ aspectBtnClass }>16:9</button>
+											<button type="button" data-video-aspect="21:9" class={ aspectBtnClass }>21:9</button>
+											<button type="button" data-video-aspect="4:3" class={ aspectBtnClass }>4:3</button>
+											<button type="button" data-video-aspect="9:16" class={ aspectBtnClass }>9:16</button>
+											<button type="button" data-video-aspect="5:4" class={ aspectBtnClass }>5:4</button>
+											<button type="button" data-video-aspect="1:1" class={ aspectBtnClass }>1:1</button>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div id="producer-video-frame-readout" class="mt-2 text-xs font-mono text-white/60"></div>
+						</div>
+						<form action={ "/producer/" + sessionCode + "/scenes/presets" } method="POST" class="mb-6">
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+								<input id="scene-save-stage-aspect" type="hidden" name="stage_aspect" value="16:9"/>
+								<input id="scene-save-video-x" type="hidden" name="video_x" value="0.5"/>
+								<input id="scene-save-video-y" type="hidden" name="video_y" value="0.5"/>
+								<input id="scene-save-video-w" type="hidden" name="video_w" value="0.9"/>
+								<input id="scene-save-video-h" type="hidden" name="video_h" value="0.9"/>
+								<input id="scene-save-video-aspect" type="hidden" name="video_aspect" value=""/>
+								<input
+									id="scene-preset-name"
+									type="text"
+									name="preset_name"
+									placeholder="Preset name (e.g. Nebula)"
+									required
+									class="w-full bg-black border-2 border-white/10 text-white font-mono px-4 py-3 focus:border-white focus:outline-none"
+								/>
+								<select
+									id="scene-background-mode"
+									name="background_mode"
+									class="w-full bg-black border-2 border-white/10 text-white font-mono px-4 py-3 focus:border-white focus:outline-none"
+								>
+									<option value="perlin-nebula">Perlin Nebula</option>
+									<option value="none">None</option>
+								</select>
+								<div class="md:col-span-3 border-2 border-white/10 p-4">
+									<div class="text-xs text-white/60 uppercase tracking-wider mb-3">Nebula controls</div>
+									<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+										<div>
+											<div class="text-xs text-white/60 mb-1">Speed</div>
+											<input id="scene-speed" type="range" name="background_speed" min="0" max="5" step="0.1" value="1" class="w-full"/>
+										</div>
+										<div>
+											<div class="text-xs text-white/60 mb-1">Seed (sync)</div>
+											<input id="scene-seed" type="range" name="background_seed" min="-1000" max="1000" step="1" value="0" class="w-full"/>
+										</div>
+										<div>
+											<div class="text-xs text-white/60 mb-1">OKLCH Lightness (L)</div>
+											<input id="scene-oklch-l" type="range" name="tint_l" min="0" max="1" step="0.01" value="1" class="w-full"/>
+										</div>
+										<div>
+											<div class="text-xs text-white/60 mb-1">OKLCH Chroma (C)</div>
+											<input id="scene-oklch-c" type="range" name="tint_c" min="0" max="0.4" step="0.01" value="0" class="w-full"/>
+										</div>
+										<div class="md:col-span-2">
+											<div class="text-xs text-white/60 mb-1">OKLCH Hue (H)</div>
+											<input id="scene-oklch-h" type="range" name="tint_h" min="0" max="360" step="1" value="0" class="w-full"/>
+										</div>
+									</div>
+								</div>
+								<div class="md:col-span-3 border-2 border-white/10 p-4">
+									<div class="text-xs text-white/60 uppercase tracking-wider mb-3">Video frame</div>
+									<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+										<div>
+											<div class="text-xs text-white/60 mb-1">Border Size</div>
+											<input id="scene-video-border-size" type="range" name="video_border_size" min="0" max="12" step="1" value="2" class="w-full"/>
+										</div>
+										<div>
+											<div class="text-xs text-white/60 mb-1">Border Opacity</div>
+											<input id="scene-video-border-opacity" type="range" name="video_border_opacity" min="0" max="0.5" step="0.01" value="0.1" class="w-full"/>
+										</div>
+										<div class="md:col-span-3">
+											<label class="inline-flex items-center gap-2 text-xs text-white/60">
+												<input id="scene-video-border-enabled" type="checkbox" name="video_border_enabled" value="1" checked class="bg-black border-2 border-white/10"/>
+												Border Enabled
+											</label>
+										</div>
+									</div>
+								</div>
+								<div class="md:col-span-3">
+									@components.FormButton("primary", "md", "fa-floppy-disk", true) {
+										Save Preset
+									}
+								</div>
+							</div>
+						</form>
+						<form id="scene-apply-form" action={ "/producer/" + sessionCode + "/scenes/apply" } method="POST" class="mb-6">
+							<input id="scene-apply-stage-aspect" type="hidden" name="stage_aspect" value="16:9"/>
+							<input id="scene-apply-background-mode" type="hidden" name="background_mode" value="perlin-nebula"/>
+							<input id="scene-apply-speed" type="hidden" name="background_speed" value="1"/>
+							<input id="scene-apply-seed" type="hidden" name="background_seed" value="0"/>
+							<input id="scene-apply-oklch-l" type="hidden" name="tint_l" value="1"/>
+							<input id="scene-apply-oklch-c" type="hidden" name="tint_c" value="0"/>
+							<input id="scene-apply-oklch-h" type="hidden" name="tint_h" value="0"/>
+							<input id="scene-apply-epoch-ms" type="hidden" name="epoch_ms" value="0"/>
+							<input id="scene-apply-video-x" type="hidden" name="video_x" value="0.5"/>
+							<input id="scene-apply-video-y" type="hidden" name="video_y" value="0.5"/>
+							<input id="scene-apply-video-w" type="hidden" name="video_w" value="0.9"/>
+							<input id="scene-apply-video-h" type="hidden" name="video_h" value="0.9"/>
+							<input id="scene-apply-video-aspect" type="hidden" name="video_aspect" value=""/>
+							<input id="scene-apply-video-border-enabled" type="hidden" name="video_border_enabled" value="1"/>
+							<input id="scene-apply-video-border-size" type="hidden" name="video_border_size" value="2"/>
+							<input id="scene-apply-video-border-opacity" type="hidden" name="video_border_opacity" value="0.1"/>
+							<div class="text-xs text-white/40 mb-2">Apply current slider values to all connected players (starts synced).</div>
+							@components.FormButton("primary", "md", "fa-bolt", true) {
+								Apply To Players
+							}
+						</form>
+						<script type="module" src="/static/dist/producer-scene-preview.js"></script>
+						if len(presets) == 0 {
+							<div class="text-sm text-white/40">No presets yet. Save one above.</div>
+						} else {
+							<div class="border-2 border-white/10 overflow-x-auto">
+								<table class="w-full text-xs font-mono">
+									<thead class="border-b-2 border-white/10 text-white/60 uppercase tracking-wider">
+										<tr>
+											<th class="text-left p-3">name</th>
+											<th class="text-left p-3">updated</th>
+											<th class="text-right p-3">actions</th>
+										</tr>
+									</thead>
+									<tbody class="divide-y divide-white/10">
+										for _, p := range presets {
+											<tr class="text-white/80">
+												<td class="p-3 text-white">{ p.Name }</td>
+												<td class="p-3 text-white/60">{ p.UpdatedAt.Format("2006-01-02 15:04") }</td>
+												<td class="p-3">
+													<div class="flex justify-end gap-2">
+														<button
+															type="button"
+															class="font-mono uppercase tracking-wider transition-all border-2 inline-flex items-center justify-center bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-3 py-1 text-xs"
+															data-scene-b64={ p.SceneB64 }
+															data-preset-name={ p.Name }
+														>
+															Load
+														</button>
+														<form action={ "/producer/" + sessionCode + "/scenes/presets/" + p.ID + "/apply" } method="POST">
+															@components.FormButton("primary", "sm", "", true) {
+																Apply
+															}
+														</form>
+														<form action={ "/producer/" + sessionCode + "/scenes/presets/" + p.ID + "/delete" } method="POST">
+															@components.FormButton("secondary", "sm", "", true) {
+																Delete
+															}
+														</form>
+													</div>
+												</td>
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
+						}
+					}
+				}
+			</div>
+		}
+	}
+}
+
+templ ProducerSSEStatus(status string, class string) {
+	<span id="producer-sse-status" class={ "text-xs font-mono", class }>{ status }</span>
+}
+
+templ ProducerRemoteCount(count int) {
+	<span id="remote-count" class="ml-2 text-white">{ count }</span>
+}
+
+templ ProducerRemoteRow(remoteKey string, clientLabel string, role string, age string, rttMs int, jitterMs int, offsetMs int, rttClass string, jitterClass string) {
+	<tr id={ "remote-row-" + remoteKey } class="text-white/80">
+		<td class="p-3">
+			<span class="text-white">{ clientLabel }</span>
+		</td>
+		<td class="p-3 text-white/60">{ role }</td>
+		<td class="p-3 text-white/60">{ age }</td>
+		<td class={ "p-3", rttClass }>
+			if rttMs > 0 {
+				{ rttMs }ms
+			} else {
+				-
+			}
+		</td>
+		<td class={ "p-3", jitterClass }>
+			if jitterMs > 0 {
+				{ jitterMs }ms
+			} else {
+				-
+			}
+		</td>
+		<td class="p-3 text-white/60">
+			if offsetMs != 0 {
+				{ offsetMs }ms
+			} else {
+				0ms
+			}
+		</td>
+	</tr>
+}
+
+templ ProducerRemoteEmptyRow(sessionCode string) {
+	<tr id="remote-empty-row">
+		<td colspan="6" class="p-6 text-white/40">
+			No remotes yet. Open /player and join { sessionCode }.
+		</td>
+	</tr>
+}

@@ -1,0 +1,47 @@
+{
+  "baseUrl": "http://localhost:9115",
+  "capturedAt": "2026-02-22T01:28:33.312Z",
+  "fps": 30,
+  "clips": [
+    {
+      "name": "home",
+      "title": "Add a Video",
+      "path": "video-clips/home.webm"
+    },
+    {
+      "name": "library",
+      "title": "Browse the Library",
+      "path": "video-clips/library.webm"
+    },
+    {
+      "name": "video-detail",
+      "title": "Watch + Search Transcripts",
+      "path": "video-clips/video-detail.webm"
+    },
+    {
+      "name": "cut-editor",
+      "title": "Create Clips",
+      "path": "video-clips/cut-editor.webm"
+    },
+    {
+      "name": "filters",
+      "title": "Color Filters",
+      "path": "video-clips/filters.webm"
+    },
+    {
+      "name": "settings",
+      "title": "Settings & Keybindings",
+      "path": "video-clips/settings.webm"
+    },
+    {
+      "name": "admin",
+      "title": "Admin Dashboard",
+      "path": "video-clips/admin.webm"
+    },
+    {
+      "name": "jobs",
+      "title": "Download Jobs",
+      "path": "video-clips/jobs.webm"
+    }
+  ]
+}

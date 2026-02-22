@@ -1,0 +1,434 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Floating <details> dropdowns: prevent open content from expanding parent */
+details.dropdown-menu {
+  position: relative;
+}
+details.dropdown-menu > :not(summary) {
+  position: absolute;
+  z-index: 50;
+}
+
+@layer base {
+  @font-face {
+    font-family: 'Blobmoji';
+    src: url('/static/fonts/woff/Blobmoji.woff2') format('woff2');
+    font-display: swap;
+  }
+  
+  @font-face {
+    font-family: 'Tomorrow';
+    src: url('/static/fonts/woff/tomorrow-v19-latin-regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+  
+  @font-face {
+    font-family: 'Tomorrow';
+    src: url('/static/fonts/woff/tomorrow-v19-latin-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+  
+  @font-face {
+    font-family: 'Orbitron';
+    src: url('/static/fonts/woff/orbitron-v35-latin-regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'Orbitron';
+    src: url('/static/fonts/woff/orbitron-v35-latin-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+}
+
+/* ============================================================================
+   VIEW TRANSITIONS & ANIMATIONS
+   Black & White Design System - Physical Interaction Model
+   ============================================================================ */
+
+/* Global view transition defaults */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+}
+
+/* Drawer slide animations (Jobs/Settings/Admin) */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+::view-transition-old(drawer),
+::view-transition-new(drawer) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+}
+
+::view-transition-new(drawer) {
+  animation-name: slide-in-right;
+}
+
+::view-transition-old(drawer) {
+  animation-name: slide-out-right;
+}
+
+/* Document morph animations (Video grid → detail) */
+::view-transition-old(video-*),
+::view-transition-new(video-*) {
+  animation-duration: 500ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  mix-blend-mode: normal;
+  overflow: clip;
+}
+
+/* Job slide-up animation */
+@keyframes slide-up {
+  from { 
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+::view-transition-new(job-detail) {
+  animation: slide-up 400ms ease-out;
+}
+
+/* Lift animation (hover states) */
+@keyframes lift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+
+/* Dirty-save pulse glow (amber) */
+@keyframes save-pulse {
+  0%, 100% { box-shadow: 0 0 4px 0 rgba(251, 191, 36, 0.3); }
+  50%      { box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.6); }
+}
+.save-pulse-glow {
+  animation: save-pulse 2s ease-in-out infinite;
+}
+
+/* Fade animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Reduced motion support - CRITICAL for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ============================================================================
+   CUSTOM UTILITIES
+   ============================================================================ */
+
+@layer utilities {
+  /* Lift effect for hover states */
+  .lift-hover {
+    transition: transform 150ms ease-out, border-color 150ms ease-out;
+  }
+  
+  .lift-hover:hover {
+    transform: translateY(-4px);
+  }
+  
+  /* Square focus rings */
+  .focus-square {
+    @apply focus:outline-none focus:ring-2 focus:ring-white/20;
+  }
+  
+  /* Fade-in animation for alerts and dynamic content */
+  .animate-fade-in {
+    animation: fade-in 200ms ease-out;
+  }
+  
+  /* Line clamp utilities for truncating text */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+/* ============================================================================
+   CUT PAGE - FILTER CONTROLS (Resolve-inspired)
+   ============================================================================ */
+
+/* Custom range slider - dark track, accent thumb */
+input[type="range"].filter-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].filter-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, rgba(255,255,255,0.1), rgba(255,255,255,0.2));
+  border-radius: 2px;
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: white;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb:hover {
+  background: #e0e0e0;
+  transform: scale(1.15);
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb:active {
+  background: #bbb;
+  transform: scale(1.05);
+}
+
+input[type="range"].filter-slider::-moz-range-track {
+  height: 4px;
+  background: linear-gradient(to right, rgba(255,255,255,0.1), rgba(255,255,255,0.2));
+  border-radius: 2px;
+  border: none;
+}
+
+input[type="range"].filter-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+/* Color picker swatch */
+input[type="color"].filter-color {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input[type="color"].filter-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"].filter-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 1px;
+}
+
+input[type="color"].filter-color:hover {
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* Filter card design */
+.filter-card {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  transition: border-color 150ms ease-out;
+}
+
+.filter-card:hover {
+  border-color: rgba(255,255,255,0.15);
+}
+
+.filter-card-header {
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Category color accents */
+.filter-cat-color { border-left: 3px solid #f59e0b; }
+.filter-cat-spatial { border-left: 3px solid #3b82f6; }
+.filter-cat-temporal { border-left: 3px solid #8b5cf6; }
+.filter-cat-audio { border-left: 3px solid #10b981; }
+.filter-cat-overlay { border-left: 3px solid #ef4444; }
+
+/* Scope canvas containers */
+[data-audio-tools] canvas {
+  image-rendering: pixelated;
+}
+
+/* ============================================================================
+   CUT PAGE TIMELINE COMPONENTS
+   ============================================================================ */
+
+/* Timeline container - base styles */
+.timeline-container {
+  position: relative;
+  user-select: none;
+  touch-action: none;
+}
+
+/* Timeline clip - rendered in content layer */
+.timeline-clip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid;
+  border-right: 2px solid;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.timeline-clip:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.timeline-clip.selected {
+  border-color: rgba(255, 255, 255, 0.8);
+  background-color: rgba(255, 255, 255, 0.2);
+  z-index: 5;
+}
+
+/* Clip resize handles */
+.clip-handle-left,
+.clip-handle-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.clip-handle-left {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.clip-handle-right {
+  right: 0;
+  transform: translateX(50%);
+}
+
+.timeline-clip:hover .clip-handle-left,
+.timeline-clip:hover .clip-handle-right,
+.timeline-clip.selected .clip-handle-left,
+.timeline-clip.selected .clip-handle-right {
+  opacity: 1;
+}
+
+/* Timeline markers */
+.timeline-marker-point {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.timeline-marker-point:hover {
+  filter: brightness(1.3);
+}
+
+.timeline-marker-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-top: 2px solid;
+  border-bottom: 2px solid;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.timeline-marker-range:hover {
+  filter: brightness(1.2);
+}
+
+/* Work window (overview timeline only) */
+.work-window {
+  cursor: move;
+  transition: background-color 150ms ease-out;
+}
+
+.work-window:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.work-handle-left,
+.work-handle-right {
+  transition: background-color 150ms ease-out;
+}
+
+.work-handle-left:hover,
+.work-handle-right:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Playhead lines */
+.playhead-video {
+  pointer-events: none;
+  transition: left 50ms linear;
+}
+
+.playhead-work {
+  pointer-events: none;
+  transition: left 50ms linear;
+}
+
+/* Forced cursor during drag operations – set via document.documentElement.dataset.dragCursor */
+html[data-drag-cursor="ew-resize"],
+html[data-drag-cursor="ew-resize"] * { cursor: ew-resize !important; }
+html[data-drag-cursor="grabbing"],
+html[data-drag-cursor="grabbing"] * { cursor: grabbing !important; }
+html[data-drag-cursor="crosshair"],
+html[data-drag-cursor="crosshair"] * { cursor: crosshair !important; }

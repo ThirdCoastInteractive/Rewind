@@ -1,0 +1,425 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+templ JobDetail(job *db.DownloadJob, username string) {
+	@Layout("Job Details", username) {
+		@JobDetailContent(job)
+		if job.Status == "processing" || job.Status == "queued" {
+			<script>
+				// Only set up SSE for jobs that are still running
+				const eventSource = new EventSource('/api/jobs/{{ job.ID.String() }}/status');
+				
+				eventSource.onmessage = function(event) {
+					// Datastar will handle the patching via SSE
+				};
+				
+				eventSource.onerror = function(err) {
+					console.error('SSE error:', err);
+					eventSource.close();
+				};
+				
+				// Clean up on page unload
+				window.addEventListener('beforeunload', () => {
+					eventSource.close();
+				});
+			</script>
+		}
+	}
+}
+
+templ JobDetailContent(job *db.DownloadJob) {
+	@Container("") {
+		<div class="mb-6">
+			@components.LinkButton("/jobs", "secondary", "sm", "arrow-left", false) {
+				Back to Jobs
+			}
+			<h1 class="text-xl font-mono uppercase tracking-tight text-white mt-4 mb-0.5">Job Details</h1>
+			<p class="text-xs font-mono text-white/60">View detailed information about this download job</p>
+		</div>
+		<div id="job-detail-card">
+			@components.Card(false) {
+				@components.CardHeader("Status", "") {
+					<div class="flex items-center justify-between">
+						<div>
+							@StatusBadge(job.Status)
+						</div>
+						<div class="text-right">
+							<p class="text-xs font-mono text-white/40 mb-1">JOB ID</p>
+							<p class="text-xs font-mono text-white/80">{ job.ID.String() }</p>
+						</div>
+					</div>
+				}
+				@components.CardBody(true) {
+					<div class="mb-6">
+						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Video URL</h3>
+						<div class={ viewtypes.InfoBoxClass }>
+							<a href={ templ.SafeURL(job.URL) } target="_blank" rel="noopener noreferrer" class="text-xs font-mono text-white hover:text-white/70 break-all">
+								{ job.URL }
+								<i class="fa-sharp fa-solid fa-arrow-up-right-from-square ml-2" aria-hidden="true"></i>
+							</a>
+						</div>
+					</div>
+					if job.VideoID.Valid {
+						<div class="mb-6">
+							<h3 class={ viewtypes.SectionLabel + " mb-2" }>Related Video</h3>
+							<div class={ viewtypes.InfoBoxClass }>
+								<a href={ templ.SafeURL("/videos/" + job.VideoID.String()) } class="inline-flex items-center gap-2 text-xs font-mono text-white hover:text-white/70">
+									<i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i>
+									View Archived Video
+								</a>
+							</div>
+						</div>
+					}
+					<div class="mb-6">
+						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Timeline</h3>
+						@components.Table([]string{}, true) {
+							@components.TableRow(false, "") {
+								@components.TableCell(true) {
+									Created 
+								}
+								@components.TableCell(false) {
+									{ job.CreatedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+								}
+							}
+							if job.StartedAt.Valid {
+								@components.TableRow(false, "") {
+									@components.TableCell(true) {
+										Started 
+									}
+									@components.TableCell(false) {
+										{ job.StartedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+									}
+								}
+							}
+							if job.FinishedAt.Valid {
+								@components.TableRow(false, "") {
+									@components.TableCell(true) {
+										Finished 
+									}
+									@components.TableCell(false) {
+										{ job.FinishedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+									}
+								}
+								if job.StartedAt.Valid {
+									@components.TableRow(false, "") {
+										@components.TableCell(true) {
+											Duration 
+										}
+										@components.TableCell(false) {
+											{ format.JobDuration(job.FinishedAt.Time.Sub(job.StartedAt.Time)) }
+										}
+									}
+								}
+							}
+						}
+					</div>
+					<div class="mb-6">
+						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Statistics</h3>
+						<div class="grid grid-cols-2 gap-4">
+							<div class="bg-black/40 border-2 border-white/10 p-4">
+								<p class="text-xs font-mono text-white/60 mb-1">ATTEMPTS</p>
+								<p class="text-2xl font-mono font-bold text-white">{ fmt.Sprintf("%d", job.Attempts) }</p>
+							</div>
+							<div class="bg-black/40 border-2 border-white/10 p-4">
+								<p class="text-xs font-mono text-white/60 mb-1">OPTIONS</p>
+								<div class="flex flex-wrap gap-2 mt-2">
+									if job.Refresh {
+										<span class="inline-flex items-center px-2 py-1 text-xs font-mono bg-white/10 text-white border-2 border-white/20">
+											<i class="fa-sharp fa-solid fa-rotate mr-1" aria-hidden="true"></i>
+											REFRESH
+										</span>
+									}
+								</div>
+							</div>
+						</div>
+					</div>
+					if job.LastError != nil && *job.LastError != "" {
+						<div class="mb-6">
+							<h3 class={ viewtypes.SectionLabel + " mb-2" }>Error Details</h3>
+							<div class="bg-black/40 border-2 border-red-500/50 p-4">
+								<pre class="text-xs font-mono text-red-400 whitespace-pre-wrap break-words">{ *job.LastError }</pre>
+							</div>
+						</div>
+					}
+				}
+				@components.CardFooter() {
+					<div class="flex items-center gap-3">
+						if job.Status == "failed" || job.Status == "succeeded" {
+							<div onclick={ templ.JSFuncCall("retryJob", job.ID.String()) }>
+								@components.Button("primary", "md", "rotate", false) {
+									Retry Job
+								}
+							</div>
+						}
+						if job.Status == "processing" {
+							<div onclick={ templ.JSFuncCall("cancelJob", job.ID.String()) }>
+								@components.Button("danger", "md", "xmark", false) {
+									Cancel Job
+								}
+							</div>
+						}
+						if job.Archived {
+							<div onclick={ templ.JSFuncCall("unarchiveJob", job.ID.String()) }>
+								@components.Button("secondary", "md", "box-archive", false) {
+									Unarchive Job
+								}
+							</div>
+						} else {
+							<div onclick={ templ.JSFuncCall("archiveJob", job.ID.String()) }>
+								@components.Button("secondary", "md", "box-archive", false) {
+									Archive Job
+								}
+							</div>
+						}
+					</div>
+				}
+			}
+		</div>
+		@components.Card(false) {
+			@components.CardHeader("YT-DLP OUTPUT", "Live command output")
+			@components.CardBody(true) {
+				<div id="logs-container" class="bg-black border-2 border-white/10 p-3 font-mono text-xs max-h-96 overflow-y-auto">
+					<div class="text-white/40">Loading logs...</div>
+				</div>
+			}
+		}
+	}
+	<script>
+		const jobId = "{{ job.ID.String() }}";
+		const isProcessing = {{ job.Status == "processing" }};
+		
+		async function postJobAction(jobId, action) {
+			const response = await fetch(`/api/jobs/${jobId}/${action}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(text || `Failed to ${action} job`);
+			}
+		}
+
+		async function retryJob(jobId) {
+			if (!confirm('Retry this job?')) return;
+			try {
+				await postJobAction(jobId, 'retry');
+			} catch (error) {
+				alert('Failed to retry job: ' + error.message);
+			}
+		}
+
+		async function cancelJob(jobId) {
+			if (!confirm('Cancel this job?')) return;
+			try {
+				await postJobAction(jobId, 'cancel');
+			} catch (error) {
+				alert('Failed to cancel job: ' + error.message);
+			}
+		}
+
+		async function archiveJob(jobId) {
+			if (!confirm('Archive this job? This will hide it from the jobs list.')) return;
+			try {
+				await postJobAction(jobId, 'archive');
+				window.location.href = '/jobs';
+			} catch (error) {
+				alert('Failed to archive job: ' + error.message);
+			}
+		}
+
+		async function unarchiveJob(jobId) {
+			try {
+				await postJobAction(jobId, 'unarchive');
+				window.location.href = '/jobs';
+			} catch (error) {
+				alert('Failed to unarchive job: ' + error.message);
+			}
+		}
+		
+		// Paginated log viewer
+		let currentOffset = 0;
+		let totalLogs = 0;
+		let isLoading = false;
+		const LOGS_PER_PAGE = 50;
+		
+		document.addEventListener('DOMContentLoaded', function() {
+			loadInitialLogs();
+			
+			// Stream new logs if job is processing
+			if (isProcessing) {
+				streamLogs();
+			}
+			
+			// Infinite scroll for loading older logs
+			const container = document.getElementById('logs-container');
+			container.addEventListener('scroll', () => {
+				// Load more when scrolled to top (to get older logs)
+				if (container.scrollTop < 100 && !isLoading && currentOffset < totalLogs) {
+					loadMoreLogs();
+				}
+			});
+		});
+		
+		async function loadInitialLogs() {
+			try {
+				const response = await fetch(`/api/jobs/${jobId}/logs?limit=${LOGS_PER_PAGE}&offset=0`);
+				if (!response.ok) {
+					document.getElementById('logs-container').innerHTML = '<div class="text-red-500">Failed to load logs</div>';
+					return;
+				}
+				const data = await response.json();
+				totalLogs = data.total || 0;
+				currentOffset = data.logs.length;
+				
+				displayLogs(data.logs, false);
+				
+				// If there are more logs, show indicator
+				if (currentOffset < totalLogs) {
+					prependLoadMoreIndicator();
+				}
+			} catch (error) {
+				console.error('Failed to load logs:', error);
+				document.getElementById('logs-container').innerHTML = '<div class="text-red-500">Error loading logs</div>';
+			}
+		}
+		
+		async function loadMoreLogs() {
+			if (isLoading) return;
+			isLoading = true;
+			
+			try {
+				const response = await fetch(`/api/jobs/${jobId}/logs?limit=${LOGS_PER_PAGE}&offset=${currentOffset}`);
+				if (!response.ok) {
+					console.error('Failed to load more logs');
+					return;
+				}
+				const data = await response.json();
+				currentOffset += data.logs.length;
+				
+				// Save scroll position
+				const container = document.getElementById('logs-container');
+				const oldScrollHeight = container.scrollHeight;
+				
+				displayLogs(data.logs, true);
+				
+				// Restore scroll position (compensate for new content at top)
+				const newScrollHeight = container.scrollHeight;
+				container.scrollTop = newScrollHeight - oldScrollHeight + container.scrollTop;
+				
+				// Remove load more indicator if we've loaded everything
+				if (currentOffset >= totalLogs) {
+					removeLoadMoreIndicator();
+				}
+			} catch (error) {
+				console.error('Failed to load more logs:', error);
+			} finally {
+				isLoading = false;
+			}
+		}
+		
+		function displayLogs(logs, prepend = false) {
+			const container = document.getElementById('logs-container');
+			
+			if (logs.length === 0 && !prepend) {
+				container.innerHTML = '<div class="text-white/40">No output yet</div>';
+				return;
+			}
+			
+			// Clear placeholder if exists
+			const placeholder = container.querySelector('.text-white\\/40');
+			if (placeholder) {
+				placeholder.remove();
+			}
+			
+			const fragment = document.createDocumentFragment();
+			logs.forEach(log => {
+				const line = document.createElement('div');
+				line.className = log.stream === 'stderr' ? 'text-red-400' : 'text-green-400';
+				line.textContent = log.message;
+				fragment.appendChild(line);
+			});
+			
+			if (prepend) {
+				removeLoadMoreIndicator();
+				container.insertBefore(fragment, container.firstChild);
+				if (currentOffset < totalLogs) {
+					prependLoadMoreIndicator();
+				}
+			} else {
+				container.appendChild(fragment);
+				// Auto-scroll to bottom on initial load
+				container.scrollTop = container.scrollHeight;
+			}
+		}
+		
+		function prependLoadMoreIndicator() {
+			const container = document.getElementById('logs-container');
+			const indicator = document.createElement('div');
+			indicator.className = 'text-white/60 text-center py-2 cursor-pointer hover:text-white load-more-indicator';
+			indicator.textContent = `↑ Load more (${totalLogs - currentOffset} older lines) ↑`;
+			indicator.onclick = loadMoreLogs;
+			container.insertBefore(indicator, container.firstChild);
+		}
+		
+		function removeLoadMoreIndicator() {
+			const indicator = document.querySelector('.load-more-indicator');
+			if (indicator) indicator.remove();
+		}
+		
+		function streamLogs() {
+			try {
+				const logStream = new EventSource(`/api/jobs/${jobId}/logs/stream`);
+				
+				logStream.addEventListener('log', (evt) => {
+					try {
+						const log = JSON.parse(evt.data);
+						const container = document.getElementById('logs-container');
+						
+						// Remove "No output" message if present
+						if (container.querySelector('.text-white\\/40')) {
+							container.innerHTML = '';
+						}
+						
+						const line = document.createElement('div');
+						line.className = log.stream === 'stderr' ? 'text-red-400' : 'text-green-400';
+						line.textContent = log.message;
+						container.appendChild(line);
+						
+						// Auto-scroll to bottom if user is near bottom
+						const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+						if (isNearBottom) {
+							container.scrollTop = container.scrollHeight;
+						}
+						
+						totalLogs++;
+					} catch (e) {
+						console.warn('bad log event', e);
+					}
+				});
+				
+				logStream.addEventListener('complete', (evt) => {
+					logStream.close();
+					console.log('Log stream complete');
+				});
+				
+				logStream.onerror = (err) => {
+					console.error('Log stream error:', err);
+					logStream.close();
+				};
+				
+				window.addEventListener('beforeunload', () => {
+					logStream.close();
+				});
+			} catch (e) {
+				console.warn('Log streaming unavailable', e);
+			}
+		}
+	</script>
+}

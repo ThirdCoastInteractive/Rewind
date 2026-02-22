@@ -1,0 +1,60 @@
+package components
+
+// ============================================================================
+// CARD COMPONENTS
+// ============================================================================
+
+// Card is a container with border and optional hover state
+templ Card(elevated bool) {
+	<div
+		class={
+			"bg-gray-10 border-2 border-white/10 transition-colors",
+			templ.KV("hover:border-white/30", elevated),
+		}
+	>
+		{ children... }
+	</div>
+}
+
+// CardBox is a Card that accepts additional Tailwind classes
+templ CardBox(elevated bool, extraClasses string) {
+	<div
+		class={
+			"bg-gray-10 border-2 border-white/10 transition-colors",
+			templ.KV("hover:border-white/30", elevated),
+			extraClasses,
+		}
+	>
+		{ children... }
+	</div>
+}
+
+// CardHeader displays title and optional subtitle with bottom border
+templ CardHeader(title, subtitle string) {
+	<div class="border-b-2 border-white/10 px-4 py-2">
+		if title != "" {
+			<h3 class="font-mono font-bold text-sm tracking-tight text-white uppercase">
+				{ title }
+			</h3>
+		}
+		if subtitle != "" {
+			<p class="font-mono text-xs text-white/60 mt-0.5">
+				{ subtitle }
+			</p>
+		}
+	</div>
+}
+
+// CardBody is the main content area with optional padding
+templ CardBody(padding bool) {
+	<div class={ templ.KV("p-4", padding) }>
+		{ children... }
+	</div>
+}
+
+// CardFooter displays footer content with top border
+templ CardFooter() {
+	<div class="border-t-2 border-white/10 px-4 py-2">
+		{ children... }
+	</div>
+}

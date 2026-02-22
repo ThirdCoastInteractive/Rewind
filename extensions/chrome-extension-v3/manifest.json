@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Rewind Video Archiver (v3)",
+  "version": "0.1.0",
+  "description": "Archive the current tab to your self-hosted Rewind server",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "identity",
+    "alarms"
+  ],
+  "optional_permissions": [
+    "cookies"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "action": {
+    "default_title": "Rewind",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

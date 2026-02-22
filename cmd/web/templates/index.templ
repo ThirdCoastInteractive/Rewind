@@ -1,0 +1,199 @@
+package templates
+
+import (
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+templ Index(recentVideos []*db.Video, username string) {
+	@Layout("Home", username) {
+		@IndexContent(recentVideos)
+	}
+}
+
+templ IndexContent(recentVideos []*db.Video) {
+	{{ accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string) }}
+	{{ registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool) }}
+	@Container("") {
+		<div class="mb-6 border-b-2 border-white/10 pb-4">
+			<h1 class="font-mono font-bold text-2xl tracking-tight text-white uppercase mb-1">
+				VIDEO ARCHIVER
+			</h1>
+			<p class="font-mono text-xs text-white/60 max-w-3xl">
+				Download and store videos from supported platforms. Metadata extraction, comment archival, local playback.
+			</p>
+		</div>
+		if accessLevel != "unauthenticated" {
+			@components.Card(false) {
+				@components.CardHeader("Submit Download Job", "")
+				@components.CardBody(true) {
+					<form id="jobForm" class="space-y-4">
+						@components.Input("Video URL", "url", "url", true, "https://www.youtube.com/watch?v=...")
+						@components.Checkbox("Collect comments", "collect_comments", true)
+						<div id="alertContainer"></div>
+						<div class="md:hidden">
+							@components.FormButton("primary", "mobile-primary", "cloud-arrow-down", true) {
+								SUBMIT JOB
+							}
+						</div>
+						<div class="hidden md:block">
+							@components.FormButton("primary", "md", "cloud-arrow-down", true) {
+								SUBMIT JOB
+							}
+						</div>
+					</form>
+				}
+			}
+			<div class="mt-6">
+				<div class="flex items-center justify-between mb-3 border-b-2 border-white/10 pb-2">
+					<h2 class="font-mono font-bold text-sm uppercase tracking-wider text-white">Recent Videos</h2>
+					<a href="/videos" class="font-mono text-xs uppercase tracking-wider text-white/60 hover:text-white transition-colors" data-transition>
+						VIEW ALL →
+					</a>
+				</div>
+				if recentVideos == nil {
+					<div
+						id="recentVideos"
+						class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 ultra:grid-cols-6 gap-4"
+						data-init="@get('/api/videos/recent')"
+					>
+						@VideoCardSkeletonID("recent-video-slot-0")
+						@VideoCardSkeletonID("recent-video-slot-1")
+						@VideoCardSkeletonID("recent-video-slot-2")
+						@VideoCardSkeletonID("recent-video-slot-3")
+						@VideoCardSkeletonID("recent-video-slot-4")
+						@VideoCardSkeletonID("recent-video-slot-5")
+						@VideoCardSkeletonID("recent-video-slot-6")
+						@VideoCardSkeletonID("recent-video-slot-7")
+						@VideoCardSkeletonID("recent-video-slot-8")
+						@VideoCardSkeletonID("recent-video-slot-9")
+					</div>
+				} else {
+					@RecentVideosGrid(recentVideos)
+				}
+			</div>
+		} else {
+			@components.Card(false) {
+				@components.CardBody(true) {
+					<div class="text-center py-6">
+						<i class="fa-sharp fa-solid fa-video mx-auto text-white/20 mb-4 text-4xl" aria-hidden="true"></i>
+						<h2 class="font-mono font-bold text-lg uppercase tracking-tight text-white mb-2">AUTHENTICATION REQUIRED</h2>
+						<p class="font-mono text-xs text-white/60 mb-4 max-w-md mx-auto">
+							Log in or create an account to submit download jobs and access archived videos.
+						</p>
+						<div class="flex flex-col sm:flex-row justify-center gap-3">
+							if registrationEnabled {
+								@components.LinkButton("/register", "primary", "md", "", false) {
+									REGISTER
+								}
+							}
+							@components.LinkButton("/login", "secondary", "md", "", false) {
+								LOGIN
+							}
+						</div>
+					</div>
+				}
+			}
+		}
+	}
+	<script>
+		// Mobile optimization: Auto-focus URL input on devices with viewport < 1024px
+		document.addEventListener('DOMContentLoaded', () => {
+			const urlInput = document.getElementById('url');
+			if (urlInput && window.innerWidth < 1024) {
+				// Delay slightly to ensure smooth page load
+				setTimeout(() => {
+					urlInput.focus();
+				}, 300);
+			}
+		});
+
+		const jobForm = document.getElementById('jobForm');
+		if (jobForm) {
+			jobForm.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				
+				const alertContainer = document.getElementById('alertContainer');
+				const form = e.target;
+				const submitBtn = form.querySelector('button[type="submit"]');
+				const originalBtnText = submitBtn.innerHTML;
+				
+				// Disable submit button
+				submitBtn.disabled = true;
+				submitBtn.innerHTML = '<span class="flex items-center justify-center"><i class="fa-sharp fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span>';
+				
+				const data = {
+					url: form.url.value,
+					collect_comments: form.collect_comments.checked
+				};
+				
+				try {
+					const response = await fetch('/api/download-jobs', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(data)
+					});
+					
+					if (response.ok) {
+						const result = await response.json();
+						
+						// Show success alert using Alert component style
+						alertContainer.innerHTML = `
+							<div class="border-l-4 border-white p-3 bg-white/5 animate-fade-in">
+								<div class="flex items-start gap-2">
+									<i class="fa-sharp fa-solid fa-check text-white text-lg mt-0.5" aria-hidden="true"></i>
+									<p class="font-mono text-sm text-white/90">Job created successfully! <a href="/jobs/${result.id}" class="underline hover:text-white" data-transition>View job →</a></p>
+								</div>
+							</div>
+						`;
+						
+						// Reset form
+						form.reset();
+						form.collect_comments.checked = true; // Reset default
+						
+						// Trigger view transition for job submission (subtle slide-up effect)
+						if (document.startViewTransition && window.audio) {
+							window.audio.play('job-submit'); // Sound hook (audio file deferred)
+						}
+						
+						// Auto-dismiss after 5s
+						setTimeout(() => { 
+							alertContainer.innerHTML = ''; 
+						}, 5000);
+					} else {
+						const errorText = await response.text();
+						throw new Error(errorText || 'Failed to create job');
+					}
+				} catch (error) {
+					alertContainer.innerHTML = `
+						<div class="border-l-4 border-white p-3 bg-white/5 animate-fade-in">
+							<div class="flex items-start gap-2">
+								<i class="fa-sharp fa-solid fa-xmark text-white text-lg mt-0.5" aria-hidden="true"></i>
+								<p class="font-mono text-sm text-white/90">Error: ${error.message}</p>
+							</div>
+						</div>
+					`;
+				} finally {
+					submitBtn.disabled = false;
+					submitBtn.innerHTML = originalBtnText;
+				}
+			});
+		}
+
+	</script>
+}
+
+templ RecentVideosGrid(videos []*db.Video) {
+	<div id="recentVideos">
+		if len(videos) > 0 {
+			@ResponsiveGrid("videos") {
+				for _, video := range videos {
+					@RecentVideoCard(video)
+				}
+			}
+		} else {
+			@EmptyState("video", "No videos", "Submit a download job using the form above")
+		}
+	</div>
+}

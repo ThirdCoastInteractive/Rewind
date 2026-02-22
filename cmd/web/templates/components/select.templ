@@ -1,0 +1,35 @@
+package components
+
+// ============================================================================
+// SELECT COMPONENT
+// Reusable dropdown select for forms and filters
+// ============================================================================
+
+// SelectOption represents a single option in a dropdown
+type SelectOption struct {
+	Value string
+	Label string
+}
+
+// Select renders a dropdown with optional label
+templ Select(label, name string, options []SelectOption, selected string, extraAttrs templ.Attributes) {
+	<div class="flex items-center gap-2">
+		if label != "" {
+			<label for={ name } class="text-xs font-mono text-white/60 uppercase whitespace-nowrap">
+				{ label }
+			</label>
+		}
+		<select
+			id={ name }
+			name={ name }
+			class="bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5 focus:border-white/40 outline-none cursor-pointer"
+			{ extraAttrs... }
+		>
+			for _, opt := range options {
+				<option value={ opt.Value } selected?={ opt.Value == selected }>
+					{ opt.Label }
+				</option>
+			}
+		</select>
+	</div>
+}

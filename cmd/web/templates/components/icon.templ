@@ -1,0 +1,33 @@
+package components
+
+// ============================================================================
+// ICON COMPONENT
+// Font Awesome Sharp Solid Icons - Consistent icon rendering
+// ============================================================================
+
+// Icon renders a Font Awesome Sharp Solid icon
+// name: the icon name without the "fa-" prefix (e.g., "play", "pause", "arrow-left")
+// extraClasses: additional CSS classes for sizing, color, hover states, etc.
+//
+// Usage:
+//   @Icon("play", "")                           // Basic icon
+//   @Icon("play", "text-white/60")              // With color
+//   @Icon("play", "text-lg hover:text-white")   // With size and hover
+templ Icon(name, extraClasses string) {
+	<i class={ "fa-sharp fa-solid fa-" + name, extraClasses } aria-hidden="true"></i>
+}
+
+// IconRegular renders a Font Awesome Sharp Regular (outline) icon
+// For when you need the outline variant instead of solid
+templ IconRegular(name, extraClasses string) {
+	<i class={ "fa-sharp fa-regular fa-" + name, extraClasses } aria-hidden="true"></i>
+}
+
+// IconWithText renders an icon followed by text with proper spacing
+// Useful for buttons and labels with icons
+templ IconWithText(name, text, extraClasses string) {
+	<span class={ "inline-flex items-center gap-2", extraClasses }>
+		<i class={ "fa-sharp fa-solid fa-" + name } aria-hidden="true"></i>
+		<span>{ text }</span>
+	</span>
+}

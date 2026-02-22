@@ -1,0 +1,111 @@
+package components
+
+import "thirdcoast.systems/rewind/pkg/videoinfo"
+
+// ============================================================================
+// VIDEO INFO PANEL
+// 3-column metadata display: Source, Technical, Classification
+// Driven by InfoPair slices to eliminate repetitive if-checks in templates.
+// ============================================================================
+
+// InfoColumn renders a titled column of label/value pairs with optional links.
+templ InfoColumn(title string, rows []videoinfo.InfoPair, links []videoinfo.InfoLinkPair) {
+	<div class="space-y-2">
+		<div class="text-white/30 font-mono uppercase tracking-wider text-xs border-b border-white/10 pb-1 mb-2">{ title }</div>
+		for _, row := range rows {
+			@InfoRow(row.Label, row.Value)
+		}
+		for _, link := range links {
+			@InfoRowLink(link.Label, templ.SafeURL(link.URL), link.Display)
+		}
+	</div>
+}
+
+// InfoColumnWithTags renders a column with pairs + optional tags at the end.
+templ InfoColumnWithTags(title string, rows []videoinfo.InfoPair, tags []string) {
+	<div class="space-y-2">
+		<div class="text-white/30 font-mono uppercase tracking-wider text-xs border-b border-white/10 pb-1 mb-2">{ title }</div>
+		for _, row := range rows {
+			@InfoRow(row.Label, row.Value)
+		}
+		if len(tags) > 0 {
+			<div class="font-mono">
+				<span class="text-white/40 uppercase tracking-wider">Tags</span>
+				<div class="flex flex-wrap gap-1 mt-1">
+					for _, tag := range tags {
+						<span class="text-white/60 bg-white/5 px-1.5 py-0.5 text-xs">{ tag }</span>
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// BadgeList renders a titled row of badges (audio tracks, qualities, etc.)
+templ BadgeList(title string, items []string) {
+	<div class="mt-4 pt-4 border-t border-white/10">
+		<div class="text-white/30 font-mono uppercase tracking-wider text-xs mb-2">{ title }</div>
+		<div class="flex flex-wrap gap-1">
+			for _, item := range items {
+				<span class="text-white/60 bg-white/5 px-1.5 py-0.5 text-xs font-mono">{ item }</span>
+			}
+		</div>
+	</div>
+}
+
+// QualityChipData holds the data for a single quality chip.
+type QualityChipData struct {
+	Label      string
+	Downloaded bool
+	FormatIDs  string // comma-separated yt-dlp format IDs
+}
+
+// QualityChips renders interactive quality badges. Downloaded ones are lit up,
+// others are clickable to trigger a format-specific download.
+templ QualityChips(title string, videoID string, chips []QualityChipData) {
+	<div class="mt-4 pt-4 border-t border-white/10">
+		<div class="text-white/30 font-mono uppercase tracking-wider text-xs mb-2">{ title }</div>
+		<div class="flex flex-wrap gap-1">
+			for _, chip := range chips {
+				if chip.Downloaded {
+					<span class="px-1.5 py-0.5 text-xs font-mono bg-green-500/20 text-green-400 border border-green-500/30" title="Downloaded">
+						<i class="fa-sharp fa-solid fa-check mr-1"></i>
+						{ chip.Label }
+					</span>
+				} else {
+					<button
+						type="button"
+						class="px-1.5 py-0.5 text-xs font-mono bg-white/5 text-white/40 border border-white/10 hover:border-white/30 hover:text-white/70 hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+						onclick={ downloadFormat(videoID, chip.FormatIDs, chip.Label) }
+						title={ "Download " + chip.Label }
+					>
+						<i class="fa-sharp fa-solid fa-download mr-1"></i>
+						{ chip.Label }
+					</button>
+				}
+			}
+		</div>
+	</div>
+}
+
+script downloadFormat(videoID string, formatIDs string, label string) {
+	if (!confirm("Download " + label + " format? This will create a new download job for this specific quality.")) {
+		return
+	}
+	fetch("/api/videos/" + videoID + "/download-format", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ format_ids: formatIDs })
+	}).then(function(response) {
+		if (response.ok) {
+			return response.json().then(function(data) {
+				window.location.href = "/jobs/" + data.job_id
+			})
+		}
+		return response.text().then(function(text) {
+			alert("Failed: " + text)
+		})
+	}).catch(function(error) {
+		alert("Error: " + error.message)
+	})
+}

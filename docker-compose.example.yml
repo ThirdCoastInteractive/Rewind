@@ -1,0 +1,139 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./bin/dev/postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:?}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rewind-network
+
+  pg-migrator:
+    image: ghcr.io/thirdcoastinteractive/rewind-pg-migrator:latest
+    environment:
+      WEBSERVER_PORT: 8080
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rewind-network
+    restart: "no"
+
+  downloader:
+    image: ghcr.io/thirdcoastinteractive/rewind-downloader:latest
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+    environment:
+      WEBSERVER_PORT: 8080
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
+      SPOOL_DIR: /spool
+      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-2}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+    volumes:
+      - ./bin/spool:/spool
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pg-migrator:
+        condition: service_completed_successfully
+    networks:
+      - rewind-network
+
+  ingest:
+    image: ghcr.io/thirdcoastinteractive/rewind-ingest:latest
+    deploy:
+      replicas: 3
+      # Uncomment for NVIDIA GPU acceleration (requires NVIDIA Container Toolkit):
+      # resources:
+      #   reservations:
+      #     devices:
+      #       - capabilities: [gpu]
+    restart: unless-stopped
+    environment:
+      WEBSERVER_PORT: 8080
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
+      SPOOL_DIR: /spool
+      INGEST_WORKERS: ${INGEST_WORKERS:-2}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      WHISPER_ENABLED: ${WHISPER_ENABLED:-true}
+      WHISPER_CMD: ${WHISPER_CMD:-whisper}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
+      WHISPER_TASK: ${WHISPER_TASK:-transcribe}
+      WHISPER_ARGS: ${WHISPER_ARGS:-}
+      WHISPER_TIMEOUT_SECONDS: ${WHISPER_TIMEOUT_SECONDS:-0}
+      SEEK_ENABLE_XFINE: true
+      SEEK_ENABLE_XXFINE: true
+    volumes:
+      - ./bin/spool:/spool
+      - ./bin/download:/downloads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pg-migrator:
+        condition: service_completed_successfully
+    networks:
+      - rewind-network
+
+  encoder:
+    image: ghcr.io/thirdcoastinteractive/rewind-encoder:latest
+    deploy:
+      replicas: 3
+    restart: unless-stopped
+    environment:
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
+      ENCODER_WORKERS: ${ENCODER_WORKERS:-2}
+      EXPORTS_DIR: /exports
+      DOWNLOADS_DIR: /downloads
+    volumes:
+      - ./bin/download:/downloads
+      - ./bin/exports:/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pg-migrator:
+        condition: service_completed_successfully
+    networks:
+      - rewind-network
+
+  web:
+    image: ghcr.io/thirdcoastinteractive/rewind-web:latest
+    restart: unless-stopped
+    environment:
+      WEBSERVER_PORT: 8080
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+    volumes:
+      - ./bin/spool:/spool
+      - ./bin/download:/downloads
+      - ./bin/exports:/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pg-migrator:
+        condition: service_completed_successfully
+    ports:
+      - "${WEBSERVER_PORT:?set WEBSERVER_PORT in .env}:8080"
+    networks:
+      - rewind-network
+
+networks:
+  rewind-network:
+    driver: bridge

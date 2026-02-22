@@ -1,0 +1,22 @@
+{
+  "baseUrl": "http://localhost:9115",
+  "capturedAt": "2026-02-22T01:25:23.944Z",
+  "elapsedMs": 31226,
+  "images": [
+    "home.png",
+    "jobs.png",
+    "job-detail.png",
+    "videos.png",
+    "videos-scrolled.png",
+    "video-detail.png",
+    "video-detail-search.png",
+    "cut-editor.png",
+    "cut-editor-clip.png",
+    "cut-editor-export.png",
+    "cut-editor-filters.png",
+    "settings.png",
+    "keybindings.png",
+    "admin.png",
+    "producer.png"
+  ]
+}
