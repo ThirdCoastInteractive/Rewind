@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// HandleSettingsDownloadCookies serves GET /settings/cookies/download, returning the user's cookies as a downloadable Netscape-format text file.
 func HandleSettingsDownloadCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, _, err := common.RequireSessionUser(c, sm)

@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// HandleSettingsPage serves GET /settings, rendering the main settings page with cookies and admin config.
 func HandleSettingsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

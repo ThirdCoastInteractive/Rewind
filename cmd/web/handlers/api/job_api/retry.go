@@ -9,7 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleRetry serves POST /jobs/:id/retry, re-enqueuing a failed download job.
 func HandleRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, _, err := common.RequireSessionUser(c, sm)

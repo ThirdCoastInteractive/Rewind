@@ -1,0 +1,123 @@
+/* ============================================================================
+   CUT PAGE - FILTER CONTROLS (Resolve-inspired)
+   ============================================================================ */
+
+/* Custom range slider - dark track, accent thumb */
+input[type="range"].filter-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].filter-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, rgba(255,255,255,0.1), rgba(255,255,255,0.2));
+  border-radius: 2px;
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: white;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb:hover {
+  background: #e0e0e0;
+  transform: scale(1.15);
+}
+
+input[type="range"].filter-slider::-webkit-slider-thumb:active {
+  background: #bbb;
+  transform: scale(1.05);
+}
+
+input[type="range"].filter-slider::-moz-range-track {
+  height: 4px;
+  background: linear-gradient(to right, rgba(255,255,255,0.1), rgba(255,255,255,0.2));
+  border-radius: 2px;
+  border: none;
+}
+
+input[type="range"].filter-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+/* Gradient slider variant — track uses a per-filter gradient via custom property */
+input[type="range"].filter-slider-gradient::-webkit-slider-runnable-track {
+  background: var(---track-gradient);
+}
+
+input[type="range"].filter-slider-gradient::-moz-range-track {
+  background: var(---track-gradient);
+}
+
+/* Color picker swatch */
+input[type="color"].filter-color {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input[type="color"].filter-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"].filter-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 1px;
+}
+
+input[type="color"].filter-color:hover {
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* Filter card design */
+.filter-card {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  transition: border-color 150ms ease-out;
+}
+
+.filter-card:hover {
+  border-color: rgba(255,255,255,0.15);
+}
+
+.filter-card-header {
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Category color accents */
+.filter-cat-color { border-left: 3px solid #f59e0b; }
+.filter-cat-spatial { border-left: 3px solid #3b82f6; }
+.filter-cat-temporal { border-left: 3px solid #8b5cf6; }
+.filter-cat-audio { border-left: 3px solid #10b981; }
+.filter-cat-overlay { border-left: 3px solid #ef4444; }
+
+/* Scope canvas containers */
+[data-audio-tools] canvas {
+  image-rendering: pixelated;
+}

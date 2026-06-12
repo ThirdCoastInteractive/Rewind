@@ -10,7 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleCropUpdate serves PUT /clips/:clipId/crops/:cropId, modifying an existing crop region.
 func HandleCropUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

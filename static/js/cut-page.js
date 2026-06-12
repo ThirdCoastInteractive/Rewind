@@ -8,6 +8,7 @@ import {
   setDragCursor, clearDragCursor,
 } from './lib/utils.js';
 import { FilterPreviewEngine } from './lib/filter-preview-engine.js';
+import { autoInitFilterDials } from './lib/filter-dial.js';
 import { AudioToolsEngine } from './lib/audio-tools-engine.js';
 import { WaveformRenderer } from './lib/waveform-renderer.js';
 import { TransportMixin } from './lib/transport.js';
@@ -21,6 +22,7 @@ import { ClipEditingMixin } from './lib/clip-editing.js';
 import { WindowNavMixin } from './lib/window-nav.js';
 import { DragHandlerMixin } from './lib/drag-handlers.js';
 import { AttachMixin } from './lib/attach.js';
+import { MulticamEngine } from './lib/multicam.js';
 
 (() => {
   class CutPageEditor {
@@ -65,6 +67,9 @@ import { AttachMixin } from './lib/attach.js';
 
       // Crop overlay (over the video preview) - delegated to CropOverlay module
       this.cropOverlay = new CropOverlay(this);
+
+      // Multicam shot list engine
+      this.multicam = new MulticamEngine(this);
       this.cropLayerEl = root.querySelector('[data-cut-crop-layer]');
       this.cropSurfaceEl = root.querySelector('[data-cut-crop-surface]');
       this.cropRectEl = root.querySelector('[data-cut-crop-rect]');
@@ -154,6 +159,12 @@ import { AttachMixin } from './lib/attach.js';
       this.clipBank.addEventListener('clip:selected', (e) => {
         const { clip, seekTime } = e.detail;
         this.selectClip(clip, seekTime);
+        // Load multicam state for this clip (shot list comes from server via SSE panel patch)
+        if (this.multicam) {
+          requestAnimationFrame(() => {
+            this.multicam.loadForClip(clip.id, clip.shotList || []);
+          });
+        }
       });
 
       // clip:deselected - clear selection state
@@ -165,6 +176,7 @@ import { AttachMixin } from './lib/attach.js';
         this.pendingClipStart = null;
         this.pendingClipEnd = null;
         this.pendingClipDirty = false;
+        if (this.multicam) this.multicam.clear();
         this.render();
       });
     }
@@ -536,6 +548,9 @@ import { AttachMixin } from './lib/attach.js';
     // Autosave is driven by data-effect="...$_clipDirty..."
     // in the template, which calls editor.onAutosaveCheck(). No polling needed.
   }
+
+  // Auto-initialise filter dial widgets when SSE patches add them
+  autoInitFilterDials();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

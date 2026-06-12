@@ -10,7 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleSeek serves GET /videos/:videoId/clips/:clipId/seek, returning clip boundary data for the seek bar.
 func HandleSeek(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

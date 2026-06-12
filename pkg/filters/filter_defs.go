@@ -1,3 +1,5 @@
+// Package filters defines the UI-facing filter parameter metadata and DataStar
+// expression generators for the video editor's filter stack.
 package filters
 
 import (
@@ -16,12 +18,22 @@ const (
 	FilterParamText   FilterParamType = "text"
 	FilterParamPreset FilterParamType = "preset"
 	FilterParamColor  FilterParamType = "color"
+	// FilterParamIconSelect renders options as a row of visual icon buttons
+	// instead of a <select> dropdown. Each option should have an Icon field set.
+	FilterParamIconSelect FilterParamType = "icon_select"
+	// FilterParamPositionGrid renders a 3×3 clickable position grid.
+	FilterParamPositionGrid FilterParamType = "position_grid"
+	// FilterParamDial renders a circular SVG dial/knob for angular or continuous values.
+	FilterParamDial FilterParamType = "dial"
+	// FilterParamColorWheel renders an HSL color wheel with a draggable center dot.
+	FilterParamColorWheel FilterParamType = "color_wheel"
 )
 
 // FilterOption is a single <option> in a select or preset dropdown.
 type FilterOption struct {
 	Value string
 	Label string
+	Icon  string // Font Awesome icon name (without fa- prefix), used by icon_select
 }
 
 // FilterParam describes one adjustable parameter for a filter type.
@@ -39,9 +51,17 @@ type FilterParam struct {
 	// Presets maps preset-value → flat map of param-key → value.
 	// Used only when Type == FilterParamPreset.
 	Presets map[string]map[string]string
+	// TrackGradient is a CSS linear-gradient value for range slider tracks.
+	// When set, the slider track displays this gradient instead of the default.
+	TrackGradient string
+	// HintMin and HintMax are semantic labels shown at the ends of a range slider
+	// (e.g. "dark" / "bright" for brightness).
+	HintMin string
+	HintMax string
 }
 
-// FilterStackEntry mirrors the client-side {type, params} signal element.
+// FilterStackEntry mirrors the client-side {type, params} signal element
+// used to persist the ordered filter stack in JSON.
 type FilterStackEntry struct {
 	Type   string                 `json:"type"`
 	Params map[string]interface{} `json:"params"`
@@ -81,35 +101,93 @@ func FilterCardActionURL(videoID string) string {
 	return fmt.Sprintf("/api/videos/%s/cut/filter-cards", videoID)
 }
 
+// FilterConfig bundles the SSE action URL and dirty-signal name used by filter
+// expression functions, so the same filter UI components can be wired into
+// different host pages with different endpoints and signals.
+type FilterConfig struct {
+	ActionURL   string // SSE endpoint that re-renders filter cards
+	DirtySignal string // DataStar signal name to set true on changes (e.g. "_clipDirty")
+}
+
+// CutFilterConfig returns a FilterConfig for the cut-page filter stack.
+func CutFilterConfig(videoID string) FilterConfig {
+	return FilterConfig{
+		ActionURL:   FilterCardActionURL(videoID),
+		DirtySignal: "_clipDirty",
+	}
+}
+
+// DefaultParamsJS returns a JS object literal string containing the default
+// parameter values for the given filter type, e.g. "{value:0}" or
+// "{angle:0.5}". Preset-type params expand their default preset's values.
+func DefaultParamsJS(filterType string) string {
+	params := ParamsForFilterType(filterType, nil)
+	if len(params) == 0 {
+		return "{}"
+	}
+	parts := []string{}
+	for _, p := range params {
+		if p.Type == FilterParamPreset && p.Presets != nil {
+			// Expand the default preset's key→value pairs.
+			if vals, ok := p.Presets[p.DefaultVal]; ok {
+				for k, v := range vals {
+					parts = append(parts, fmt.Sprintf("%s:'%s'", k, v))
+				}
+			}
+		} else {
+			parts = append(parts, fmt.Sprintf("%s:'%s'", p.Key, p.DefaultVal))
+		}
+	}
+	result := "{"
+	for i, part := range parts {
+		if i > 0 {
+			result += ","
+		}
+		result += part
+	}
+	result += "}"
+	return result
+}
+
 // FilterAddExpr returns the DataStar expression for adding a filter.
-func FilterAddExpr(filterType, videoID string) string {
+func FilterAddExpr(filterType string, cfg FilterConfig) string {
 	return fmt.Sprintf(
-		"$_filterStack=[...$_filterStack,{type:'%s',params:{}}]; $_clipDirty=true; el.closest('details').open=false; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
-		filterType, FilterCardActionURL(videoID),
+		"$_filterStack=[...$_filterStack.filter(f=>f&&typeof f==='object'),{type:'%s',params:%s}]; $%s=true; el.closest('details').open=false; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		filterType, DefaultParamsJS(filterType), cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
 // FilterRemoveExpr returns the DataStar expression for removing a filter.
-func FilterRemoveExpr(index int, videoID string) string {
+func FilterRemoveExpr(index int, cfg FilterConfig) string {
 	return fmt.Sprintf(
-		"$_filterStack=$_filterStack.filter((_,i)=>i!==%d); $_clipDirty=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
-		index, FilterCardActionURL(videoID),
+		"$_filterStack=$_filterStack.filter((f,i)=>i!==%d&&f&&typeof f==='object'); $%s=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		index, cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
 // FilterMoveExpr returns the expression for moving a filter up or down.
-func FilterMoveExpr(index, direction int, videoID string) string {
+func FilterMoveExpr(index, direction int, cfg FilterConfig) string {
 	newIdx := index + direction
 	return fmt.Sprintf(
-		"let s=[...$_filterStack]; [s[%d],s[%d]]=[s[%d],s[%d]]; $_filterStack=s; $_clipDirty=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
-		index, newIdx, newIdx, index, FilterCardActionURL(videoID),
+		"let s=[...$_filterStack.filter(f=>f&&typeof f==='object')]; [s[%d],s[%d]]=[s[%d],s[%d]]; $_filterStack=s; $%s=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		index, newIdx, newIdx, index, cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
 // FilterParamRangeExpr returns the expression for range slider input changes.
 func FilterParamRangeExpr(index int, key string) string {
 	return fmt.Sprintf(
-		"let v=parseFloat(evt.target.value); let s=[...$_filterStack]; if(!s[%d].params)s[%d].params={}; s[%d].params.%s=v; $_filterStack=s; window.cutEditor?.filterPreview?.updateParam(%d,'%s',v)",
+		"let v=parseFloat(evt.target.value); let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:v}}; $_filterStack=s; window.cutEditor?.filterPreview?.updateParam(%d,'%s',v)",
+		index, index, index, key, index, key,
+	)
+}
+
+// FilterParamDialUpdateExpr returns a JS snippet for the dial widget's
+// onChange callback. It receives the new numeric value and writes it into
+// the signal, mirroring FilterParamRangeExpr but without evt.target.
+func FilterParamDialUpdateExpr(index int, key string) string {
+	return fmt.Sprintf(
+		"function(v){let s=[...$_filterStack].filter(f=>f&&typeof f==='object');s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:v}};$_filterStack=s;window.cutEditor?.filterPreview?.updateParam(%d,'%s',v)}",
 		index, index, index, key, index, key,
 	)
 }
@@ -117,15 +195,24 @@ func FilterParamRangeExpr(index int, key string) string {
 // FilterParamSelectExpr returns the expression for select input changes.
 func FilterParamSelectExpr(index int, key string) string {
 	return fmt.Sprintf(
-		"let s=[...$_filterStack]; if(!s[%d].params)s[%d].params={}; s[%d].params.%s=evt.target.value; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
+		"let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:evt.target.value}}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
 		index, index, index, key,
+	)
+}
+
+// FilterParamSetValueExpr returns a DataStar expression for setting a param to
+// a literal value (used by icon_select and position_grid button clicks).
+func FilterParamSetValueExpr(index int, key, value string, cfg FilterConfig) string {
+	return fmt.Sprintf(
+		"let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:'%s'}}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack); $%s=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		index, index, index, key, value, cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
 // FilterParamNumberExpr returns the expression for number input changes.
 func FilterParamNumberExpr(index int, key string) string {
 	return fmt.Sprintf(
-		"let v=parseFloat(evt.target.value); if(!isFinite(v))return; let s=[...$_filterStack]; if(!s[%d].params)s[%d].params={}; s[%d].params.%s=v; $_filterStack=s; window.cutEditor?.filterPreview?.updateParam(%d,'%s',v)",
+		"let v=parseFloat(evt.target.value); if(!isFinite(v))return; let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:v}}; $_filterStack=s; window.cutEditor?.filterPreview?.updateParam(%d,'%s',v)",
 		index, index, index, key, index, key,
 	)
 }
@@ -133,7 +220,7 @@ func FilterParamNumberExpr(index int, key string) string {
 // FilterParamTextExpr returns the expression for text input changes.
 func FilterParamTextExpr(index int, key string) string {
 	return fmt.Sprintf(
-		"let s=[...$_filterStack]; if(!s[%d].params)s[%d].params={}; s[%d].params.%s=evt.target.value; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
+		"let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:evt.target.value}}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
 		index, index, index, key,
 	)
 }
@@ -141,7 +228,7 @@ func FilterParamTextExpr(index int, key string) string {
 // FilterParamColorExpr returns the expression for color picker input changes.
 func FilterParamColorExpr(index int, key string) string {
 	return fmt.Sprintf(
-		"let s=[...$_filterStack]; if(!s[%d].params)s[%d].params={}; s[%d].params.%s=evt.target.value; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
+		"let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...(s[%d].params||{}),%s:evt.target.value}}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)",
 		index, index, index, key,
 	)
 }
@@ -149,26 +236,37 @@ func FilterParamColorExpr(index int, key string) string {
 // FilterParamReadoutExpr returns a data-text expression for the range readout.
 func FilterParamReadoutExpr(index int, key, defaultVal string, decimals int) string {
 	return fmt.Sprintf(
-		"Number($_filterStack[%d]?.params?.%s ?? %s).toFixed(%d)",
-		index, key, defaultVal, decimals,
+		"%d<$_filterStack.length?(v=>(v===''||v==null)?%s:Number(v))($_filterStack[%d]?.params?.%s).toFixed(%d):%s",
+		index, defaultVal, index, key, decimals, defaultVal,
+	)
+}
+
+// FilterParamSyncExpr returns a data-effect expression that re-syncs an input's
+// value from the signal. This is needed because the morph may set the input
+// value before updating min/max attributes, causing the browser to clamp the
+// value to the OLD range.
+func FilterParamSyncExpr(index int, key, defaultVal string) string {
+	return fmt.Sprintf(
+		"if(%d<$_filterStack.length){let v=$_filterStack[%d]?.params?.%s;el.value=v??'%s'}",
+		index, index, key, defaultVal,
 	)
 }
 
 // FilterPresetExpr returns the expression for preset selection changes.
 func FilterPresetExpr(index int) string {
 	return fmt.Sprintf(
-		"let p=JSON.parse(el.dataset.presets)[evt.target.value]; if(p){let s=[...$_filterStack]; s[%d].params={...p,_preset:evt.target.value}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)}",
-		index,
+		"let p=JSON.parse(el.dataset.presets)[evt.target.value]; if(p){let s=[...$_filterStack].filter(f=>f&&typeof f==='object'); s[%d]={...s[%d],params:{...p,_preset:evt.target.value}}; $_filterStack=s; window.cutEditor?.filterPreview?.apply($_filterStack)}",
+		index, index,
 	)
 }
 
-// FilterParamSaveExpr returns a DataStar expression that marks the clip as
-// dirty and re-renders filter cards via SSE. Does NOT persist to the database
+// FilterParamSaveExpr returns a DataStar expression that marks dirty and
+// re-renders filter cards via SSE. Does NOT persist to the database
 // - filter_stack is saved only through the unified SAVE button.
-func FilterParamSaveExpr(videoID string) string {
+func FilterParamSaveExpr(cfg FilterConfig) string {
 	return fmt.Sprintf(
-		"$_clipDirty=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
-		FilterCardActionURL(videoID),
+		"$%s=true; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
@@ -251,13 +349,13 @@ func CategoryForFilterType(t string) string {
 func ParamsForFilterType(filterType string, cropOptions []FilterOption) []FilterParam {
 	switch filterType {
 	case "brightness":
-		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: -1, Max: 1, Step: 0.01, DefaultVal: "0", Decimals: 2}}
+		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: -1, Max: 1, Step: 0.01, DefaultVal: "0", Decimals: 2, TrackGradient: "linear-gradient(to right, #000, #888, #fff)", HintMin: "dark", HintMax: "bright"}}
 	case "contrast":
-		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: -2, Max: 2, Step: 0.01, DefaultVal: "1", Decimals: 2}}
+		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: -2, Max: 2, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #666, #888 40%, #000 50%, #fff 50%, #888 60%)", HintMin: "flat", HintMax: "punchy"}}
 	case "saturation":
-		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: 0, Max: 3, Step: 0.01, DefaultVal: "1", Decimals: 2}}
+		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: 0, Max: 3, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #888, #e44, #ea0, #0c0, #08f, #c4f)", HintMin: "gray", HintMax: "vivid"}}
 	case "gamma":
-		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: 0.5, Max: 3.0, Step: 0.05, DefaultVal: "1", Decimals: 2}}
+		return []FilterParam{{Key: "value", Label: "Value", Type: FilterParamRange, Min: 0.5, Max: 3.0, Step: 0.05, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #111, #333, #666, #aaa, #eee)", HintMin: "shadows", HintMax: "highlights"}}
 	case "color_balance":
 		return []FilterParam{{
 			Key: "_preset", Label: "Style", Type: FilterParamPreset, DefaultVal: "warm",
@@ -277,13 +375,13 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 			},
 		}}
 	case "sharpen":
-		return []FilterParam{{Key: "amount", Label: "Amount", Type: FilterParamRange, Min: 0, Max: 5, Step: 0.1, DefaultVal: "1.5", Decimals: 1}}
+		return []FilterParam{{Key: "amount", Label: "Amount", Type: FilterParamRange, Min: 0, Max: 5, Step: 0.1, DefaultVal: "1.5", Decimals: 1, HintMin: "soft", HintMax: "sharp"}}
 	case "vignette":
-		return []FilterParam{{Key: "angle", Label: "Amount", Type: FilterParamRange, Min: 0, Max: 1, Step: 0.01, DefaultVal: "0.5", Decimals: 2}}
+		return []FilterParam{{Key: "angle", Label: "Amount", Type: FilterParamRange, Min: 0, Max: 1, Step: 0.01, DefaultVal: "0.5", Decimals: 2, HintMin: "none", HintMax: "heavy"}}
 	case "rotate":
-		return []FilterParam{{Key: "angle", Label: "Angle", Type: FilterParamRange, Min: -180, Max: 180, Step: 0.5, DefaultVal: "0", Decimals: 1}}
+		return []FilterParam{{Key: "angle", Label: "Angle", Type: FilterParamDial, Min: -180, Max: 180, Step: 0.5, DefaultVal: "0", Decimals: 1}}
 	case "speed":
-		return []FilterParam{{Key: "factor", Label: "Factor", Type: FilterParamRange, Min: 0.25, Max: 4, Step: 0.05, DefaultVal: "1", Decimals: 2}}
+		return []FilterParam{{Key: "factor", Label: "Factor", Type: FilterParamDial, Min: 0.25, Max: 4, Step: 0.05, DefaultVal: "1", Decimals: 2, HintMin: "slow", HintMax: "fast"}}
 	case "fade_in":
 		return []FilterParam{
 			{Key: "duration", Label: "Duration", Type: FilterParamRange, Min: 0.1, Max: 10, Step: 0.1, DefaultVal: "0.5", Decimals: 1},
@@ -327,9 +425,9 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 			},
 		}
 	case "volume":
-		return []FilterParam{{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0, Max: 3, Step: 0.01, DefaultVal: "1", Decimals: 2}}
+		return []FilterParam{{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0, Max: 3, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #333, #22c55e 33%, #eab308 66%, #ef4444)", HintMin: "mute", HintMax: "boost"}}
 	case "bass", "treble":
-		return []FilterParam{{Key: "gain", Label: "dB", Type: FilterParamRange, Min: -12, Max: 12, Step: 0.5, DefaultVal: "0", Decimals: 1}}
+		return []FilterParam{{Key: "gain", Label: "dB", Type: FilterParamRange, Min: -12, Max: 12, Step: 0.5, DefaultVal: "0", Decimals: 1, HintMin: "cut", HintMax: "boost"}}
 	case "highpass":
 		return []FilterParam{{Key: "frequency", Label: "Hz", Type: FilterParamNumber, Min: 20, Max: 20000, Step: 10, DefaultVal: "200"}}
 	case "lowpass":
@@ -376,30 +474,30 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 		}}
 	case "transpose":
 		return []FilterParam{{
-			Key: "direction", Label: "Dir", Type: FilterParamSelect, DefaultVal: "cw",
+			Key: "direction", Label: "Dir", Type: FilterParamIconSelect, DefaultVal: "cw",
 			Options: []FilterOption{
-				{Value: "cw", Label: "CW 90°"},
-				{Value: "ccw", Label: "CCW 90°"},
-				{Value: "ccw_flip", Label: "CCW 90° + Flip"},
-				{Value: "cw_flip", Label: "CW 90° + Flip"},
+				{Value: "cw", Label: "CW 90°", Icon: "rotate-right"},
+				{Value: "ccw", Label: "CCW 90°", Icon: "rotate-left"},
+				{Value: "ccw_flip", Label: "CCW+Flip", Icon: "arrows-rotate"},
+				{Value: "cw_flip", Label: "CW+Flip", Icon: "arrows-spin"},
 			},
 		}}
 	case "denoise":
 		return []FilterParam{{
-			Key: "strength", Label: "Level", Type: FilterParamSelect, DefaultVal: "medium",
+			Key: "strength", Label: "Level", Type: FilterParamIconSelect, DefaultVal: "medium",
 			Options: []FilterOption{
-				{Value: "light", Label: "Light"},
-				{Value: "medium", Label: "Medium"},
-				{Value: "heavy", Label: "Heavy"},
+				{Value: "light", Label: "Light", Icon: "feather"},
+				{Value: "medium", Label: "Medium", Icon: "wand-magic-sparkles"},
+				{Value: "heavy", Label: "Heavy", Icon: "shield-halved"},
 			},
 		}}
 	case "normalize":
 		return []FilterParam{{
-			Key: "mode", Label: "Mode", Type: FilterParamSelect, DefaultVal: "loudnorm",
+			Key: "mode", Label: "Mode", Type: FilterParamIconSelect, DefaultVal: "loudnorm",
 			Options: []FilterOption{
-				{Value: "peak", Label: "Peak"},
-				{Value: "rms", Label: "RMS"},
-				{Value: "loudnorm", Label: "Loudnorm"},
+				{Value: "peak", Label: "Peak", Icon: "mountain"},
+				{Value: "rms", Label: "RMS", Icon: "wave-square"},
+				{Value: "loudnorm", Label: "Loudnorm", Icon: "chart-bar"},
 			},
 		}}
 	case "compressor":
@@ -419,11 +517,11 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 			},
 		}}
 	case "noise_gate":
-		return []FilterParam{{Key: "threshold", Label: "Thresh dB", Type: FilterParamRange, Min: -60, Max: 0, Step: 1, DefaultVal: "-40", Decimals: 0}}
+		return []FilterParam{{Key: "threshold", Label: "Thresh dB", Type: FilterParamRange, Min: -60, Max: 0, Step: 1, DefaultVal: "-40", Decimals: 0, HintMin: "silent", HintMax: "open"}}
 	case "text":
 		return []FilterParam{
 			{Key: "text", Label: "Text", Type: FilterParamText, DefaultVal: "", Placeholder: "Watermark text"},
-			{Key: "position", Label: "Pos", Type: FilterParamSelect, DefaultVal: "bottom-right",
+			{Key: "position", Label: "Pos", Type: FilterParamPositionGrid, DefaultVal: "bottom-right",
 				Options: []FilterOption{
 					{Value: "top-left", Label: "Top Left"},
 					{Value: "top-center", Label: "Top Center"},
@@ -451,38 +549,38 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 
 	case "color_temp":
 		return []FilterParam{
-			{Key: "temperature", Label: "Temp", Type: FilterParamRange, Min: 1000, Max: 12000, Step: 100, DefaultVal: "6500", Decimals: 0},
-			{Key: "tint", Label: "Tint", Type: FilterParamRange, Min: -1, Max: 1, Step: 0.01, DefaultVal: "0", Decimals: 2},
+			{Key: "temperature", Label: "Temp", Type: FilterParamRange, Min: 1000, Max: 12000, Step: 100, DefaultVal: "6500", Decimals: 0, TrackGradient: "linear-gradient(to right, #ff8a00, #ffd4a0, #fff, #a8c8ff, #4080ff)", HintMin: "warm", HintMax: "cool"},
+			{Key: "tint", Label: "Tint", Type: FilterParamRange, Min: -1, Max: 1, Step: 0.01, DefaultVal: "0", Decimals: 2, TrackGradient: "linear-gradient(to right, #00ff88, #fff, #ff00ff)", HintMin: "green", HintMax: "magenta"},
 		}
 
 	case "lift_gamma_gain":
 		return []FilterParam{
-			{Key: "lift", Label: "Lift", Type: FilterParamRange, Min: -0.5, Max: 0.5, Step: 0.01, DefaultVal: "0", Decimals: 2},
-			{Key: "gamma", Label: "Gamma", Type: FilterParamRange, Min: 0.5, Max: 2.0, Step: 0.01, DefaultVal: "1", Decimals: 2},
-			{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0.5, Max: 2.0, Step: 0.01, DefaultVal: "1", Decimals: 2},
+			{Key: "lift", Label: "Lift", Type: FilterParamRange, Min: -0.5, Max: 0.5, Step: 0.01, DefaultVal: "0", Decimals: 2, TrackGradient: "linear-gradient(to right, #000, #555, #aaa)", HintMin: "darken", HintMax: "lighten"},
+			{Key: "gamma", Label: "Gamma", Type: FilterParamRange, Min: 0.5, Max: 2.0, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #222, #666, #ccc)", HintMin: "darken", HintMax: "lighten"},
+			{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0.5, Max: 2.0, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #444, #999, #fff)", HintMin: "darken", HintMax: "lighten"},
 		}
 
 	case "exposure":
 		return []FilterParam{
-			{Key: "exposure", Label: "EV", Type: FilterParamRange, Min: -3, Max: 3, Step: 0.05, DefaultVal: "0", Decimals: 2},
-			{Key: "black", Label: "Black Pt", Type: FilterParamRange, Min: 0, Max: 0.1, Step: 0.001, DefaultVal: "0", Decimals: 3},
+			{Key: "exposure", Label: "EV", Type: FilterParamRange, Min: -3, Max: 3, Step: 0.05, DefaultVal: "0", Decimals: 2, TrackGradient: "linear-gradient(to right, #111, #444, #888, #bbb, #fff)", HintMin: "-3 EV", HintMax: "+3 EV"},
+			{Key: "black", Label: "Black Pt", Type: FilterParamRange, Min: 0, Max: 0.1, Step: 0.001, DefaultVal: "0", Decimals: 3, TrackGradient: "linear-gradient(to right, #000, #222)", HintMin: "deep", HintMax: "crushed"},
 		}
 
 	case "lut":
 		return []FilterParam{{
-			Key: "preset", Label: "LUT", Type: FilterParamSelect, DefaultVal: "none",
+			Key: "preset", Label: "LUT", Type: FilterParamIconSelect, DefaultVal: "none",
 			Options: []FilterOption{
-				{Value: "none", Label: "- None —"},
-				{Value: "cinematic_warm", Label: "Cinematic Warm"},
-				{Value: "cinematic_cool", Label: "Cinematic Cool"},
-				{Value: "film_noir", Label: "Film Noir"},
-				{Value: "bleach_bypass", Label: "Bleach Bypass"},
-				{Value: "orange_teal", Label: "Orange & Teal"},
-				{Value: "vintage_fade", Label: "Vintage Fade"},
-				{Value: "high_contrast", Label: "High Contrast B&W"},
-				{Value: "pastel", Label: "Pastel"},
-				{Value: "golden_hour", Label: "Golden Hour"},
-				{Value: "moonlit", Label: "Moonlit Night"},
+				{Value: "none", Label: "None", Icon: "ban"},
+				{Value: "cinematic_warm", Label: "Cine Warm", Icon: "sun"},
+				{Value: "cinematic_cool", Label: "Cine Cool", Icon: "snowflake"},
+				{Value: "film_noir", Label: "Film Noir", Icon: "moon"},
+				{Value: "bleach_bypass", Label: "Bleach", Icon: "droplet"},
+				{Value: "orange_teal", Label: "O&T", Icon: "palette"},
+				{Value: "vintage_fade", Label: "Vintage", Icon: "camera-retro"},
+				{Value: "high_contrast", Label: "Hi-Con", Icon: "circle-half-stroke"},
+				{Value: "pastel", Label: "Pastel", Icon: "cloud"},
+				{Value: "golden_hour", Label: "Golden", Icon: "sun"},
+				{Value: "moonlit", Label: "Moonlit", Icon: "moon"},
 			},
 		}}
 

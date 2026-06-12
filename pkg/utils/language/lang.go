@@ -1,4 +1,5 @@
-// package language wraps x/text/language implementing driver/sql.Scanner and driver/sql.Valuer.
+// Package language wraps x/text/language.Tag with sql.Scanner, driver.Valuer,
+// and pgx v5 text interfaces for transparent database persistence.
 package language
 
 import (
@@ -9,6 +10,7 @@ import (
 	"golang.org/x/text/language"
 )
 
+// Tag is a BCP-47 language tag that can be stored in and loaded from a database column.
 type Tag language.Tag
 
 // Scan implements the sql.Scanner interface.

@@ -1,3 +1,6 @@
+// Package ytdlp wraps the yt-dlp command-line tool, providing Go methods for
+// downloading media, fetching metadata, writing comments/subtitles, and
+// managing cookie-based authentication.
 package ytdlp
 
 import (
@@ -58,6 +61,8 @@ func (w *streamWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// ExecError wraps a failed yt-dlp invocation with the command line, captured
+// stdout/stderr, and the underlying process error.
 type ExecError struct {
 	Cmd      string
 	Args     []string
@@ -67,6 +72,7 @@ type ExecError struct {
 	Cause    error
 }
 
+// Error returns a summary including the exit code and command line.
 func (e *ExecError) Error() string {
 	cmdline := strings.TrimSpace(e.Cmd + " " + strings.Join(e.Args, " "))
 	if e.ExitCode != 0 {
@@ -75,8 +81,11 @@ func (e *ExecError) Error() string {
 	return fmt.Sprintf("ytdlp: command failed: %s", cmdline)
 }
 
+// Unwrap returns the underlying process error for errors.Is/As chains.
 func (e *ExecError) Unwrap() error { return e.Cause }
 
+// Client executes yt-dlp commands, managing cookie files and optional
+// real-time log streaming via LogCallback.
 type Client struct {
 	// Path to yt-dlp executable. Defaults to "yt-dlp" (PATH lookup).
 	Path string
@@ -107,6 +116,7 @@ type Client struct {
 	execFn func(ctx context.Context, name string, args ...string) (stdout []byte, stderr []byte, err error)
 }
 
+// New returns a Client that looks up yt-dlp on PATH.
 func New() *Client {
 	return &Client{Path: "yt-dlp"}
 }
@@ -136,7 +146,7 @@ func (c *Client) exec(ctx context.Context, args ...string) (stdout []byte, stder
 			slog.Error("CRITICAL: failed to create temp cookies file", "error", err)
 			return nil, nil, fmt.Errorf("failed to create temp cookies file: %w", err)
 		}
-		fullArgs = append(fullArgs, "--cookies", cookiesFile)
+		fullArgs = append(fullArgs, "--cookies", cookiesFile, "--user-agent", os.Getenv("USER_AGENT"))
 		slog.Info("ytdlp: Using cookies file", "path", cookiesFile, "size_bytes", len(c.Cookies))
 	}
 

@@ -3,19 +3,14 @@ package templates
 import "thirdcoast.systems/rewind/cmd/web/templates/components"
 
 templ CutTopBar(video VideoDetail) {
-	<div class="flex items-center justify-between gap-4">
-		@components.LinkButton("/videos/"+video.ID, "ghost", "sm", "arrow-left", false) {
-			BACK TO WATCH
+	@components.EditorToolbar("/videos/"+video.ID, "BACK TO WATCH", "", "", "") {
+		@components.LinkButton("/videos", "ghost", "sm", "list", false) {
+			ALL VIDEOS
 		}
-		<div class="flex items-center gap-2">
-			@components.LinkButton("/videos", "ghost", "sm", "list", false) {
-				ALL VIDEOS
-			}
-			@components.LinkButton("/producer?video="+video.ID, "ghost", "sm", "tv", false) {
-				OPEN IN PRODUCER
-			}
-		</div>
-	</div>
+		@components.LinkButton("/producer?video="+video.ID, "ghost", "sm", "tv", false) {
+			OPEN IN PRODUCER
+		}
+	}
 }
 
 templ CutVideoPane(video VideoDetail) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -33,6 +34,10 @@ var canonicalDomainByHost = map[string]string{
 
 	"kick.com":     "kick.com",
 	"www.kick.com": "kick.com",
+
+	"instagram.com":     "instagram.com",
+	"www.instagram.com": "instagram.com",
+	"m.instagram.com":   "instagram.com",
 }
 
 // ResolveCanonicalDomain returns the canonical domain for host.
@@ -69,6 +74,7 @@ func VideoUUID(domain string, videoID string) uuid.UUID {
 	return uuid.NewSHA1(ns, []byte(v))
 }
 
+// ExpandResult holds the outcome of URL expansion and host canonicalization.
 type ExpandResult struct {
 	ExpandedURL     string
 	ExpandedHost    string
@@ -98,9 +104,18 @@ func ExpandAndCanonicalizeURL(ctx context.Context, raw string) (ExpandResult, er
 	}
 
 	expanded := u
-	if expanded.Scheme == "http" || expanded.Scheme == "https" {
-		if u2, ok := followRedirects(ctx, expanded); ok {
-			expanded = u2
+	inHost := normalizeHost(u.Host)
+	// Only follow redirects for genuinely unknown hosts — i.e. URL shorteners and
+	// redirectors. Known content hosts (instagram.com, youtube.com, x.com, …) are
+	// already canonical; fetching them can bounce to a generic "unsupported
+	// browser"/login page (Instagram redirects bots to facebook.com/unsupportedbrowser),
+	// which would make every URL on that site collapse to one src and overwrite
+	// each other. Skip expansion for them.
+	if _, known := canonicalDomainByHost[inHost]; !known {
+		if expanded.Scheme == "http" || expanded.Scheme == "https" {
+			if u2, ok := followRedirects(ctx, expanded); ok && !isDeadEndURL(u2) {
+				expanded = u2
+			}
 		}
 	}
 
@@ -124,10 +139,10 @@ func ExpandAndCanonicalizeURL(ctx context.Context, raw string) (ExpandResult, er
 // fragments and query parameters that commonly vary (timestamps, tracking).
 //
 // For known video sources:
-// - youtube.com: normalizes to https://youtube.com/watch?v={id} (keeps only v=)
-// - twitch.tv: strips all query params
-// - x.com: strips all query params
-// - kick.com: strips all query params
+//   - youtube.com: normalizes to https://youtube.com/watch?v={id} (keeps only v=)
+//   - twitch.tv: strips all query params
+//   - x.com: strips all query params
+//   - kick.com: strips all query params
 //
 // For unknown hosts, it removes fragments but preserves query params.
 func NormalizeSourceURL(raw string) (string, string, error) {
@@ -185,11 +200,23 @@ func NormalizeSourceURL(raw string) (string, string, error) {
 			// If we can't extract a video ID, don't destructively drop query params.
 			// Still keep the host canonicalization and fragment stripping.
 		}
-	case "twitch.tv", "x.com", "kick.com":
+	case "twitch.tv", "x.com", "kick.com", "instagram.com":
 		u.RawQuery = ""
 	}
 
 	return u.String(), canon, nil
+}
+
+// isDeadEndURL reports whether a redirect landed on a known generic/error page
+// (e.g. Instagram bouncing non-browser clients to facebook.com/unsupportedbrowser).
+// Such URLs must never be treated as a video's canonical source — they are the
+// same for every input and would collapse unrelated videos onto one record.
+func isDeadEndURL(u *url.URL) bool {
+	if u == nil {
+		return true
+	}
+	path := strings.ToLower(strings.TrimRight(u.Path, "/"))
+	return strings.Contains(path, "unsupportedbrowser")
 }
 
 func normalizeHost(hostport string) string {
@@ -234,8 +261,7 @@ func followRedirects(ctx context.Context, u *url.URL) (*url.URL, bool) {
 	if err != nil {
 		return nil, false
 	}
-	req.Header.Set("User-Agent", "rewind-ingest")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("User-Agent", os.Getenv("USER_AGENT"))
 
 	resp, err := client.Do(req)
 	if err != nil {

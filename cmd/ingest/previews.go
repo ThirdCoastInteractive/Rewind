@@ -23,7 +23,7 @@ func generatePreviewMP4(ctx context.Context, videoPath string) error {
 		return nil
 	}
 
-	result := ffmpeg.GeneratePreviewCapture(ctx, videoPath, out, &ffmpeg.PreviewOptions{
+	result := ffmpeg.GeneratePreview(ctx, videoPath, out, &ffmpeg.PreviewOptions{
 		StartOffset: 10 * time.Second,
 		Duration:    6 * time.Second,
 		MaxWidth:    480,

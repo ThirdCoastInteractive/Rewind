@@ -2,7 +2,6 @@ package templates
 
 import (
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
@@ -30,8 +29,8 @@ templ AdminAssetHealthContent(errorCount int64, rows []*AdminAssetErrorRow, aler
 		}
 		<!-- Stats -->
 		<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-			<div class={ viewtypes.InfoBoxClass }>
-				<div class={ viewtypes.SectionLabel + " mb-1" }>VIDEOS WITH ERRORS</div>
+			<div class={ "info-box" }>
+				<div class={ "section-label mb-1" }>VIDEOS WITH ERRORS</div>
 				if errorCount > 0 {
 					<div class="text-xl font-mono text-red-400">{ format.Itoa64(errorCount) }</div>
 				} else {
@@ -63,7 +62,7 @@ templ AdminAssetHealthContent(errorCount int64, rows []*AdminAssetErrorRow, aler
 }
 
 templ AdminAssetErrorCard(row *AdminAssetErrorRow) {
-	<div class="bg-gray-10 border-2 border-white/10 p-4">
+	<div class="card p-4">
 		<div class="flex items-start justify-between gap-4 mb-3">
 			<div class="min-w-0 flex-1">
 				<a href={ templ.SafeURL("/videos/" + row.ID) } class="font-mono font-bold text-sm text-white hover:underline">

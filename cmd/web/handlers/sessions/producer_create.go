@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleProducerCreateSession serves POST /producer/sessions, creating a new live player session.
 func HandleProducerCreateSession(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		accessLevel := c.Get("accessLevel").(string)

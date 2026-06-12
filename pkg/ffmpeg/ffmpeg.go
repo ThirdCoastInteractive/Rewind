@@ -17,7 +17,16 @@ type Command struct {
 	postInput    []string // args after -i
 	filters      []string // collected -vf filters
 	audioFilters []string // collected -af filters
+	rawArgs      []string // when set, Build() returns this verbatim (for multi-input commands)
 }
+
+// VideoFilterStrings returns the compiled video filter strings.
+// Used by stitch builder to extract per-segment filter strings.
+func (c *Command) VideoFilterStrings() []string { return c.filters }
+
+// AudioFilterStrings returns the compiled audio filter strings.
+// Used by stitch builder to extract per-segment filter strings.
+func (c *Command) AudioFilterStrings() []string { return c.audioFilters }
 
 // Option modifies a Command. Options are composable and order-independent
 // (ffmpeg will receive args in correct order regardless of option order).
@@ -45,6 +54,9 @@ func NewCommand(input, output string, opts ...Option) *Command {
 
 // Build returns the complete ffmpeg argument list.
 func (c *Command) Build() []string {
+	if c.rawArgs != nil {
+		return c.rawArgs
+	}
 	args := []string{"-hide_banner", "-y"}
 
 	// Pre-input args (seeking)

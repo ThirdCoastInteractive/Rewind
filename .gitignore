@@ -11,3 +11,10 @@ pkg/ffmpeg/testdata/*
 .github/docs
 .github/copilot-instructions.md
 docker-compose.yml
+
+# AI testing
+.playwright-mcp/
+
+# Playwright E2E test artifacts
+test-results/
+playwright-report/

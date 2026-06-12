@@ -65,34 +65,67 @@ WHERE video_id = $1;
 
 -- ListVideoComments returns paginated top-level comments for a video.
 -- Top-level = parent_id IS NULL or parent_id = 'root'.
--- Ordered by like_count DESC, then published_at DESC.
+-- Ordered by like_count DESC, then published_at DESC (matches the partial index
+-- video_comments_toplevel_rank_idx so no sort is needed). reply_count is a
+-- correlated subquery, evaluated only for the page's rows. Display extras
+-- (avatar, badges, relative time) come from the raw yt-dlp object; the trailing
+-- ::text/::boolean casts on the COALESCE results give sqlc concrete Go types.
 -- name: ListVideoComments :many
-SELECT id, video_id, source, comment_id, parent_id, author, author_id, author_url,
-       published_at, like_count, text, created_at
-FROM video_comments
-WHERE video_id = $1
-  AND (parent_id IS NULL OR parent_id = 'root')
-ORDER BY COALESCE(like_count, 0) DESC, published_at DESC NULLS LAST
+SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+       c.published_at, c.like_count, c.text, c.created_at,
+       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
+       COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
+       COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
+       COALESCE((c.raw->>'author_is_uploader')::boolean, false)::boolean AS author_is_uploader,
+       COALESCE((c.raw->>'author_is_verified')::boolean, false)::boolean AS author_is_verified,
+       COALESCE(c.raw->>'_time_text', '')::text                     AS time_text,
+       COALESCE((SELECT count(*) FROM video_comments rc
+                 WHERE rc.video_id = c.video_id AND rc.parent_id = c.comment_id), 0)::bigint AS reply_count
+FROM video_comments c
+WHERE c.video_id = sqlc.arg(video_id)
+  AND (c.parent_id IS NULL OR c.parent_id = 'root')
+ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST
 LIMIT sqlc.arg(page_size)::int
 OFFSET sqlc.arg(page_offset)::int;
 
 -- ListVideoCommentReplies returns replies (children) for a given parent comment.
+-- Carries the same display extras as ListVideoComments so replies render with
+-- the same CommentRow component.
 -- name: ListVideoCommentReplies :many
-SELECT id, video_id, source, comment_id, parent_id, author, author_id, author_url,
-       published_at, like_count, text, created_at
-FROM video_comments
-WHERE video_id = $1
-  AND parent_id = sqlc.arg(parent_comment_id)::text
-ORDER BY published_at ASC NULLS LAST
+SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+       c.published_at, c.like_count, c.text, c.created_at,
+       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
+       COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
+       COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
+       COALESCE((c.raw->>'author_is_uploader')::boolean, false)::boolean AS author_is_uploader,
+       COALESCE((c.raw->>'author_is_verified')::boolean, false)::boolean AS author_is_verified,
+       COALESCE(c.raw->>'_time_text', '')::text                     AS time_text
+FROM video_comments c
+WHERE c.video_id = sqlc.arg(video_id)
+  AND c.parent_id = sqlc.arg(parent_comment_id)::text
+ORDER BY c.like_count DESC NULLS LAST, c.published_at ASC NULLS LAST
 LIMIT 50;
 
--- SearchVideoComments returns comments matching a text search query.
+-- SearchVideoComments returns comments matching a text search query, with a
+-- ts_headline highlight. The highlight wraps matches in chr(2)/chr(3) sentinels
+-- (not HTML) so the Go layer can HTML-escape the text first, then swap the
+-- sentinels for <mark> tags safely (see commentfmt.SafeHighlight).
 -- name: SearchVideoComments :many
-SELECT id, video_id, source, comment_id, parent_id, author, author_id, author_url,
-       published_at, like_count, text, created_at
-FROM video_comments
-WHERE video_id = $1
-  AND search @@ plainto_tsquery('simple', sqlc.arg(query)::text)
-ORDER BY COALESCE(like_count, 0) DESC
+SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+       c.published_at, c.like_count, c.text, c.created_at,
+       ts_headline('simple', COALESCE(c.text, ''), plainto_tsquery('simple', sqlc.arg(query)::text),
+                   'StartSel=' || chr(2) || ',StopSel=' || chr(3) || ',HighlightAll=TRUE')::text AS highlighted,
+       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
+       COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
+       COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
+       COALESCE((c.raw->>'author_is_uploader')::boolean, false)::boolean AS author_is_uploader,
+       COALESCE((c.raw->>'author_is_verified')::boolean, false)::boolean AS author_is_verified,
+       COALESCE(c.raw->>'_time_text', '')::text                     AS time_text,
+       COALESCE((SELECT count(*) FROM video_comments rc
+                 WHERE rc.video_id = c.video_id AND rc.parent_id = c.comment_id), 0)::bigint AS reply_count
+FROM video_comments c
+WHERE c.video_id = sqlc.arg(video_id)
+  AND c.search @@ plainto_tsquery('simple', sqlc.arg(query)::text)
+ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
 LIMIT sqlc.arg(page_size)::int
 OFFSET sqlc.arg(page_offset)::int;

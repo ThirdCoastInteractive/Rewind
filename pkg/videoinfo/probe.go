@@ -112,12 +112,6 @@ func (p ProbeInfo) RawJSON() []byte {
 	return b
 }
 
-// ParseProbeData parses raw ffprobe JSON bytes into a ProbeInfo.
-// Deprecated: Use NewProbeInfo or sqlc column override instead.
-func ParseProbeData(data []byte) *ProbeInfo {
-	return NewProbeInfo(data)
-}
-
 // VideoStreams returns all video-type streams.
 func (p *ProbeInfo) VideoStreams() []ProbeStream {
 	var out []ProbeStream

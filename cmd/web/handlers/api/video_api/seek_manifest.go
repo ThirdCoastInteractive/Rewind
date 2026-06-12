@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleSeekManifest serves GET /videos/:id/seek/seek.json, returning the seek sprite sheet manifest.
 func HandleSeekManifest(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, _, err := sm.GetSession(c.Request()); err != nil {

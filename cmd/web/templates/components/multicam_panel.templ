@@ -1,0 +1,209 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/pkg/utils/crops"
+)
+
+// MulticamPanel renders the multicam shot-list editor in the cut page sidebar.
+// It shows crop "camera" buttons, a shot timeline, and export controls.
+templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.ShotList) {
+	<div class="p-2 space-y-3" id="multicam-panel" data-multicam-panel data-clip-id={ clipID }
+		data-signals={ fmt.Sprintf("{_multicamFormat: 'mp4', _multicamQuality: 'high', _multicamResolution: 1920, _multicamShotCount: %d}", len(shotList)) }>
+		<div data-show="$_selectedClipId === ''" class="text-xs text-white/40 font-mono py-2 text-center">
+			Select a clip to use multicam.
+		</div>
+		<div data-show="$_selectedClipId !== ''">
+			if len(clipCrops) < 2 {
+				<div class="text-xs text-white/40 font-mono py-2 text-center">
+					Add at least 2 crops in the INSPECTOR panel to enable multicam editing.
+				</div>
+			} else {
+				<!-- Camera buttons: click to cut to this crop at the playhead -->
+				<div>
+					<div class="section-label mb-1">CAMERAS</div>
+					<div class="flex flex-wrap gap-1">
+						for _, crop := range clipCrops {
+							@MulticamCameraButton(crop)
+						}
+					</div>
+				</div>
+				<!-- Shot timeline -->
+				<div>
+					<div class="section-label mb-1">
+						SHOT LIST
+						<span class="text-white/30 ml-1" data-multicam-shot-count>
+							({ fmt.Sprintf("%d", len(shotList)) } shots)
+						</span>
+					</div>
+					<div
+						class="relative h-8 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer"
+						data-multicam-timeline
+						title="Click a camera button to add a shot at the playhead position"
+					>
+						<div class="absolute inset-0" data-multicam-timeline-layer></div>
+						<div class="absolute top-0 bottom-0 w-px bg-red-500 z-10 pointer-events-none" data-multicam-playhead style="left: 0%"></div>
+					</div>
+				</div>
+				<!-- Shot list items -->
+				<div class="space-y-1 max-h-40 overflow-y-auto" data-multicam-shot-list>
+					if len(shotList) == 0 {
+						<div class="text-xs text-white/30 font-mono text-center py-2">
+							Position the playhead and click a camera to add shots.
+						</div>
+					} else {
+						for i, shot := range shotList {
+							@MulticamShotRow(i, shot, clipCrops)
+						}
+					}
+				</div>
+				<!-- Transition defaults -->
+				<div>
+					<div class="section-label mb-1">DEFAULT TRANSITION</div>
+					<div class="flex gap-2 items-center">
+						<select
+							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+							data-multicam-transition-type
+						>
+							<option value="cut">Hard Cut</option>
+							<option value="fade" selected>Fade</option>
+							<option value="dissolve">Dissolve</option>
+							<option value="wipeleft">Wipe Left</option>
+							<option value="wiperight">Wipe Right</option>
+							<option value="slidedown">Slide Down</option>
+							<option value="slideup">Slide Up</option>
+						</select>
+						<div class="flex items-center gap-1">
+							<input
+								type="number"
+								min="0"
+								max="3"
+								step="0.1"
+								value="0.5"
+								class="w-14 px-1 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none text-center"
+								data-multicam-transition-dur
+							/>
+							<span class="text-xs text-white/40 font-mono">s</span>
+						</div>
+					</div>
+				</div>
+				<!-- Actions -->
+				<div class="flex gap-1">
+					<button
+						type="button"
+						class="flex-1 ghost-btn-sm"
+						data-multicam-clear
+						title="Clear all shots"
+					>
+						CLEAR
+					</button>
+					<button
+						type="button"
+						class="flex-1 ghost-btn-sm"
+						data-multicam-undo
+						title="Undo last shot"
+					>
+						UNDO
+					</button>
+				</div>
+				<!-- Export -->
+				<div class="border-t-2 border-white/10 pt-2">
+					<div class="flex flex-wrap gap-1 mb-2">
+						<select
+							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+							data-bind="_multicamResolution"
+						>
+							<option value="1080">1080p</option>
+							<option value="1440">1440p</option>
+							<option value="1920" selected>1920p</option>
+							<option value="2160">4K</option>
+						</select>
+						<select
+							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+							data-bind="_multicamFormat"
+						>
+							<option value="mp4">MP4</option>
+							<option value="webm">WebM</option>
+						</select>
+						<select
+							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+							data-bind="_multicamQuality"
+						>
+							<option value="high">High</option>
+							<option value="max">Maximum</option>
+						</select>
+					</div>
+					<button
+						type="button"
+						class="w-full btn-primary btn-md disabled:opacity-30 disabled:pointer-events-none"
+						data-multicam-export
+						data-on:click="@post('/api/clips/' + $_selectedClipId + '/multicam-export', {payload: {format: $_multicamFormat, quality: $_multicamQuality, resolution: Number($_multicamResolution)}})"
+						data-attr:disabled="$_selectedClipId === '' || $_multicamShotCount < 2"
+					>
+						<i class="fa-sharp fa-solid fa-clapperboard mr-2" aria-hidden="true"></i>
+						EXPORT MULTICAM
+					</button>
+					<div class="mt-2">
+						@ExportStatus("multicam-export-status", "", "", "")
+					</div>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// MulticamCameraButton is a clickable crop "camera" for the multicam panel.
+templ MulticamCameraButton(crop crops.Crop) {
+	<button
+		type="button"
+		class="px-2 py-1.5 text-xs font-mono transition-all border-2 bg-black text-white border-white/20 hover:border-amber-400/60 hover:bg-amber-400/10 active:scale-95"
+		data-multicam-camera={ crop.ID }
+		data-crop-name={ crop.Name }
+		title={ fmt.Sprintf("Cut to %s at playhead", crop.Name) }
+	>
+		<i class="fa-sharp fa-solid fa-video mr-1 text-amber-400/60" aria-hidden="true"></i>
+		if crop.Name != "" {
+			{ crop.Name }
+		} else {
+			{ crop.AspectRatio }
+		}
+	</button>
+}
+
+// multicamShotCropName resolves a crop ID to its display name.
+func multicamShotCropName(cropID string, clipCrops crops.CropArray) string {
+	for _, c := range clipCrops {
+		if c.ID == cropID {
+			if c.Name != "" {
+				return c.Name
+			}
+			return c.AspectRatio + " Crop"
+		}
+	}
+	return "Unknown"
+}
+
+// MulticamShotRow renders a single shot in the shot list.
+templ MulticamShotRow(index int, shot crops.Shot, clipCrops crops.CropArray) {
+	<div
+		class="flex items-center gap-1 px-2 py-1 bg-neutral-900/50 border border-white/5 text-xs font-mono group"
+		data-multicam-shot-index={ fmt.Sprintf("%d", index) }
+	>
+		<span class="text-amber-400/60 w-4">{ fmt.Sprintf("%d", index+1) }</span>
+		<span class="text-white/80 flex-1 truncate">{ multicamShotCropName(shot.CropID, clipCrops) }</span>
+		<span class="text-white/40">{ fmt.Sprintf("%.1f–%.1fs", shot.Start, shot.End) }</span>
+		if shot.TransitionOut != nil {
+			<span class="text-white/30" title={ fmt.Sprintf("%s %.1fs", shot.TransitionOut.Type, shot.TransitionOut.Duration) }>
+				<i class="fa-sharp fa-solid fa-shuffle" aria-hidden="true"></i>
+			</span>
+		}
+		<button
+			type="button"
+			class="text-white/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+			data-multicam-remove-shot={ fmt.Sprintf("%d", index) }
+			title="Remove shot"
+		>
+			<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+		</button>
+	</div>
+}

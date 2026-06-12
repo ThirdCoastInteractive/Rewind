@@ -31,6 +31,7 @@ export const AttachMixin = {
       this.renderPlayheads();
       this.updateTransportTime();
       this.handleSelectionPlaybackTick();
+      if (this.multicam) this.multicam.onTimeUpdate();
     });
 
     this.video.addEventListener('play', () => {
@@ -262,12 +263,19 @@ export const AttachMixin = {
         }
       }
 
+      let hitTest = this.getWorkSelectionHit(e);
+      // In edit mode, clicking inside the selection body should seek (not drag-move
+      // the clip). Only allow edge resize handles to start drags.
+      if (this.editMode && hitTest === 'move') {
+        hitTest = 'set';
+      }
+
       this.drag = {
         type: 'work-pending', subMode: null, anchor: t,
         startX: e.clientX, startY: e.clientY,
         origStart: null, origEnd: null,
         clipId: null, trimSide: null,
-        hitTest: this.getWorkSelectionHit(e),
+        hitTest,
         didDrag: false, didMove: false,
       };
     });
@@ -340,6 +348,33 @@ export const AttachMixin = {
 
         this.renderRange();
         this.render();
+      });
+    }
+
+    // Nudge IN/OUT buttons — 1 frame per click, Shift = 10 frames
+    const frameDur = () => this.videoFps > 0 ? 1 / this.videoFps : 1 / 30;
+    for (const btn of document.querySelectorAll('[data-cut-nudge-in-back]')) {
+      btn.addEventListener('click', (e) => {
+        const n = e.shiftKey ? 10 : 1;
+        this.nudgeInPoint(-frameDur() * n);
+      });
+    }
+    for (const btn of document.querySelectorAll('[data-cut-nudge-in-fwd]')) {
+      btn.addEventListener('click', (e) => {
+        const n = e.shiftKey ? 10 : 1;
+        this.nudgeInPoint(frameDur() * n);
+      });
+    }
+    for (const btn of document.querySelectorAll('[data-cut-nudge-out-back]')) {
+      btn.addEventListener('click', (e) => {
+        const n = e.shiftKey ? 10 : 1;
+        this.nudgeOutPoint(-frameDur() * n);
+      });
+    }
+    for (const btn of document.querySelectorAll('[data-cut-nudge-out-fwd]')) {
+      btn.addEventListener('click', (e) => {
+        const n = e.shiftKey ? 10 : 1;
+        this.nudgeOutPoint(frameDur() * n);
       });
     }
 

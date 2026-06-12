@@ -1,0 +1,418 @@
+package components
+
+import (
+	"fmt"
+
+	"thirdcoast.systems/rewind/pkg/filters"
+)
+
+// filterEffectSwatch renders a color gradient preview showing a zero-param filter's effect.
+templ filterEffectSwatch(filterType string) {
+	<div class="flex gap-1">
+		<div
+			class="h-4 flex-1 rounded-sm"
+			style="background: linear-gradient(to right, #e44, #ea0, #0c0, #08f, #c4f, #e44)"
+		></div>
+		<div
+			class="h-4 flex-1 rounded-sm"
+			style={
+				"background: linear-gradient(to right, #e44, #ea0, #0c0, #08f, #c4f, #e44); filter: " +
+					filterCSSFilter(filterType),
+			}
+		></div>
+	</div>
+	<div class="flex justify-between mt-0.5">
+		<span class="text-xs text-white/20 font-mono">original</span>
+		<span class="text-xs text-white/20 font-mono">{ filterType }</span>
+	</div>
+}
+
+// filterCSSFilter returns a CSS filter string for the preview swatch.
+func filterCSSFilter(filterType string) string {
+	switch filterType {
+	case "grayscale":
+		return "grayscale(1)"
+	case "sepia":
+		return "sepia(1)"
+	default:
+		return "none"
+	}
+}
+
+// freqResponseGraph renders an inline SVG frequency response graph.
+// filterType determines the curve shape: "equalizer" (peaking), "bass" (low-shelf),
+// "treble" (high-shelf), "highpass", or "lowpass".
+templ freqResponseGraph(filter filters.FilterStackEntry, filterType string, w float64, h float64) {
+	<svg
+		viewBox={ fmt.Sprintf("0 0 %.0f %.0f", w, h) }
+		class="w-full rounded-sm bg-black/40 border border-white/10"
+		style={ fmt.Sprintf("height: %.0fpx", h) }
+		preserveAspectRatio="none"
+	>
+		// dB grid lines
+		for _, gl := range freqDBGrid(filterType, w, h) {
+			<line
+				x1="0"
+				y1={ fmt.Sprintf("%.1f", gl.Y) }
+				x2={ fmt.Sprintf("%.0f", w) }
+				y2={ fmt.Sprintf("%.1f", gl.Y) }
+				stroke={ gridLineColor(gl.IsZero) }
+				stroke-width={ gridLineWidth(gl.IsZero) }
+			></line>
+		}
+		// Frequency grid lines
+		for _, fl := range filters.FreqGridLines(w) {
+			<line
+				x1={ fmt.Sprintf("%.1f", fl.X) }
+				y1="0"
+				x2={ fmt.Sprintf("%.1f", fl.X) }
+				y2={ fmt.Sprintf("%.0f", h) }
+				stroke="rgba(255,255,255,0.06)"
+				stroke-width="0.5"
+			></line>
+		}
+		// Response curve
+		<path
+			d={ computeFreqPath(filter, filterType, w, h) }
+			fill="none"
+			stroke="#22d3ee"
+			stroke-width="1.5"
+			stroke-linejoin="round"
+		></path>
+	</svg>
+}
+
+// freqResponseGraphMini renders a compact SVG frequency response graph for bass/treble.
+templ freqResponseGraphMini(filter filters.FilterStackEntry, filterType string) {
+	<div class="mt-1">
+		@freqResponseGraph(filter, filterType, 200, 32)
+	</div>
+}
+
+// dynamicsCurveGraph renders an inline SVG compressor transfer function graph.
+templ dynamicsCurveGraph(filter filters.FilterStackEntry) {
+	<div class="mt-1 mb-0.5">
+		<svg
+			viewBox={ fmt.Sprintf("0 0 %.0f %.0f", 120.0, 80.0) }
+			class="w-full rounded-sm bg-black/40 border border-white/10"
+			style="height: 80px"
+			preserveAspectRatio="none"
+		>
+			// Grid lines
+			for _, gl := range dynamicsDBGrid(120, 80) {
+				<line
+					x1={ fmt.Sprintf("%.1f", gl.X) }
+					y1="0"
+					x2={ fmt.Sprintf("%.1f", gl.X) }
+					y2="80"
+					stroke="rgba(255,255,255,0.06)"
+					stroke-width="0.5"
+				></line>
+				<line
+					x1="0"
+					y1={ fmt.Sprintf("%.1f", gl.Y) }
+					x2="120"
+					y2={ fmt.Sprintf("%.1f", gl.Y) }
+					stroke="rgba(255,255,255,0.06)"
+					stroke-width="0.5"
+				></line>
+			}
+			// Unity line (1:1 diagonal)
+			<line
+				x1="0"
+				y1="80"
+				x2="120"
+				y2="0"
+				stroke="rgba(255,255,255,0.15)"
+				stroke-width="0.5"
+				stroke-dasharray="2,2"
+			></line>
+			// Threshold vertical line
+			if curve := computeDynamicsCurve(filter); curve.ThresholdX > 0 {
+				<line
+					x1={ fmt.Sprintf("%.1f", curve.ThresholdX) }
+					y1="0"
+					x2={ fmt.Sprintf("%.1f", curve.ThresholdX) }
+					y2="80"
+					stroke="rgba(239,68,68,0.4)"
+					stroke-width="0.5"
+					stroke-dasharray="2,1"
+				></line>
+				// Transfer curve
+				<path
+					d={ curve.PathD }
+					fill="none"
+					stroke="#f59e0b"
+					stroke-width="1.5"
+					stroke-linejoin="round"
+				></path>
+			}
+		</svg>
+		<div class="flex justify-between mt-0.5">
+			<span class="text-xs text-white/20 font-mono">-60 dB</span>
+			<span class="text-xs text-white/20 font-mono">0 dB</span>
+		</div>
+	</div>
+}
+
+// vignettePreview renders a radial gradient preview div for the vignette filter.
+templ vignettePreview(filter filters.FilterStackEntry) {
+	<div
+		class="h-8 w-full rounded-sm border border-white/10"
+		style={ vignetteGradientStyle(filter) }
+	></div>
+}
+
+// lutSwatchPreview renders a row of color swatches showing CSS filter
+// approximations for each LUT preset.  The active preset is highlighted.
+templ lutSwatchPreview(filter filters.FilterStackEntry) {
+	<div class="flex gap-1 overflow-x-auto pb-1">
+		for _, opt := range lutSwatchOptions() {
+			<div
+				class={
+					"flex flex-col items-center gap-0.5 shrink-0",
+					templ.KV("opacity-100", filters.ParamValue(filter.Params, "preset", "none") == opt.Value),
+					templ.KV("opacity-40", filters.ParamValue(filter.Params, "preset", "none") != opt.Value),
+				}
+			>
+				<div
+					class="w-8 h-5 rounded-sm border border-white/10"
+					style={ "background:linear-gradient(to right,#e44,#ea0,#0c0,#08f,#c4f,#e44);filter:" + lutCSSFilter(opt.Value) }
+				></div>
+				<span class="text-xs text-white/30 font-mono leading-none" style="font-size:7px">{ opt.Label }</span>
+			</div>
+		}
+	</div>
+}
+
+// textPositionPreview renders a miniature 16:9 rectangle with a small dot
+// showing the current text position, plus the text content if set.
+templ textPositionPreview(filter filters.FilterStackEntry) {
+	<div class="relative w-full rounded-sm border border-white/10 bg-black/40 overflow-hidden" style="aspect-ratio:16/9;max-height:40px">
+		<div
+			class="absolute w-1.5 h-1.5 bg-cyan-400 rounded-full"
+			style={ textPositionDotStyle(filters.ParamValue(filter.Params, "position", "bottom-right")) }
+		></div>
+		if txt := filters.ParamValue(filter.Params, "text", ""); txt != "" {
+			<div
+				class="absolute text-white/60 font-mono truncate max-w-full px-0.5"
+				style={ textPreviewLabelStyle(filters.ParamValue(filter.Params, "position", "bottom-right")) + ";font-size:6px;line-height:1" }
+			>
+				{ txt }
+			</div>
+		}
+	</div>
+}
+
+// ---------------------------------------------------------------------------
+// Go helpers for SVG graph components
+// ---------------------------------------------------------------------------
+
+// freqDBGridLine holds position info for a dB horizontal grid line.
+type freqDBGridLine struct {
+	Y      float64
+	IsZero bool
+}
+
+// freqDBGrid returns horizontal grid lines for the frequency response graph.
+func freqDBGrid(filterType string, w, h float64) []freqDBGridLine {
+	var dbMin, dbMax, step float64
+	if filterType == "highpass" || filterType == "lowpass" {
+		dbMin, dbMax, step = -30, 3, 6
+	} else {
+		dbMin, dbMax, step = -15, 15, 5
+	}
+
+	var lines []freqDBGridLine
+	for db := dbMin; db <= dbMax; db += step {
+		y := h - (db-dbMin)/(dbMax-dbMin)*h
+		lines = append(lines, freqDBGridLine{Y: y, IsZero: db == 0})
+	}
+	return lines
+}
+
+func gridLineColor(isZero bool) string {
+	if isZero {
+		return "rgba(255,255,255,0.2)"
+	}
+	return "rgba(255,255,255,0.06)"
+}
+
+func gridLineWidth(isZero bool) string {
+	if isZero {
+		return "0.75"
+	}
+	return "0.5"
+}
+
+// computeFreqPath dispatches to the correct frequency response computation.
+func computeFreqPath(filter filters.FilterStackEntry, filterType string, w, h float64) string {
+	switch filterType {
+	case "equalizer":
+		freq := filters.ParamFloat(filter.Params, "frequency", 3000)
+		width := filters.ParamFloat(filter.Params, "width", 2000)
+		gain := filters.ParamFloat(filter.Params, "gain", 4)
+		return filters.ComputePeakingResponse(freq, width, gain, w, h).PathD
+	case "bass":
+		gain := filters.ParamFloat(filter.Params, "gain", 0)
+		return filters.ComputeShelfResponse("low", 200, gain, w, h).PathD
+	case "treble":
+		gain := filters.ParamFloat(filter.Params, "gain", 0)
+		return filters.ComputeShelfResponse("high", 4000, gain, w, h).PathD
+	case "highpass":
+		freq := filters.ParamFloat(filter.Params, "frequency", 200)
+		return filters.ComputePassResponse("high", freq, w, h).PathD
+	case "lowpass":
+		freq := filters.ParamFloat(filter.Params, "frequency", 3000)
+		return filters.ComputePassResponse("low", freq, w, h).PathD
+	default:
+		return ""
+	}
+}
+
+// dynamicsGridLine holds position info for an axis grid line.
+type dynamicsGridLine struct {
+	X float64
+	Y float64
+}
+
+// dynamicsDBGrid returns grid lines for the dynamics curve graph at -48, -36, -24, -12 dB.
+func dynamicsDBGrid(w, h float64) []dynamicsGridLine {
+	steps := []float64{-48, -36, -24, -12}
+	var lines []dynamicsGridLine
+	for _, db := range steps {
+		frac := (db - (-60)) / (0 - (-60))
+		lines = append(lines, dynamicsGridLine{
+			X: frac * w,
+			Y: h - frac*h,
+		})
+	}
+	return lines
+}
+
+// computeDynamicsCurve extracts compressor params and computes the curve.
+func computeDynamicsCurve(filter filters.FilterStackEntry) filters.DynamicsCurve {
+	threshold := filters.ParamFloat(filter.Params, "threshold", -20)
+	ratio := filters.ParamFloat(filter.Params, "ratio", 4)
+	return filters.ComputeDynamicsCurve(threshold, ratio, 120, 80)
+}
+
+// vignetteGradientStyle returns an inline CSS style for a vignette radial gradient preview.
+func vignetteGradientStyle(filter filters.FilterStackEntry) string {
+	amount := filters.ParamFloat(filter.Params, "amount", 0.5)
+	// Map amount (0-1) to opacity for the vignette preview
+	opacity := amount
+	if opacity < 0 {
+		opacity = 0
+	}
+	if opacity > 1 {
+		opacity = 1
+	}
+	return fmt.Sprintf(
+		"background: radial-gradient(ellipse at center, transparent 40%%, rgba(0,0,0,%.2f) 100%%)",
+		opacity,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// LUT swatch preview helpers
+// ---------------------------------------------------------------------------
+
+// lutSwatchOption is a simplified option for the swatch strip.
+type lutSwatchOption struct {
+	Value string
+	Label string
+}
+
+// lutSwatchOptions returns the LUT options for the swatch strip.
+func lutSwatchOptions() []lutSwatchOption {
+	return []lutSwatchOption{
+		{"none", "Off"},
+		{"cinematic_warm", "Warm"},
+		{"cinematic_cool", "Cool"},
+		{"film_noir", "Noir"},
+		{"bleach_bypass", "Blch"},
+		{"orange_teal", "O&T"},
+		{"vintage_fade", "Vint"},
+		{"high_contrast", "HiCn"},
+		{"pastel", "Pstl"},
+		{"golden_hour", "Gold"},
+		{"moonlit", "Moon"},
+	}
+}
+
+// lutCSSFilter returns a CSS filter() approximation for a LUT preset name.
+func lutCSSFilter(preset string) string {
+	switch preset {
+	case "cinematic_warm":
+		return "sepia(0.3) saturate(1.4) brightness(1.05)"
+	case "cinematic_cool":
+		return "saturate(0.8) hue-rotate(10deg) brightness(1.05)"
+	case "film_noir":
+		return "grayscale(1) contrast(1.3) brightness(0.9)"
+	case "bleach_bypass":
+		return "saturate(0.5) contrast(1.4) brightness(1.1)"
+	case "orange_teal":
+		return "sepia(0.2) hue-rotate(-10deg) saturate(1.6)"
+	case "vintage_fade":
+		return "sepia(0.4) contrast(0.9) brightness(1.1) saturate(0.7)"
+	case "high_contrast":
+		return "contrast(1.6) saturate(1.2)"
+	case "pastel":
+		return "saturate(0.5) brightness(1.2)"
+	case "golden_hour":
+		return "sepia(0.35) saturate(1.5) brightness(1.1)"
+	case "moonlit":
+		return "saturate(0.6) hue-rotate(30deg) brightness(0.85)"
+	default:
+		return "none"
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Text position preview helpers
+// ---------------------------------------------------------------------------
+
+// textPositionDotStyle returns inline CSS to position a small dot inside
+// a 16:9 box according to the named position string.
+func textPositionDotStyle(pos string) string {
+	var top, left string
+	switch pos {
+	case "top-left":
+		top, left = "10%", "5%"
+	case "top-center":
+		top, left = "10%", "calc(50% - 3px)"
+	case "top-right":
+		top, left = "10%", "calc(95% - 6px)"
+	case "center":
+		top, left = "calc(50% - 3px)", "calc(50% - 3px)"
+	case "bottom-left":
+		top, left = "calc(90% - 6px)", "5%"
+	case "bottom-center":
+		top, left = "calc(90% - 6px)", "calc(50% - 3px)"
+	default: // bottom-right
+		top, left = "calc(90% - 6px)", "calc(95% - 6px)"
+	}
+	return fmt.Sprintf("top:%s;left:%s", top, left)
+}
+
+// textPreviewLabelStyle returns inline CSS to position the text label
+// inside the preview box.
+func textPreviewLabelStyle(pos string) string {
+	switch pos {
+	case "top-left":
+		return "top:2px;left:2px"
+	case "top-center":
+		return "top:2px;left:50%;transform:translateX(-50%)"
+	case "top-right":
+		return "top:2px;right:2px"
+	case "center":
+		return "top:50%;left:50%;transform:translate(-50%,-50%)"
+	case "bottom-left":
+		return "bottom:2px;left:2px"
+	case "bottom-center":
+		return "bottom:2px;left:50%;transform:translateX(-50%)"
+	default: // bottom-right
+		return "bottom:2px;right:2px"
+	}
+}

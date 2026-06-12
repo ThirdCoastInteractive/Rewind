@@ -214,13 +214,19 @@ export function timeFromEvent(el, evt, startTime, endTime) {
 
 export function normalizeClip(raw) {
   if (!raw) return raw;
+  const startTs = raw.StartTs ?? raw.start_ts ?? 0;
+  const endTs = raw.EndTs ?? raw.end_ts ?? 0;
   return {
-    id:      (raw.id || raw.ID || '').toString(),
-    startTs: raw.StartTs ?? raw.start_ts ?? 0,
-    endTs:   raw.EndTs ?? raw.end_ts ?? 0,
-    color:   (raw.Color ?? raw.color ?? '').toString(),
-    title:   (raw.Title ?? raw.title ?? '').toString(),
-    // Preserve full object for any extra fields (crops, filter_stack, etc.)
+    id:       (raw.id || raw.ID || '').toString(),
+    startTs,
+    endTs,
+    start:    startTs,
+    end:      endTs,
+    duration: raw.Duration ?? raw.duration ?? (endTs - startTs),
+    color:    (raw.Color ?? raw.color ?? '').toString(),
+    title:    (raw.Title ?? raw.title ?? '').toString(),
+    crops:    raw.Crops ?? raw.crops ?? [],
+    shotList: raw.ShotList ?? raw.shot_list ?? [],
     _raw: raw,
   };
 }

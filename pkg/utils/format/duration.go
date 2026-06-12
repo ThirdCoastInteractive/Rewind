@@ -17,6 +17,19 @@ func Duration(seconds float64) string {
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
+// DurationHuman formats total seconds as a compact human string like "42h 15m".
+func DurationHuman(totalSeconds int64) string {
+	if totalSeconds <= 0 {
+		return "0m"
+	}
+	h := totalSeconds / 3600
+	m := (totalSeconds % 3600) / 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
 // DurationPtr formats a nullable int32 duration. Returns "" for nil.
 func DurationPtr(seconds *int32) string {
 	if seconds == nil {

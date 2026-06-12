@@ -1,4 +1,4 @@
-FROM golang:1.25.4-alpine3.21 AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -22,9 +22,10 @@ LABEL org.opencontainers.image.licenses="MIT"
 # Install runtime deps: curl, ffmpeg, CA certs, and deno for JS extraction
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip && \
-    curl -fsSL https://deno.land/install.sh | sh && \
-    mv /root/.deno/bin/deno /usr/local/bin/deno && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fSL https://deno.land/install.sh -o /tmp/install_deno.sh
+RUN sh /tmp/install_deno.sh && mv /root/.deno/bin/deno /usr/local/bin/deno
 
 # Download yt-dlp binary from GitHub releases
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp && \

@@ -1,0 +1,4 @@
+/* Stitch detail panel inputs */
+.stitch-detail-input {
+  @apply w-full px-2 py-1 bg-black border-2 border-white/20 text-white placeholder-white/40 focus:border-white transition font-mono text-xs;
+}

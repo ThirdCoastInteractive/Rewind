@@ -3,7 +3,6 @@ package templates
 import (
 	"strings"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
@@ -64,13 +63,13 @@ type JobStatusRow struct {
 templ AdminHome(username string, alertType string, alertMsg string, metrics DashboardMetrics, jobStatuses []JobStatusRow) {
 	@Layout("Admin", username) {
 		@AdminHomeContent(alertType, alertMsg, metrics, jobStatuses)
-		<script src="/static/dist/admin-dashboard.js"></script>
+		<script src={ versionedAsset(ctx, "/static/dist/admin-dashboard.js") }></script>
 	}
 }
 
 templ AdminHomeContent(alertType string, alertMsg string, metrics DashboardMetrics, jobStatuses []JobStatusRow) {
 	@Container("wide") {
-		<h1 class={ viewtypes.PageHeading + " mb-4" }>ADMIN</h1>
+		<h1 class="page-heading mb-4">ADMIN</h1>
 		if alertMsg != "" {
 			@Alert(alertType, alertMsg)
 		}
@@ -107,22 +106,22 @@ templ AdminHomeContent(alertType string, alertMsg string, metrics DashboardMetri
 }
 
 templ adminStatCard(label, value string) {
-	<div class="bg-black border-2 border-white/10 p-3">
-		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">{ label }</div>
+	<div class="info-box">
+		<div class="section-label mb-1">{ label }</div>
 		<div class="text-white text-lg font-mono font-bold">{ value }</div>
 	</div>
 }
 
 templ adminChartCard(title, chartID, extraClasses string) {
-	<div class={ "bg-black border-2 border-white/10 p-4", extraClasses }>
-		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-3">{ title }</div>
+	<div class={ "info-box", extraClasses }>
+		<div class="section-label mb-3">{ title }</div>
 		<div id={ chartID } class="w-full h-48"></div>
 	</div>
 }
 
 templ adminJobStatusCard(jobStatuses []JobStatusRow) {
-	<div class="bg-black border-2 border-white/10 p-4">
-		<div class="text-white/40 text-xs font-mono uppercase tracking-wider mb-3">JOB STATUS</div>
+	<div class="info-box">
+		<div class="section-label mb-3">JOB STATUS</div>
 		<div class="grid grid-cols-2 gap-4">
 			@adminJobTypeColumn("DOWNLOAD", jobStatuses, "download")
 			@adminJobTypeColumn("INGEST", jobStatuses, "ingest")
@@ -192,14 +191,14 @@ templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string,
 			@components.CardHeader("CLIP EXPORTS", "Storage cap for exported clips. When the cap is exceeded, the oldest exports (least-recently accessed) are deleted until under the limit.")
 			@components.CardBody(true) {
 				<div>
-					<label class="block text-xs font-mono uppercase tracking-wider text-white mb-1" for="clip_export_storage_limit">EXPORT STORAGE LIMIT</label>
+					<label class="form-label mb-1" for="clip_export_storage_limit">EXPORT STORAGE LIMIT</label>
 					<input
 						id="clip_export_storage_limit"
 						name="clip_export_storage_limit"
 						type="text"
 						value={ clipExportStorageLimit }
 						placeholder="e.g., 10G, 500M, 1K"
-						class={ viewtypes.InputClass }
+						class={ "form-input" }
 					/>
 					<p class="mt-1 text-xs text-white/40 font-mono">Enter size like 10G, 500M, 1K. Leave empty for unlimited.</p>
 				</div>
@@ -212,14 +211,14 @@ templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string,
 			@components.CardHeader("ADMIN EMAILS", "List of email addresses to automatically promote to admin role upon registration.")
 			@components.CardBody(true) {
 				<div>
-					<label class="block text-xs font-mono uppercase tracking-wider text-white mb-1" for="admin_emails">ADMIN EMAILS (COMMA-SEPARATED)</label>
+					<label class="form-label mb-1" for="admin_emails">ADMIN EMAILS (COMMA-SEPARATED)</label>
 					<input
 						id="admin_emails"
 						name="admin_emails"
 						type="text"
 						value={ strings.Join(adminEmails, ", ") }
 						placeholder="admin@example.com, boss@company.com"
-						class={ viewtypes.InputClass }
+						class={ "form-input" }
 					/>
 				</div>
 				@components.FormButton("primary", "md", "", false) {
@@ -258,16 +257,16 @@ templ AdminUsersContent(users []AdminUserRow, alertType string, alertMsg string)
 							}
 							@components.TableCell(false) {
 								if u.Role == "admin" {
-									<span class="inline-flex items-center px-2 py-1 border-2 border-white text-xs font-mono uppercase bg-white text-black">ADMIN</span>
+									<span class="badge bg-white text-black border-white">ADMIN</span>
 								} else {
-									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white">USER</span>
+									<span class="badge">USER</span>
 								}
 							}
 							@components.TableCell(false) {
 								if u.Enabled {
-									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white">ENABLED</span>
+									<span class="badge">ENABLED</span>
 								} else {
-									<span class="inline-flex items-center px-2 py-1 border-2 border-white/20 text-xs font-mono uppercase text-white/40">DISABLED</span>
+									<span class="badge text-white/40">DISABLED</span>
 								}
 							}
 							@components.TableCell(false) {
@@ -362,8 +361,8 @@ templ AdminExportsContent(stats *AdminExportStats, alertType string, alertMsg st
 				@AdminExportStatCard("PROCESSING", stats.ProcessingCount, "yellow-400")
 				@AdminExportStatCard("READY", stats.ReadyCount, "green-400")
 				@AdminExportStatCard("ERROR", stats.ErrorCount, "red-400")
-				<div class={ viewtypes.InfoBoxClass }>
-					<div class={ viewtypes.SectionLabel + " mb-1" }>DISK USAGE</div>
+				<div class={ "info-box" }>
+					<div class={ "section-label mb-1" }>DISK USAGE</div>
 					<div class="text-lg font-mono text-white">{ format.Bytes(stats.TotalSizeBytes) }</div>
 				</div>
 			</div>
@@ -399,8 +398,8 @@ templ AdminExportsContent(stats *AdminExportStats, alertType string, alertMsg st
 }
 
 templ AdminExportStatCard(label string, count int64, color string) {
-	<div class={ viewtypes.InfoBoxClass }>
-		<div class={ viewtypes.SectionLabel + " mb-1" }>{ label }</div>
+	<div class={ "info-box" }>
+		<div class={ "section-label mb-1" }>{ label }</div>
 		<div class={ "text-xl font-mono text-" + color }>{ format.Itoa64(count) }</div>
 	</div>
 }

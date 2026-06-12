@@ -1,0 +1,144 @@
+package templates
+
+templ Upload(username string) {
+	@Layout("Upload", username) {
+		@Container("") {
+			<div class="mb-4">
+				<h1 class="page-heading text-xl tracking-tight mb-0.5">Upload Video</h1>
+				<p class="text-xs font-mono text-white/60">Upload a local video file to your archive</p>
+			</div>
+			<div
+				id="upload-zone"
+				class="border-2 border-dashed border-white/20 p-8 text-center transition-colors hover:border-white/40 cursor-pointer"
+				ondragover="event.preventDefault(); this.classList.add('border-white', 'bg-white/5')"
+				ondragleave="this.classList.remove('border-white', 'bg-white/5')"
+				ondrop="handleDrop(event)"
+				onclick="document.getElementById('file-input').click()"
+			>
+				<div id="upload-prompt">
+					<i class="fa-sharp fa-solid fa-cloud-arrow-up text-4xl text-white/20 mb-3" aria-hidden="true"></i>
+					<p class="font-mono text-sm text-white/60 mb-1">Drag & drop video files here</p>
+					<p class="font-mono text-xs text-white/40">or click to browse</p>
+					<p class="font-mono text-xs text-white/30 mt-2">
+						MP4, MKV, WebM, AVI, MOV, FLV, WMV, MPG, and more
+					</p>
+				</div>
+				<input
+					type="file"
+					id="file-input"
+					class="hidden"
+					accept="video/*,.mkv,.avi,.wmv,.flv,.mpg,.mpeg,.m4v,.ts,.mts,.m2ts,.vob,.3gp,.ogv,.divx,.asf,.f4v,.rm,.rmvb"
+					multiple
+					onchange="handleFiles(this.files)"
+				/>
+			</div>
+			<div id="upload-list" class="mt-4 space-y-2"></div>
+		}
+		<script>
+			function handleDrop(e) {
+				e.preventDefault();
+				e.currentTarget.classList.remove('border-white', 'bg-white/5');
+				handleFiles(e.dataTransfer.files);
+			}
+
+			function handleFiles(files) {
+				for (const file of files) {
+					uploadFile(file);
+				}
+				// Reset the input so the same file can be re-selected
+				document.getElementById('file-input').value = '';
+			}
+
+			function formatBytes(bytes) {
+				if (bytes === 0) return '0 B';
+				const k = 1024;
+				const sizes = ['B', 'KB', 'MB', 'GB'];
+				const i = Math.floor(Math.log(bytes) / Math.log(k));
+				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+			}
+
+			function uploadFile(file) {
+				const id = 'upload-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+				const list = document.getElementById('upload-list');
+
+				const card = document.createElement('div');
+				card.id = id;
+				card.className = 'border-2 border-white/10 p-3';
+				card.innerHTML = `
+					<div class="flex items-center justify-between mb-2">
+						<div class="flex-1 min-w-0">
+							<p class="font-mono text-sm text-white truncate">${file.name}</p>
+							<p class="font-mono text-xs text-white/40">${formatBytes(file.size)}</p>
+						</div>
+						<span class="upload-status font-mono text-xs uppercase tracking-wider text-white/60 ml-3">Uploading…</span>
+					</div>
+					<div class="w-full h-1 bg-white/10">
+						<div class="upload-progress h-full bg-white transition-all duration-200" style="width: 0%"></div>
+					</div>
+				`;
+				list.prepend(card);
+
+				const form = new FormData();
+				form.append('file', file);
+
+				const xhr = new XMLHttpRequest();
+				xhr.open('POST', '/api/upload');
+
+				xhr.upload.onprogress = (e) => {
+					if (e.lengthComputable) {
+						const pct = (e.loaded / e.total * 100).toFixed(0);
+						const bar = card.querySelector('.upload-progress');
+						bar.style.width = pct + '%';
+					}
+				};
+
+				xhr.onload = () => {
+					const bar = card.querySelector('.upload-progress');
+					const status = card.querySelector('.upload-status');
+
+					if (xhr.status === 200) {
+						bar.style.width = '100%';
+						status.textContent = 'Queued';
+						status.classList.remove('text-white/60');
+						status.classList.add('text-white');
+						card.classList.remove('border-white/10');
+						card.classList.add('border-white/20');
+
+						try {
+							const resp = JSON.parse(xhr.responseText);
+							const link = document.createElement('a');
+							link.href = '/jobs/' + resp.download_job_id;
+							link.className = 'font-mono text-xs text-white/40 hover:text-white underline mt-1 inline-block';
+							link.textContent = 'View job →';
+							card.querySelector('.flex-1').appendChild(link);
+						} catch (e) {}
+					} else {
+						bar.classList.remove('bg-white');
+						bar.classList.add('bg-red-500');
+						bar.style.width = '100%';
+						status.textContent = 'Failed';
+
+						try {
+							const resp = JSON.parse(xhr.responseText);
+							const err = document.createElement('p');
+							err.className = 'font-mono text-xs text-white/40 mt-1';
+							err.textContent = resp.error || 'Upload failed';
+							card.querySelector('.flex-1').appendChild(err);
+						} catch (e) {}
+					}
+				};
+
+				xhr.onerror = () => {
+					const bar = card.querySelector('.upload-progress');
+					const status = card.querySelector('.upload-status');
+					bar.classList.remove('bg-white');
+					bar.classList.add('bg-red-500');
+					bar.style.width = '100%';
+					status.textContent = 'Error';
+				};
+
+				xhr.send(form);
+			}
+		</script>
+	}
+}

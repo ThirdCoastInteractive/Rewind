@@ -92,6 +92,34 @@ SELECT *
 FROM videos
 WHERE src = $1;
 
+-- FilterExistingVideoIDs returns, from the given candidate ids, the subset that
+-- already exist as videos. Used to skip re-downloading already-archived videos
+-- when expanding a playlist/channel (video ids are deterministic UUIDv5s).
+-- name: FilterExistingVideoIDs :many
+SELECT id
+FROM videos
+WHERE id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- ClaimVideosForCommentCatchup atomically claims up to batch_size videos that
+-- have no comments (and weren't checked in the last 30 days), marking
+-- comments_checked_at so other downloader replicas skip them. The downloader
+-- then re-fetches comments via yt-dlp for each. FOR UPDATE SKIP LOCKED prevents
+-- cross-replica double-claims; newest videos first.
+-- name: ClaimVideosForCommentCatchup :many
+UPDATE videos
+SET comments_checked_at = NOW()
+WHERE id IN (
+    SELECT v.id
+    FROM videos v
+    WHERE v.src IS NOT NULL AND btrim(v.src) <> ''
+      AND (v.comments_checked_at IS NULL OR v.comments_checked_at < NOW() - INTERVAL '30 days')
+      AND NOT EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id)
+    ORDER BY v.created_at DESC
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, src, archived_by;
+
 -- DeleteVideo deletes a video by ID (cascades to related records).
 -- name: DeleteVideo :exec
 DELETE FROM videos
@@ -117,13 +145,16 @@ SELECT id::text, video_path, thumbnail_path, file_hash, duration_seconds, assets
 FROM videos
 WHERE video_path IS NOT NULL AND btrim(video_path) <> ''
 AND (
-    assets_status = '{}'::jsonb
-    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek'])
+    -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
+    lower(video_path) NOT LIKE '%.mp4'
+    OR assets_status = '{}'::jsonb
+    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart'])
     OR assets_status @> '{"thumbnail": false}'::jsonb
     OR assets_status @> '{"preview": false}'::jsonb
     OR assets_status @> '{"waveform": false}'::jsonb
     OR assets_status @> '{"file_hash": false}'::jsonb
     OR assets_status @> '{"seek": false}'::jsonb
+    OR assets_status @> '{"faststart": false}'::jsonb
 )
 AND (
     -- No errors yet, or backoff period has elapsed.
@@ -137,6 +168,15 @@ AND (
             < NOW()
     )
 )
+ORDER BY updated_at ASC
+LIMIT $1;
+
+-- ListVideosMissingVideoPath returns videos whose video_path is unset, for
+-- disk-discovery recovery of ingests that never completed (file on disk, no path).
+-- name: ListVideosMissingVideoPath :many
+SELECT id::text AS id
+FROM videos
+WHERE video_path IS NULL OR btrim(video_path) = ''
 ORDER BY updated_at ASC
 LIMIT $1;
 

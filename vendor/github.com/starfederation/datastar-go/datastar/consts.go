@@ -1,0 +1,69 @@
+package datastar
+
+import "time"
+
+const (
+	DatastarKey = "datastar"
+	// The default duration for retrying SSE on connection reset. This is part of the underlying retry mechanism of SSE.
+	DefaultSseRetryDuration = 1000 * time.Millisecond
+	SelectorDatalineLiteral = "selector "
+	ModeDatalineLiteral = "mode "
+	NamespaceDatalineLiteral = "namespace "
+	UseViewTransitionDatalineLiteral = "useViewTransition "
+	ElementsDatalineLiteral = "elements "
+	SignalsDatalineLiteral = "signals "
+	OnlyIfMissingDatalineLiteral = "onlyIfMissing "
+)
+
+var (
+	// Should elements be patched using the ViewTransition API?
+	DefaultElementsUseViewTransitions = false
+	// Should a given set of signals patch if they are missing?
+	DefaultPatchSignalsOnlyIfMissing = false
+)
+
+// The mode in which an element is patched into the DOM.
+type ElementPatchMode string
+
+const (
+	// Default value for ElementPatchMode
+	// Morphs the element into the existing element.
+	DefaultElementPatchMode = ElementPatchModeOuter
+
+	// Morphs the element into the existing element.
+	ElementPatchModeOuter ElementPatchMode = "outer"
+	// Replaces the inner HTML of the existing element.
+	ElementPatchModeInner ElementPatchMode = "inner"
+	// Removes the existing element.
+	ElementPatchModeRemove ElementPatchMode = "remove"
+	// Replaces the existing element with the new element.
+	ElementPatchModeReplace ElementPatchMode = "replace"
+	// Prepends the element inside to the existing element.
+	ElementPatchModePrepend ElementPatchMode = "prepend"
+	// Appends the element inside the existing element.
+	ElementPatchModeAppend ElementPatchMode = "append"
+	// Inserts the element before the existing element.
+	ElementPatchModeBefore ElementPatchMode = "before"
+	// Inserts the element after the existing element.
+	ElementPatchModeAfter ElementPatchMode = "after"
+)
+
+// The namespace to use when patching elements into the DOM.
+type Namespace string
+
+const (
+	NamespaceHTML Namespace = "html"
+	NamespaceSVG Namespace = "svg"
+	NamespaceMathML Namespace = "mathml"
+)
+
+// The type protocol on top of SSE which allows for core pushed based communication between the server and the client.
+type EventType string
+
+const (
+	// An event for patching HTML elements into the DOM.
+	EventTypePatchElements EventType = "datastar-patch-elements"
+	// An event for patching signals.
+	EventTypePatchSignals EventType = "datastar-patch-signals"
+)
+

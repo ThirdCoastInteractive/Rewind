@@ -1,0 +1,6 @@
+package components
+
+// StitchExportStatus delegates to the shared ExportStatus component.
+templ StitchExportStatus(text string, state string, downloadURL string) {
+	@ExportStatus("stitch-export-status", text, state, downloadURL)
+}

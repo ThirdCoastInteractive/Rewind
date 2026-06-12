@@ -6,7 +6,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleJobsPage serves GET /jobs, rendering the download jobs list page.
 func HandleJobsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, username, err := sm.GetSession(c.Request())

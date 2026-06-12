@@ -3,8 +3,8 @@ package templates
 import (
 	"fmt"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/filters"
 )
 
 templ VideoCutPage(video VideoDetail, clips []*db.Clip, username string, keybindings map[string]string) {
@@ -19,7 +19,7 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 		data-cut-page
 		data-video-id={ video.ID }
 		data-video-fps={ fmt.Sprintf("%.5f", video.Info.GetFPS()) }
-		data-signals="{_localClipBankOpen: true, _localInspectorOpen: true, _localFiltersOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}"
+		data-signals="{_localClipBankOpen: true, _localInspectorOpen: true, _localFiltersOpen: false, _localMulticamOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}"
 		data-init={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }
 	>
 		<div class="shrink-0">
@@ -36,8 +36,11 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 				}
 				@components.SidebarPanel("COLOR / FILTERS", "_localFiltersOpen") {
 					<div class="p-2">
-						@components.FilterStack(video.ID)
+						@components.FilterStack(filters.CutFilterConfig(video.ID))
 					</div>
+				}
+				@components.SidebarPanel("MULTICAM", "_localMulticamOpen") {
+					@components.MulticamPanel("", nil, nil)
 				}
 				@components.SidebarPanel("EXPORT", "_localExportOpen") {
 					@components.CutExportPanel(nil)
@@ -73,15 +76,15 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 				</div>
 				<!-- Overview timeline: fixed height -->
 				<div class="shrink-0 h-10">
-					<div class={ viewtypes.SectionLabel }>OVERVIEW</div>
-					<div class="relative h-6 border-2 border-white/10 bg-neutral-900 overflow-hidden" data-cut-overview>
+					<div class="section-label">OVERVIEW</div>
+					<div class="relative h-6 border-2 border-white/10 bg-neutral-950 overflow-hidden" data-cut-overview>
 						<div class="absolute inset-0" data-cut-overview-layer></div>
 					</div>
 				</div>
 				<!-- Work area: fixed height, NOT flex-1 -->
 				<div class="shrink-0 h-32">
-					<div class={ viewtypes.SectionLabel }>WORK AREA</div>
-					<div class="relative border-2 border-white/10 bg-neutral-900 overflow-hidden" style="height: calc(100% - 1.25rem);" data-cut-work>
+					<div class="section-label">WORK AREA</div>
+					<div class="relative border-2 border-white/10 bg-neutral-950 overflow-hidden" style="height: calc(100% - 1.25rem);" data-cut-work>
 						<div class="absolute inset-0" data-cut-work-layer></div>
 					</div>
 				</div>
@@ -94,8 +97,14 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 					@components.CutIconButton("images", "default", templ.Attributes{"data-cut-toggle-filmstrip": true, "title": "Toggle thumbnails"})
 					@components.CutIconButton("bars", "default", templ.Attributes{"data-on:click": "document.getElementById('audio-tools-container').classList.toggle('hidden')", "title": "Audio tools"})
 					<div class="grow"></div>
+					@components.CutIconButton("chevron-left", "default", templ.Attributes{"data-cut-nudge-in-back": true, "title": "Nudge IN earlier (1 frame, Shift=10)"})
 					@components.CutButton("SET IN", "default", templ.Attributes{"data-cut-set-in": true})
+					@components.CutIconButton("chevron-right", "default", templ.Attributes{"data-cut-nudge-in-fwd": true, "title": "Nudge IN later (1 frame, Shift=10)"})
+					<div class="w-px h-6 bg-white/10"></div>
+					@components.CutIconButton("chevron-left", "default", templ.Attributes{"data-cut-nudge-out-back": true, "title": "Nudge OUT earlier (1 frame, Shift=10)"})
 					@components.CutButton("SET OUT", "default", templ.Attributes{"data-cut-set-out": true})
+					@components.CutIconButton("chevron-right", "default", templ.Attributes{"data-cut-nudge-out-fwd": true, "title": "Nudge OUT later (1 frame, Shift=10)"})
+					<div class="w-px h-6 bg-white/10"></div>
 					@components.CutButton("LOOP", "default", templ.Attributes{"data-cut-loop": true})
 					@components.CutButton("PLAY SEL", "default", templ.Attributes{"data-cut-play-selection": true})
 					@components.CutButton("REVERT", "default", templ.Attributes{
@@ -110,7 +119,7 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 					})
 					<button
 						type="button"
-						class="px-2 py-1 text-xs font-mono uppercase tracking-wider border-2 active:scale-95 transition-all"
+						class="btn btn-sm"
 						data-class="{'bg-amber-400/20 text-amber-400 border-amber-400/40': $_localAutoSave, 'bg-black text-white/40 border-white/10 hover:border-white/30': !$_localAutoSave}"
 						data-on:click="$_localAutoSave = !$_localAutoSave"
 						title="Toggle autosave"
@@ -142,8 +151,8 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 			></button>
 		</div>
 	</div>
-	<link rel="stylesheet" href="/static/dist/video-player.css"/>
+	<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/video-player.css") }/>
 	@KeybindingsData(keybindings)
-	<script src="/static/dist/video-player.js"></script>
-	<script src="/static/dist/cut-page.js"></script>
+	<script src={ versionedAsset(ctx, "/static/dist/video-player.js") }></script>
+	<script src={ versionedAsset(ctx, "/static/dist/cut-page.js") }></script>
 }

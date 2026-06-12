@@ -79,11 +79,11 @@ Monitor download progress, retries, and errors from a single dashboard.
 - **Color filters** - stack FFmpeg filters (brightness, contrast, blur, color balance, and more) with live preview before export
 - **Crop presets** - create crop regions for different aspect ratios (16:9, 9:16, 1:1, etc.) and export multiple variants per clip
 - **SponsorBlock** - auto-skip sponsor segments on YouTube videos with on-screen notifications
-- **Markers & comments** - add timestamped markers with colors, and view imported YouTube comments
+- **Markers & comments** - add timestamped markers with colors, and view and search imported YouTube comments with clickable timestamps
 - **Remote playback** - control video playback on another device with a scene layout editor (great for OBS and streaming)
 - **Admin dashboard** - storage metrics, video-per-day charts, user management, and export queue monitoring
 - **Customizable keybindings** - rebind every keyboard shortcut, including hardware keys (F14-F24)
-- **Browser extension** - archive the current tab from a popup window with one click (supports YouTube, Vimeo, and hundreds more)
+- **Browser extension** - right-click any video on YouTube to queue it for download
 - **Fully self-hosted** - runs on Docker, stores everything locally, no external services required
 
 ## Quick Start
@@ -195,14 +195,13 @@ You can change these paths in `docker-compose.yml`. For large libraries, point t
 
 ## Browser Extension
 
-Archive any supported video with one click. The extension adds a popup with server connection status, authentication, and an **Archive Current Tab** button. Configure your Rewind server URL and log in from the extension's settings page.
+Save videos to Rewind with one click from your browser.
 
 **Chrome / Chromium:**
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked** and select the `extensions/chrome-extension-v3/` folder
-4. Click the Rewind icon in your toolbar, enter your server URL, and log in
 
 **Firefox:**
 
@@ -227,26 +226,13 @@ The downloader and ingest services run multiple copies in parallel by default so
 
 Planned features and improvements (no particular order):
 
-**Export & Editing**
-- [ ] **Clip stitching** — Combine clips from multiple videos into a single export with title cards, xfade transitions, and per-clip/global filters
-- [ ] Batch exports (queue multiple crop variants from a single action)
-- [ ] Trim polish (A/B preview, frame-stepping shortcuts, filmstrip timelines)
-
-**Library & Organization**
-- [ ] Playlist and channel archival (batch download entire channels/playlists)
+- [ ] **Producer v2** - Self-hosted live production suite (Streamyard alternative). WebRTC via Pion SFU, Three.js scene compositor, multi-host webcam/mic, Show Notes with nested content blocks, OBS browser source output
+- [ ] **Three.js shader library** - Extensible effect system for producer scenes (backgrounds, particles, 3D objects), deterministic sync for remote playback
+- [x] Playlist and channel archival (batch download entire channels/playlists, with automatic dedup of already-archived videos)
 - [ ] Scheduled/recurring downloads (auto-archive new uploads from channels)
-- [ ] Collections and tagging (user-managed tags, browsing, filtering)
-- [ ] Bulk operations (batch tag, delete, export)
-- [ ] Searchable comments + transcripts (full-text search across all ingested text)
-
-**Infrastructure**
+- [x] Collections and tagging (user-managed tags, browse/filter the library by tag)
 - [ ] Unified jobs UI (ingest + download jobs, pagination, job-to-video linking)
-
-**Producer (Remote Playback)**
-- [ ] **Producer v2** — Self-hosted live production suite. Show Notes with nested content blocks, WebRTC via Pion SFU for multi-host webcam/mic, OBS browser source output
-- [ ] **Three.js shader library** — Extensible effect system for producer scenes (backgrounds, particles, 3D objects), deterministic sync for remote playback
-
-**UI & Customization**
+- [x] Bulk operations — batch-tag selected videos from the library grid (bulk delete intentionally omitted to protect your archive; bulk export still TBD)
 - [ ] Theme customization (light mode, custom accent colors)
 
 ## Contributing

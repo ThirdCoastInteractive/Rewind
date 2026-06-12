@@ -62,7 +62,7 @@ func generateThumbnail(ctx context.Context, videoPath string) (string, error) {
 }
 
 func generateThumbnailVariant(ctx context.Context, videoPath, out string, maxWidth int) error {
-	result := ffmpeg.ExtractThumbnailCapture(ctx, videoPath, out, &ffmpeg.ThumbnailOptions{
+	result := ffmpeg.ExtractThumbnail(ctx, videoPath, out, &ffmpeg.ThumbnailOptions{
 		Offset:   5 * time.Second,
 		MaxWidth: maxWidth,
 		Quality:  4,

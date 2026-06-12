@@ -12,6 +12,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminUserRole serves POST /admin/users/:id/role, changing a user's role and invalidating their sessions.
 func HandleAdminUserRole(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		q := dbc.Queries(c.Request().Context())

@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -25,9 +26,16 @@ type CachedFileInfo struct {
 
 // StaticCache manages in-memory metadata for static assets.
 type StaticCache struct {
-	fileLock sync.RWMutex
-	entries  map[string]CachedFileInfo
-	fs       fs.FS
+	fileLock    sync.RWMutex
+	entries     map[string]CachedFileInfo
+	fs          fs.FS
+	distVersion string // short hash of all dist/ assets for cache-busting
+}
+
+// DistVersion returns a short hash derived from all dist/ assets,
+// suitable for use as a cache-busting query parameter.
+func (s *StaticCache) DistVersion() string {
+	return s.distVersion
 }
 
 // NewStaticCache scans the embedded filesystem and computes ETag and Last-Modified for each file.
@@ -75,9 +83,31 @@ func NewStaticCache() (*StaticCache, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Compute a combined hash of all dist/ files for cache-busting URLs.
+	c.distVersion = c.computeDistVersion()
+
 	return c, nil
 }
 
+// computeDistVersion produces a short hash from the ETags of all dist/ entries.
+func (s *StaticCache) computeDistVersion() string {
+	var distPaths []string
+	for p := range s.entries {
+		if strings.HasPrefix(p, "dist/") {
+			distPaths = append(distPaths, p)
+		}
+	}
+	sort.Strings(distPaths)
+
+	h := sha256.New()
+	for _, p := range distPaths {
+		h.Write([]byte(s.entries[p].ETag))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:12]
+}
+
+// ServeStaticFile returns an Echo handler that serves embedded static assets with ETag and cache-control headers.
 func (s *StaticCache) ServeStaticFile(prefix string) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		path := strings.TrimPrefix(c.Request().URL.Path, "/static/")
@@ -103,10 +133,15 @@ func (s *StaticCache) ServeStaticFile(prefix string) echo.HandlerFunc {
 		var cacheHeader string
 		ext := filepath.Ext(path)
 
-		// NOTE: /static/dist/* assets are not fingerprinted, so long-lived caching can
-		// easily result in stale JS/CSS (especially behind Cloudflare).
+		// dist/ CSS/JS: if the request includes a ?v= cache-busting param, serve
+		// with immutable long-lived headers. Without it, fall back to must-revalidate
+		// so direct/outdated links still work correctly.
 		if strings.HasPrefix(path, "dist/") && (ext == ".css" || ext == ".js") {
-			cacheHeader = "no-cache, must-revalidate"
+			if c.QueryParam("v") != "" {
+				cacheHeader = "public, max-age=31536000, immutable"
+			} else {
+				cacheHeader = "no-cache, must-revalidate"
+			}
 		} else {
 			switch ext {
 			case ".css", ".js":

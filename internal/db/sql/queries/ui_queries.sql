@@ -48,8 +48,13 @@ WHERE
         OR (sqlc.narg('duration_filter') = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
         OR (sqlc.narg('duration_filter') = 'long' AND v.duration_seconds >= 1800)
     )
-    -- Tags filter (any tag matches)
+    -- Scraped tags filter (any tag matches)
     AND (sqlc.narg('tags')::text[] IS NULL OR v.tags && sqlc.narg('tags')::text[])
+    -- User tag filter (video has any of the selected tag ids)
+    AND (sqlc.narg('tag_ids')::uuid[] IS NULL OR EXISTS (
+        SELECT 1 FROM video_tags vt
+        WHERE vt.video_id = v.id AND vt.tag_id = ANY(sqlc.narg('tag_ids')::uuid[])
+    ))
     -- Date range (archived or published based on date_type)
     AND (
         sqlc.narg('date_from')::date IS NULL 
@@ -106,12 +111,46 @@ WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
 ORDER BY tag ASC
 LIMIT 200;
 
--- ListRecentVideos returns recent videos
+-- ListRecentVideos returns recent videos (by archive date)
 -- name: ListRecentVideos :many
 SELECT *
 FROM videos
 ORDER BY created_at DESC
-LIMIT 10;
+LIMIT 15;
+
+-- ListRecentlyPublishedVideos returns videos sorted by original publish date
+-- name: ListRecentlyPublishedVideos :many
+SELECT *
+FROM videos
+WHERE upload_date IS NOT NULL
+ORDER BY upload_date DESC
+LIMIT 15;
+
+-- GetHomeStats returns aggregate stats for the home page dashboard
+-- name: GetHomeStats :one
+SELECT
+    (SELECT COUNT(*)::bigint FROM videos) AS video_count,
+    (SELECT COUNT(*)::bigint FROM clips) AS clip_count,
+    (SELECT COUNT(*)::bigint FROM stitch_projects) AS stitch_count,
+    (SELECT COALESCE(SUM(file_size), 0)::bigint FROM videos WHERE file_size IS NOT NULL) AS storage_bytes,
+    (SELECT COALESCE(SUM(duration_seconds), 0)::bigint FROM videos WHERE duration_seconds IS NOT NULL) AS total_duration_seconds;
+
+-- ListRecentClips returns recently created clips with their source video title
+-- name: ListRecentClips :many
+SELECT
+    c.id,
+    c.video_id,
+    c.title AS clip_title,
+    c.start_ts,
+    c.end_ts,
+    c.duration,
+    c.color,
+    c.created_at,
+    v.title AS video_title
+FROM clips c
+JOIN videos v ON v.id = c.video_id
+ORDER BY c.created_at DESC
+LIMIT 8;
 
 -- GetVideoByID returns a video by ID
 -- name: GetVideoByID :one

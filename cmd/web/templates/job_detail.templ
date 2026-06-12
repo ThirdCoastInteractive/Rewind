@@ -3,7 +3,6 @@ package templates
 import (
 	"fmt"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
@@ -40,7 +39,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 			@components.LinkButton("/jobs", "secondary", "sm", "arrow-left", false) {
 				Back to Jobs
 			}
-			<h1 class="text-xl font-mono uppercase tracking-tight text-white mt-4 mb-0.5">Job Details</h1>
+			<h1 class="page-heading text-xl tracking-tight mt-4 mb-0.5">Job Details</h1>
 			<p class="text-xs font-mono text-white/60">View detailed information about this download job</p>
 		</div>
 		<div id="job-detail-card">
@@ -58,8 +57,8 @@ templ JobDetailContent(job *db.DownloadJob) {
 				}
 				@components.CardBody(true) {
 					<div class="mb-6">
-						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Video URL</h3>
-						<div class={ viewtypes.InfoBoxClass }>
+						<h3 class={ "section-label mb-2" }>Video URL</h3>
+						<div class={ "info-box" }>
 							<a href={ templ.SafeURL(job.URL) } target="_blank" rel="noopener noreferrer" class="text-xs font-mono text-white hover:text-white/70 break-all">
 								{ job.URL }
 								<i class="fa-sharp fa-solid fa-arrow-up-right-from-square ml-2" aria-hidden="true"></i>
@@ -68,8 +67,8 @@ templ JobDetailContent(job *db.DownloadJob) {
 					</div>
 					if job.VideoID.Valid {
 						<div class="mb-6">
-							<h3 class={ viewtypes.SectionLabel + " mb-2" }>Related Video</h3>
-							<div class={ viewtypes.InfoBoxClass }>
+							<h3 class={ "section-label mb-2" }>Related Video</h3>
+							<div class={ "info-box" }>
 								<a href={ templ.SafeURL("/videos/" + job.VideoID.String()) } class="inline-flex items-center gap-2 text-xs font-mono text-white hover:text-white/70">
 									<i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i>
 									View Archived Video
@@ -78,7 +77,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 						</div>
 					}
 					<div class="mb-6">
-						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Timeline</h3>
+						<h3 class={ "section-label mb-2" }>Timeline</h3>
 						@components.Table([]string{}, true) {
 							@components.TableRow(false, "") {
 								@components.TableCell(true) {
@@ -121,14 +120,14 @@ templ JobDetailContent(job *db.DownloadJob) {
 						}
 					</div>
 					<div class="mb-6">
-						<h3 class={ viewtypes.SectionLabel + " mb-2" }>Statistics</h3>
+						<h3 class={ "section-label mb-2" }>Statistics</h3>
 						<div class="grid grid-cols-2 gap-4">
-							<div class="bg-black/40 border-2 border-white/10 p-4">
-								<p class="text-xs font-mono text-white/60 mb-1">ATTEMPTS</p>
+							<div class="info-box">
+								<p class="section-label mb-1">ATTEMPTS</p>
 								<p class="text-2xl font-mono font-bold text-white">{ fmt.Sprintf("%d", job.Attempts) }</p>
 							</div>
-							<div class="bg-black/40 border-2 border-white/10 p-4">
-								<p class="text-xs font-mono text-white/60 mb-1">OPTIONS</p>
+							<div class="info-box">
+								<p class="section-label mb-1">OPTIONS</p>
 								<div class="flex flex-wrap gap-2 mt-2">
 									if job.Refresh {
 										<span class="inline-flex items-center px-2 py-1 text-xs font-mono bg-white/10 text-white border-2 border-white/20">
@@ -142,7 +141,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 					</div>
 					if job.LastError != nil && *job.LastError != "" {
 						<div class="mb-6">
-							<h3 class={ viewtypes.SectionLabel + " mb-2" }>Error Details</h3>
+							<h3 class={ "section-label mb-2" }>Error Details</h3>
 							<div class="bg-black/40 border-2 border-red-500/50 p-4">
 								<pre class="text-xs font-mono text-red-400 whitespace-pre-wrap break-words">{ *job.LastError }</pre>
 							</div>
@@ -185,7 +184,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 		@components.Card(false) {
 			@components.CardHeader("YT-DLP OUTPUT", "Live command output")
 			@components.CardBody(true) {
-				<div id="logs-container" class="bg-black border-2 border-white/10 p-3 font-mono text-xs max-h-96 overflow-y-auto">
+				<div id="logs-container" class="info-box font-mono text-xs max-h-96 overflow-y-auto">
 					<div class="text-white/40">Loading logs...</div>
 				</div>
 			}

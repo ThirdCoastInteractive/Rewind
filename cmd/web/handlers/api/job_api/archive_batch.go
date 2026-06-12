@@ -17,7 +17,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleArchiveBatch serves POST /jobs/archive, archiving multiple completed download jobs at once.
 func HandleArchiveBatch(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, _, err := common.RequireSessionUser(c, sm)

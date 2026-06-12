@@ -26,7 +26,7 @@ templ RemotePlayerCodeEntry() {
 						maxlength="6"
 						pattern="[0-9]{6}"
 						required
-						class="w-full bg-black border-2 border-white/10 text-white text-center text-4xl font-mono py-4 px-6 mb-4 focus:border-white focus:outline-none"
+						class="form-input text-center text-4xl py-4 px-6 mb-4"
 						autofocus
 					/>
 					<div class="md:hidden">
@@ -54,7 +54,7 @@ templ RemotePlayerFullscreen(sessionCode string) {
 			<title>Remote Player - { sessionCode }</title>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
-			<link rel="stylesheet" href="/static/dist/main.css"/>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
 		</head>
 		<body
 			class="bg-black text-white font-mono"

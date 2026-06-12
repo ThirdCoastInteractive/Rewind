@@ -6,9 +6,14 @@ import (
 	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"thirdcoast.systems/rewind/internal/config"
 )
+
+// pgTsvectorOID is the well-known PostgreSQL OID for tsvector.
+const pgTsvectorOID = 3614
 
 var (
 	dbOpenBackoffBase  = 1 * time.Second
@@ -23,6 +28,18 @@ func OpenDBPoolWithRetry(ctx context.Context, conf config.Config) (*pgxpool.Pool
 	cfg, err := pgxpool.ParseConfig(conf.DatabaseDSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse DSN: %w", err)
+	}
+
+	// pgx v5.9 dropped the default tsvector codec. Register a text codec for
+	// OID 3614 on every new connection so SELECTs that pull tsvector columns
+	// (we only ever match against them in WHERE clauses) scan into string.
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name:  "tsvector",
+			OID:   pgTsvectorOID,
+			Codec: &pgtype.TextCodec{},
+		})
+		return nil
 	}
 
 	fmt.Printf("Connecting to database at %s\n", cfg.ConnConfig.Host)

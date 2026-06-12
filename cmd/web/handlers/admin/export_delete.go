@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportDelete serves DELETE /admin/exports/:id, removing a single export record and its file.
 func HandleAdminExportDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

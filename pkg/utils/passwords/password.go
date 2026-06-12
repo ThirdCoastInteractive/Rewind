@@ -1,3 +1,5 @@
+// Package passwords handles Argon2id password hashing, verification, and
+// database persistence with configurable strength parameters.
 package passwords
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// Password is an Argon2id hash string that implements database Scanner/Valuer interfaces.
 type Password string
 
 var (
@@ -23,12 +26,12 @@ var (
 	}
 )
 
-// PasswordInput is a struct for validating password inputs
+// PasswordInput carries a plaintext password through validation (8-512 chars required).
 type PasswordInput struct {
 	Password string `validate:"required,min=8,max=512"`
 }
 
-// NewPassword creates a new password hash, while enforcing some basic rules
+// NewPassword validates the input (8-512 chars) and returns its Argon2id hash.
 func NewPassword(input PasswordInput) (Password, error) {
 	err := validator.New().Struct(input)
 	if err != nil {
@@ -43,12 +46,12 @@ func NewPassword(input PasswordInput) (Password, error) {
 	return Password(hash), nil
 }
 
-// ComparePasswordAndHash compares the input to the password hash
+// ComparePasswordAndHash returns true if the plaintext matches this hash.
 func (p *Password) ComparePasswordAndHash(input PasswordInput) (bool, error) {
 	return argon2id.ComparePasswordAndHash(input.Password, string(*p))
 }
 
-// String returns the string representation of the password
+// String returns the raw hash string.
 func (p *Password) String() string {
 	return string(*p)
 }
@@ -92,19 +95,21 @@ func (p Password) TextValue() (pgtype.Text, error) {
 	return pgtype.Text{String: string(p), Valid: true}, nil
 }
 
-// IsArgonEncoded returns true if the input is an argon2id hash
+// IsArgonEncoded reports whether the string has the $argon2id$ prefix of an Argon2id hash.
 func IsArgonEncoded(input string) bool {
 	return strings.HasPrefix(input, "$argon2id$")
 }
 
 var (
+	// ErrPasswordTooShort is returned when a password has fewer than MinPasswordLength characters.
 	ErrPasswordTooShort = errors.New("password is too short")
-	ErrPasswordTooLong  = errors.New("password is too long")
+	// ErrPasswordTooLong is returned when a password exceeds MaxPasswordLength characters.
+	ErrPasswordTooLong = errors.New("password is too long")
 )
 
 const (
-	// MinPasswordLength is the minimum password length
+	// MinPasswordLength is the minimum acceptable password length in characters.
 	MinPasswordLength = 8
-	// MaxPasswordLength is the maximum password length
+	// MaxPasswordLength is the maximum acceptable password length in characters.
 	MaxPasswordLength = 512
 )

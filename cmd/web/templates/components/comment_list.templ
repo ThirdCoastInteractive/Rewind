@@ -2,18 +2,27 @@ package components
 
 import (
 	"fmt"
+	"thirdcoast.systems/rewind/pkg/utils/commentfmt"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
-// CommentItem holds the data needed to render a single comment.
+// CommentItem holds the data needed to render a single comment (or reply).
 type CommentItem struct {
 	ID          string
+	VideoID     string
+	CommentID   string // yt-dlp comment id (used for the replies endpoint + container id)
 	Author      string
 	AuthorURL   string
-	Text        string
+	AuthorThumb string
+	Text        string // raw text; rendered with clickable timestamps
+	Highlighted string // safe HTML with <mark> (search results only); empty otherwise
 	LikeCount   int64
-	PublishedAt string // pre-formatted
-	ReplyCount  int    // number of replies (0 = no replies)
+	TimeLabel   string // relative ("2 years ago") or formatted date
+	ReplyCount  int64
+	IsFavorited bool // hearted by the creator
+	IsPinned    bool
+	IsUploader  bool // author is the video's uploader
+	IsVerified  bool
 }
 
 // CommentListData holds everything for the comment section.
@@ -27,7 +36,10 @@ type CommentListData struct {
 	SearchQuery string
 }
 
-// CommentSection is the full comment section with search + list.
+// CommentSection is the full comment section: search box, a stable list
+// container (#comments-list-content) and a stable load-more slot
+// (#comments-load-more). Only the initial render emits this; search and
+// pagination patch the two inner containers so the input keeps focus.
 templ CommentSection(data CommentListData) {
 	<div id="comments-section-inner">
 		<div class="flex items-center justify-between mb-3">
@@ -40,54 +52,66 @@ templ CommentSection(data CommentListData) {
 					class="w-full px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
 					placeholder="Search comments..."
 					data-bind="_commentSearch"
-					data-on:input__debounce.300ms={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", data.VideoID) }
+					data-on:input__debounce.300ms={ fmt.Sprintf("$_commentPage = 0; @get('/api/videos/%s/comments/render?mode=search')", data.VideoID) }
 					data-on:keydown__stop="true"
 				/>
 			</div>
 		</div>
-		<div id="comments-list-inner">
-			@CommentList(data)
+		<div id="comments-list-content" class="space-y-3">
+			@CommentRows(data)
+		</div>
+		<div id="comments-load-more" class="pt-2 text-center">
+			@CommentLoadMore(data)
 		</div>
 	</div>
 }
 
-// CommentList renders just the comment rows + pagination. Targeted by SSE for search/pagination.
-templ CommentList(data CommentListData) {
-	<div id="comments-list-content" class="space-y-3">
-		if len(data.Comments) == 0 {
-			if data.SearchQuery != "" {
-				<div class="text-xs text-white/40 font-mono py-4 text-center">
-					No comments matching "{ data.SearchQuery }"
-				</div>
-			} else {
-				<div class="text-xs text-white/40 font-mono py-4 text-center">
-					No comments yet.
-				</div>
-			}
-		}
-		for _, c := range data.Comments {
-			@CommentRow(c)
-		}
-		if data.HasMore {
-			<div class="pt-2 text-center">
-				<button
-					type="button"
-					class="px-4 py-1.5 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
-					data-on:click={ fmt.Sprintf("$_commentPage = %d; @get('/api/videos/%s/comments/render')", data.Page+1, data.VideoID) }
-				>
-					LOAD MORE
-				</button>
+// CommentRows renders just the comment rows. An empty state is shown only on
+// page 0 (so append-pagination never injects one).
+templ CommentRows(data CommentListData) {
+	if len(data.Comments) == 0 && data.Page == 0 {
+		if data.SearchQuery != "" {
+			<div class="text-xs text-white/40 font-mono py-4 text-center">
+				No comments matching "{ data.SearchQuery }"
+			</div>
+		} else {
+			<div class="text-xs text-white/40 font-mono py-4 text-center">
+				No comments yet.
 			</div>
 		}
-	</div>
+	}
+	for _, c := range data.Comments {
+		@CommentRow(c)
+	}
 }
 
-// CommentRow renders a single comment.
+// CommentLoadMore renders the LOAD MORE button when more pages exist. Lives in
+// its own stable slot so it can be refreshed independently of the rows.
+templ CommentLoadMore(data CommentListData) {
+	if data.HasMore {
+		<button
+			type="button"
+			class="btn-ghost btn-sm"
+			data-on:click={ fmt.Sprintf("$_commentPage = %d; @get('/api/videos/%s/comments/render?mode=page')", data.Page+1, data.VideoID) }
+		>
+			LOAD MORE
+		</button>
+	}
+}
+
+// CommentReplies renders a parent comment's replies (loaded on demand).
+templ CommentReplies(replies []CommentItem) {
+	for _, r := range replies {
+		@CommentRow(r)
+	}
+}
+
+// CommentRow renders a single comment (top-level or reply).
 templ CommentRow(c CommentItem) {
 	<div class="border-b border-white/5 pb-2">
 		<div class="flex items-start gap-2">
 			<div class="flex-1 min-w-0">
-				<div class="flex items-center gap-2 mb-0.5">
+				<div class="flex items-center gap-2 mb-0.5 flex-wrap">
 					if c.AuthorURL != "" {
 						<a
 							href={ templ.SafeURL(c.AuthorURL) }
@@ -103,8 +127,19 @@ templ CommentRow(c CommentItem) {
 							{ c.Author }
 						</span>
 					}
-					if c.PublishedAt != "" {
-						<span class="text-xs text-white/30 font-mono shrink-0">{ c.PublishedAt }</span>
+					if c.IsUploader {
+						<span class="text-xs font-mono uppercase tracking-wider px-1 bg-white/10 text-white/60 shrink-0">Creator</span>
+					}
+					if c.IsVerified {
+						<i class="fa-sharp fa-solid fa-circle-check text-white/40 text-xs shrink-0" title="Verified" aria-hidden="true"></i>
+					}
+					if c.IsPinned {
+						<span class="text-xs font-mono uppercase tracking-wider text-white/40 shrink-0" title="Pinned by creator">
+							<i class="fa-sharp fa-solid fa-thumbtack mr-0.5" aria-hidden="true"></i>Pinned
+						</span>
+					}
+					if c.TimeLabel != "" {
+						<span class="text-xs text-white/30 font-mono shrink-0">{ c.TimeLabel }</span>
 					}
 					if c.LikeCount > 0 {
 						<span class="text-xs text-white/30 font-mono shrink-0">
@@ -112,11 +147,48 @@ templ CommentRow(c CommentItem) {
 							{ format.Number(int(c.LikeCount)) }
 						</span>
 					}
+					if c.IsFavorited {
+						<i class="fa-sharp fa-solid fa-heart text-red-500/70 text-xs shrink-0" title="Hearted by creator" aria-hidden="true"></i>
+					}
 				</div>
 				<div class="text-xs text-white/80 whitespace-pre-wrap break-words leading-relaxed">
-					{ c.Text }
+					if c.Highlighted != "" {
+						@templ.Raw(c.Highlighted)
+					} else {
+						@commentText(commentfmt.ParseSegments(c.Text))
+					}
 				</div>
+				if c.ReplyCount > 0 {
+					<div class="mt-1">
+						<button
+							type="button"
+							class="text-xs font-mono text-white/40 hover:text-white/70"
+							data-on:click={ fmt.Sprintf("@get('/api/videos/%s/comments/render?mode=replies&parent=%s')", c.VideoID, c.CommentID) }
+						>
+							<i class="fa-sharp fa-solid fa-reply mr-1" aria-hidden="true"></i>View { format.Number(int(c.ReplyCount)) } replies
+						</button>
+						<div id={ "replies-" + c.CommentID } class="mt-2 pl-4 border-l border-white/10 space-y-3"></div>
+					</div>
+				}
 			</div>
 		</div>
 	</div>
+}
+
+// commentText renders comment text, turning inline timestamps into buttons that
+// seek the player.
+templ commentText(segs []commentfmt.Seg) {
+	for _, seg := range segs {
+		if seg.IsTime {
+			<button
+				type="button"
+				class="text-blue-400 hover:text-blue-300 underline underline-offset-2 cursor-pointer"
+				{ templ.Attributes{"onclick": fmt.Sprintf("window.seekToTime(%f)", seg.Seconds)}... }
+			>
+				{ seg.Text }
+			</button>
+		} else {
+			{ seg.Text }
+		}
+	}
 }

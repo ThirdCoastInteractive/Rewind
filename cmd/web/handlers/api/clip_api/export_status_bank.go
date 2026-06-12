@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleBankExportStatus serves GET /videos/:videoId/clips/export-status, returning export status for all clips on a video.
 func HandleBankExportStatus(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, _, err := common.RequireSessionUser(c, sm)

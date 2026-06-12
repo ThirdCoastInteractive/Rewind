@@ -1,3 +1,5 @@
+// Package markdown provides a Markdown type that stores raw source, renders to
+// sanitized HTML, and implements database and JSON serialization interfaces.
 package markdown
 
 import (
@@ -31,6 +33,7 @@ var (
 	policy       = bluemonday.UGCPolicy()
 )
 
+// NewMarkdown creates a Markdown value from raw source text and eagerly renders it to HTML.
 func NewMarkdown(source string) (*Markdown, error) {
 	if source == "" {
 		return &Markdown{Source: ""}, nil
@@ -57,6 +60,8 @@ func (m *Markdown) Render() template.HTML {
 	return html
 }
 
+// PlainText renders the markdown to HTML and then strips all tags, returning
+// plain text suitable for excerpts or search indexing. The result is cached.
 func (m *Markdown) PlainText() template.HTML {
 	if m.renderedText != nil {
 		return *m.renderedText

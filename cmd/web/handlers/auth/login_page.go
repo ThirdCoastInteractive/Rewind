@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleLoginPage serves GET /login, rendering the login form or redirecting if already authenticated.
 func HandleLoginPage(sm *webauth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		accessLevel, _ := c.Get("accessLevel").(string)

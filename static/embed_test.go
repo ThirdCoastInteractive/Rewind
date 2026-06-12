@@ -11,6 +11,7 @@ import (
 
 func TestEmbeddedAssetsExist(t *testing.T) {
 	expected := []string{
+		"dist/admin-dashboard.js",
 		"dist/cut-page.js",
 		"dist/datastar.js",
 		"dist/fontawesome/all.min.css",
@@ -18,6 +19,7 @@ func TestEmbeddedAssetsExist(t *testing.T) {
 		"dist/main.js",
 		"dist/producer-scene-preview.js",
 		"dist/remote-player-background.js",
+		"dist/stitch-page.js",
 		"dist/video-player.css",
 		"dist/video-player.js",
 		"dist/webfonts/fa-brands-400.woff2",

@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleKeybindingUpdate serves POST /settings/keybindings, saving a custom key binding for an action.
 func HandleKeybindingUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

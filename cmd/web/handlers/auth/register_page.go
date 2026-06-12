@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleRegisterPage serves GET /register, rendering the registration form or blocking if registration is disabled.
 func HandleRegisterPage(sm *webauth.SessionManager, dbc *db.DatabaseConnection, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		accessLevel, _ := c.Get("accessLevel").(string)

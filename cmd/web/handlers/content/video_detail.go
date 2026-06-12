@@ -66,6 +66,7 @@ func readStreamsManifest(videoPath *string) ([]int, []templates.StreamQuality) {
 	return heights, qualities
 }
 
+// HandleVideoDetailPage serves GET /videos/:id, rendering the video player and metadata page.
 func HandleVideoDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

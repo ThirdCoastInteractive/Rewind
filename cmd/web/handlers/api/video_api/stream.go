@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleStream serves GET /videos/:id/stream, streaming the original video file with range-request support.
 func HandleStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// Check for session code (remote player auth)

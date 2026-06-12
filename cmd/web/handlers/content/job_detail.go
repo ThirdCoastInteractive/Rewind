@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleJobDetailPage serves GET /jobs/:id, rendering the detail view for a single download job.
 func HandleJobDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, username, err := common.RequireSessionUser(c, sm)

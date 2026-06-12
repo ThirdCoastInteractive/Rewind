@@ -12,7 +12,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleProducerHomePage serves GET /producer, rendering the producer dashboard with active sessions.
 func HandleProducerHomePage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		accessLevel := c.Get("accessLevel").(string)

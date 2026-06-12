@@ -47,12 +47,10 @@ func HandleCreateOrUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 			tsPtr = req.Timestamp
 		}
 
-		var markerType db.NullMarkerType
+		var markerType *db.MarkerType
 		if req.MarkerType != nil {
-			markerType = db.NullMarkerType{
-				MarkerType: db.MarkerType(strings.TrimSpace(*req.MarkerType)),
-				Valid:      true,
-			}
+			mt := db.MarkerType(strings.TrimSpace(*req.MarkerType))
+			markerType = &mt
 		}
 
 		updated, err := dbc.Queries(c.Request().Context()).UpdateMarker(c.Request().Context(), &db.UpdateMarkerParams{

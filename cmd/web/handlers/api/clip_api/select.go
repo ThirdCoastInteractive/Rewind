@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/filters"
 )
-
+// HandleSelect serves GET /videos/:videoId/clips/:clipId/select, rendering the clip editor panel for a selected clip.
 func HandleSelect(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
@@ -70,7 +70,7 @@ func HandleSelect(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 			{Value: "", Label: "(select crop)"},
 		}
 		_ = sse.PatchElementTempl(
-			components.FilterCardList(filterStack, videoID, cropOptions),
+			components.FilterCardList(filterStack, filters.CutFilterConfig(videoID), cropOptions),
 			datastar.WithSelectorID("filter-stack-list"),
 		)
 
@@ -78,6 +78,12 @@ func HandleSelect(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		_ = sse.PatchElementTempl(
 			components.CutExportPanel(clip.Crops),
 			datastar.WithSelectorID("cut-export-panel"),
+		)
+
+		// Re-render multicam panel with this clip's crops and shot list
+		_ = sse.PatchElementTempl(
+			components.MulticamPanel(clip.ID.String(), clip.Crops, clip.ShotList),
+			datastar.WithSelectorID("multicam-panel"),
 		)
 
 		// The JS signal poller for _selectedClipId will automatically call

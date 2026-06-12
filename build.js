@@ -52,6 +52,19 @@ await esbuild.build({
 
 console.log('✓ Built cut-page.js');
 
+// Bundle stitch-page.js
+await esbuild.build({
+  entryPoints: ['static/js/stitch-page.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/stitch-page.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built stitch-page.js');
+
 // Bundle remote-player-background.js
 await esbuild.build({
   entryPoints: ['static/js/remote-player-background.js'],

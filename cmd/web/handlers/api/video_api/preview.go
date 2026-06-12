@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandlePreview serves GET /videos/:id/preview.mp4, returning the short hover-preview clip.
 func HandlePreview(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, _, err := sm.GetSession(c.Request()); err != nil {

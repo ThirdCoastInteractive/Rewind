@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportsPage serves GET /admin/exports, rendering the clip export management page with statistics.
 func HandleAdminExportsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username, _ := c.Get("currentUsername").(string)

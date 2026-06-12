@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config holds all application configuration loaded from environment variables.
 type Config struct {
 	// WebServer Configuration
 	WebServerPort int `mapstructure:"WEBSERVER_PORT"`
@@ -48,6 +49,7 @@ func bindEnv(c Config) {
 	slog.Info("Environment variables bound", "config", c)
 }
 
+// LoadConfig reads environment variables, applies defaults, and returns a validated Config.
 func LoadConfig(ctx context.Context) (*Config, error) {
 	bindEnv(Config{})
 	viper.AutomaticEnv()

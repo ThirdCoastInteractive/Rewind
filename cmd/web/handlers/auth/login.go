@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/passwords"
 )
 
+// HandleLogin serves POST /login, authenticating the user with username/password and creating a session.
 func HandleLogin(sm *webauth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username := strings.TrimSpace(c.FormValue("username"))

@@ -1,0 +1,201 @@
+package components
+
+import "fmt"
+
+// StitchDetail renders the segment detail panel (type-specific content).
+// Patched into #stitch-detail-content via SSE.
+templ StitchDetail(segments []StitchSegment, selectedIdx int) {
+	<div id="stitch-detail-content" class="p-2 space-y-3">
+		if selectedIdx >= 0 && selectedIdx < len(segments) {
+			@stitchDetailBody(segments[selectedIdx], selectedIdx)
+			if selectedIdx > 0 {
+				@stitchTransitionSection(segments[selectedIdx], selectedIdx)
+			}
+		}
+	</div>
+}
+
+templ stitchDetailBody(seg StitchSegment, idx int) {
+	switch seg.Type {
+		case "clip":
+			<div>
+				<div class="text-xs text-white/40 font-mono uppercase tracking-wider">CLIP · Segment { fmt.Sprintf("%d", idx+1) }</div>
+				<div class="text-sm font-mono text-white/80 truncate mt-1">{ segName(seg) }</div>
+				if seg.Duration > 0 {
+					<div class="text-xs font-mono text-white/30 mt-1 tabular-nums">{ fmtFloat1(seg.Duration) }s</div>
+				}
+			</div>
+		case "video":
+			<div>
+				<div class="text-xs text-green-400/60 font-mono uppercase tracking-wider">VIDEO · Segment { fmt.Sprintf("%d", idx+1) }</div>
+				<div class="text-sm font-mono text-white/80 truncate mt-1">{ segName(seg) }</div>
+				if seg.Duration > 0 {
+					<div class="text-xs font-mono text-white/30 mt-1 tabular-nums">{ fmtFloat1(seg.Duration) }s</div>
+				}
+			</div>
+		case "compose":
+			<div>
+				<div class="text-xs text-purple-400/60 font-mono uppercase tracking-wider">COMPOSE EXPORT · Segment { fmt.Sprintf("%d", idx+1) }</div>
+				<div class="text-sm font-mono text-white/80 truncate mt-1">{ segName(seg) }</div>
+				if seg.Duration > 0 {
+					<div class="text-xs font-mono text-white/30 mt-1 tabular-nums">{ fmtFloat1(seg.Duration) }s</div>
+				}
+			</div>
+		case "stitch":
+			<div>
+				<div class="text-xs text-amber-400/60 font-mono uppercase tracking-wider">STITCH EXPORT · Segment { fmt.Sprintf("%d", idx+1) }</div>
+				<div class="text-sm font-mono text-white/80 truncate mt-1">{ segName(seg) }</div>
+				if seg.Duration > 0 {
+					<div class="text-xs font-mono text-white/30 mt-1 tabular-nums">{ fmtFloat1(seg.Duration) }s</div>
+				}
+			</div>
+		case "title":
+			<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-2">TITLE CARD · Segment { fmt.Sprintf("%d", idx+1) }</div>
+			@stitchTitleFields(seg, idx)
+	}
+}
+
+templ stitchTitleFields(seg StitchSegment, idx int) {
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">TEXT</div>
+		<input
+			type="text"
+			class="stitch-detail-input"
+			value={ seg.Text }
+			oninput={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'text', this.value)", idx)} }
+		/>
+	</div>
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">SUBTITLE</div>
+		<input
+			type="text"
+			class="stitch-detail-input"
+			value={ seg.Subtitle }
+			placeholder="Optional second line"
+			oninput={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'subtitle', this.value)", idx)} }
+		/>
+	</div>
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">DURATION</div>
+		<input
+			type="number"
+			class="stitch-detail-input"
+			value={ fmtFloat1(stitchTitleDuration(seg)) }
+			min="1"
+			max="30"
+			step="0.5"
+			onchange={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'duration', parseFloat(this.value) || 3)", idx)} }
+		/>
+	</div>
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">FONT SIZE</div>
+		<div class="flex items-center gap-2">
+			<input
+				type="range"
+				class="flex-1"
+				min="24"
+				max="144"
+				step="4"
+				value={ fmt.Sprintf("%d", stitchTitleFontSize(seg)) }
+				oninput={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'font_size', parseInt(this.value)); this.parentElement.querySelector('span').textContent = this.value", idx)} }
+			/>
+			<span class="text-xs font-mono text-white/40 w-8 text-right tabular-nums">{ fmt.Sprintf("%d", stitchTitleFontSize(seg)) }</span>
+		</div>
+	</div>
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">POSITION</div>
+		<div class="flex gap-1">
+			@stitchPosBtn(idx, "top-center", "Top", seg.Position)
+			@stitchPosBtn(idx, "center", "Center", seg.Position)
+			@stitchPosBtn(idx, "bottom-center", "Bottom", seg.Position)
+		</div>
+	</div>
+	<div>
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-1">COLORS</div>
+		<div class="flex items-center gap-3">
+			<label class="flex items-center gap-1 text-xs font-mono text-white/30">
+				BG
+				<input
+					type="color"
+					value={ stitchBgColor(seg) }
+					class="w-6 h-6 border border-white/20 bg-transparent cursor-pointer"
+					oninput={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'bg_color', this.value)", idx)} }
+				/>
+			</label>
+			<label class="flex items-center gap-1 text-xs font-mono text-white/30">
+				Text
+				<input
+					type="color"
+					value={ stitchTextColor(seg) }
+					class="w-6 h-6 border border-white/20 bg-transparent cursor-pointer"
+					oninput={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'text_color', this.value)", idx)} }
+				/>
+			</label>
+		</div>
+	</div>
+}
+
+templ stitchPosBtn(idx int, value, label, current string) {
+	<button
+		type="button"
+		class={ "flex-1 px-1 py-0.5 text-xs font-mono border-2 transition-colors",
+			templ.KV("border-white/60 bg-white/10", stitchPosMatch(current, value)),
+			templ.KV("border-white/20 hover:border-white/40", !stitchPosMatch(current, value)) }
+		onclick={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchSegField(%d, 'position', '%s')", idx, value)} }
+	>
+		{ label }
+	</button>
+}
+
+templ stitchTransitionSection(seg StitchSegment, idx int) {
+	<div class="border-t border-white/10 pt-3 mt-1">
+		<div class="text-xs text-white/40 font-mono uppercase tracking-wider mb-2">TRANSITION IN</div>
+		<select
+			class="stitch-detail-input"
+			onchange={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchTransition(%d, 'type', this.value)", idx)} }
+		>
+			for _, t := range StitchTransitionList() {
+				<option value={ t.Value } selected?={ stitchTrType(seg) == t.Value }>{ t.Label }</option>
+			}
+		</select>
+		<div class={ "mt-2", templ.KV("opacity-30 pointer-events-none", stitchTrType(seg) == "") }>
+			<div class="flex items-center gap-2">
+				<input
+					type="range"
+					class="flex-1"
+					min="0.1"
+					max="3"
+					step="0.1"
+					value={ fmtFloat1(stitchTrDuration(seg)) }
+					oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(1) + 's'"
+					onchange={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchTransition(%d, 'duration', parseFloat(this.value))", idx)} }
+				/>
+				<span class="text-xs font-mono text-white/40 w-10 text-right tabular-nums">{ fmtFloat1(stitchTrDuration(seg)) }s</span>
+			</div>
+			<div class="mt-2 grid grid-cols-2 gap-2">
+				<div>
+					<div class="text-xs text-white/30 font-mono mb-1">Outgoing</div>
+					<select
+						class="stitch-detail-input text-xs"
+						onchange={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchTransition(%d, 'outgoing', this.value)", idx)} }
+					>
+						<option value="play" selected?={ stitchTrOutgoing(seg) == "play" }>Play</option>
+						<option value="freeze" selected?={ stitchTrOutgoing(seg) == "freeze" }>Freeze</option>
+						<option value="play-past" selected?={ stitchTrOutgoing(seg) == "play-past" }>Play Past</option>
+					</select>
+				</div>
+				<div>
+					<div class="text-xs text-white/30 font-mono mb-1">Audio</div>
+					<select
+						class="stitch-detail-input text-xs"
+						onchange={ templ.ComponentScript{Call: fmt.Sprintf("window.updateStitchTransition(%d, 'audio', this.value)", idx)} }
+					>
+						<option value="crossfade" selected?={ stitchTrAudio(seg) == "crossfade" }>Crossfade</option>
+						<option value="cut" selected?={ stitchTrAudio(seg) == "cut" }>Hard Cut</option>
+						<option value="fade-out-in" selected?={ stitchTrAudio(seg) == "fade-out-in" }>Fade Out/In</option>
+					</select>
+				</div>
+			</div>
+		</div>
+	</div>
+}

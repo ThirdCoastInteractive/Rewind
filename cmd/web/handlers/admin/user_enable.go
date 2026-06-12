@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminUserEnable serves POST /admin/users/:id/enable, toggling a user's enabled state and invalidating their sessions.
 func HandleAdminUserEnable(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		q := dbc.Queries(c.Request().Context())

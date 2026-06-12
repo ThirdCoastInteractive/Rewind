@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportRequeue serves POST /admin/exports/:id/requeue, resetting a single export to queued and notifying encoder workers.
 func HandleAdminExportRequeue(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

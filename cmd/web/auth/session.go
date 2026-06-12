@@ -12,21 +12,29 @@ import (
 )
 
 const (
-	SessionName       = "rewind_session"
-	UserIDKey         = "user_id"
-	UsernameKey       = "username"
-	AccessLevelKey    = "access_level"
+	// SessionName is the cookie name used to store the user session.
+	SessionName = "rewind_session"
+	// UserIDKey is the session key for the authenticated user's UUID.
+	UserIDKey = "user_id"
+	// UsernameKey is the session key for the authenticated user's display name.
+	UsernameKey = "username"
+	// AccessLevelKey is the session key for the user's access level (user or admin).
+	AccessLevelKey = "access_level"
+	// SessionCreatedKey is the session key for the Unix timestamp when the session was created.
 	SessionCreatedKey = "created_at"
 )
 
 var (
+	// ErrNotAuthenticated is returned when a session is missing or does not contain valid credentials.
 	ErrNotAuthenticated = errors.New("not authenticated")
 )
 
+// SessionManager handles user session creation, retrieval, and invalidation using encrypted cookies.
 type SessionManager struct {
 	store *sessions.CookieStore
 }
 
+// NewSessionManager creates a SessionManager with the given secret, generating a random one if empty.
 func NewSessionManager(secret string) *SessionManager {
 	if secret == "" {
 		secret = generateSecret()
@@ -42,6 +50,7 @@ func generateSecret() string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
+// SaveSession persists the user's identity and access level into a signed session cookie.
 func (sm *SessionManager) SaveSession(w http.ResponseWriter, r *http.Request, userID, username string, accessLevel AccessLevel) error {
 	session, _ := sm.store.Get(r, SessionName)
 	session.Values[UserIDKey] = userID
@@ -66,6 +75,8 @@ func (sm *SessionManager) SaveSession(w http.ResponseWriter, r *http.Request, us
 	return session.Save(r, w)
 }
 
+// GetSession reads the user ID and username from the session cookie.
+// Returns ErrNotAuthenticated if the session is missing or invalid.
 func (sm *SessionManager) GetSession(r *http.Request) (userID, username string, err error) {
 	session, err := sm.store.Get(r, SessionName)
 	if err != nil {
@@ -124,6 +135,7 @@ func (sm *SessionManager) GetAccessLevel(r *http.Request) AccessLevel {
 	}
 }
 
+// IsAuthenticated reports whether the request carries a valid session cookie.
 func (sm *SessionManager) IsAuthenticated(r *http.Request) bool {
 	_, _, err := sm.GetSession(r)
 	return err == nil
@@ -150,16 +162,21 @@ func (sm *SessionManager) GetSessionCreatedAt(r *http.Request) time.Time {
 	return time.Unix(unix, 0)
 }
 
+// ClearSession expires the session cookie, effectively logging the user out.
 func (sm *SessionManager) ClearSession(w http.ResponseWriter, r *http.Request) error {
 	session, _ := sm.store.Get(r, SessionName)
 	session.Options.MaxAge = -1
 	return session.Save(r, w)
 }
 
+// AccessLevel represents a user's authorization tier.
 type AccessLevel string
 
 const (
+	// AccessUnauthenticated indicates no valid session exists.
 	AccessUnauthenticated AccessLevel = "unauthenticated"
-	AccessUser            AccessLevel = "user"
-	AccessAdmin           AccessLevel = "admin"
+	// AccessUser indicates a regular authenticated user.
+	AccessUser AccessLevel = "user"
+	// AccessAdmin indicates an administrator with full privileges.
+	AccessAdmin AccessLevel = "admin"
 )

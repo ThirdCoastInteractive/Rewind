@@ -1,0 +1,262 @@
+package components
+
+import (
+	"fmt"
+
+	"thirdcoast.systems/rewind/pkg/filters"
+)
+
+// filterParamRange renders a range slider with a reactive readout.
+// Supports optional gradient track background and semantic hint labels.
+templ filterParamRange(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<div class="flex-1 flex flex-col gap-0.5">
+		<div class="flex items-center gap-2">
+			if p.TrackGradient != "" {
+				<input
+					type="range"
+					min={ filters.FmtNum(p.Min) }
+					max={ filters.FmtNum(p.Max) }
+					step={ filters.FmtNum(p.Step) }
+					value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+					class="flex-1 filter-slider filter-slider-gradient"
+					style={ "---track-gradient:" + p.TrackGradient }
+					data-on:input={ filters.FilterParamRangeExpr(index, p.Key) }
+					data-on:change={ filters.FilterParamSaveExpr(cfg) }
+					data-effect={ filters.FilterParamSyncExpr(index, p.Key, p.DefaultVal) }
+				/>
+			} else {
+				<input
+					type="range"
+					min={ filters.FmtNum(p.Min) }
+					max={ filters.FmtNum(p.Max) }
+					step={ filters.FmtNum(p.Step) }
+					value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+					class="flex-1 filter-slider"
+					data-on:input={ filters.FilterParamRangeExpr(index, p.Key) }
+					data-on:change={ filters.FilterParamSaveExpr(cfg) }
+					data-effect={ filters.FilterParamSyncExpr(index, p.Key, p.DefaultVal) }
+				/>
+			}
+			<span
+				class="text-xs text-white/60 font-mono tabular-nums w-10 text-right shrink-0"
+				data-text={ filters.FilterParamReadoutExpr(index, p.Key, p.DefaultVal, p.Decimals) }
+			>
+				{ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+			</span>
+		</div>
+		if p.HintMin != "" || p.HintMax != "" {
+			<div class="flex justify-between px-0.5">
+				<span class="text-xs text-white/20 font-mono">{ p.HintMin }</span>
+				<span class="text-xs text-white/20 font-mono">{ p.HintMax }</span>
+			</div>
+		}
+	</div>
+}
+
+// filterParamDial renders a circular SVG dial/knob for numeric parameters.
+// The visual is a 270° arc with a rotating indicator line. A hidden range
+// input keeps the actual value, and JS (initFilterDials) wires up drag.
+templ filterParamDial(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<div class="flex-1 flex items-center gap-3">
+		<div
+			class="relative shrink-0"
+			data-filter-dial
+			data-dial-min={ filters.FmtNum(p.Min) }
+			data-dial-max={ filters.FmtNum(p.Max) }
+			data-dial-step={ filters.FmtNum(p.Step) }
+			data-dial-index={ fmt.Sprintf("%d", index) }
+			data-dial-key={ p.Key }
+			style="width:48px;height:48px"
+		>
+			<svg viewBox="0 0 48 48" class="w-full h-full">
+				// Track arc (270° from 135° to 405°)
+				<circle
+					cx="24"
+					cy="24"
+					r="20"
+					fill="none"
+					stroke="rgba(255,255,255,0.1)"
+					stroke-width="3"
+					stroke-dasharray="94.25 31.42"
+					stroke-dashoffset="-15.71"
+					stroke-linecap="round"
+				></circle>
+				// Indicator dot at current angle — positioned by JS
+				<circle
+					cx="24"
+					cy="4"
+					r="2.5"
+					fill="#22d3ee"
+					class="dial-indicator"
+				></circle>
+			</svg>
+			// Hidden range for value storage and signal sync
+			<input
+				type="hidden"
+				value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+				data-dial-input
+				data-on:change={ filters.FilterParamRangeExpr(index, p.Key) + "; " + filters.FilterParamSaveExpr(cfg) }
+				data-effect={ filters.FilterParamSyncExpr(index, p.Key, p.DefaultVal) }
+			/>
+		</div>
+		<div class="flex flex-col gap-0.5">
+			<span
+				class="text-sm text-white font-mono tabular-nums"
+				data-text={ filters.FilterParamReadoutExpr(index, p.Key, p.DefaultVal, p.Decimals) }
+			>
+				{ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+			</span>
+			if p.HintMin != "" || p.HintMax != "" {
+				<div class="flex gap-2">
+					<span class="text-xs text-white/20 font-mono">{ p.HintMin }</span>
+					<span class="text-xs text-white/20 font-mono">{ p.HintMax }</span>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// filterParamSelect renders a select dropdown.
+templ filterParamSelect(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<select
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-1 py-0.5"
+		data-on:change={ filters.FilterParamSelectExpr(index, p.Key) + "; " + filters.FilterParamSaveExpr(cfg) }
+	>
+		for _, opt := range p.Options {
+			<option
+				value={ opt.Value }
+				if opt.Value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal) {
+					selected
+				}
+			>
+				{ opt.Label }
+			</option>
+		}
+	</select>
+}
+
+// filterParamNumber renders a number input.
+templ filterParamNumber(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<input
+		type="number"
+		min={ filters.FmtNum(p.Min) }
+		max={ filters.FmtNum(p.Max) }
+		step={ filters.FmtNum(p.Step) }
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-2 py-0.5"
+		data-on:input={ filters.FilterParamNumberExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(cfg) }
+	/>
+}
+
+// filterParamText renders a text input.
+templ filterParamText(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<input
+		type="text"
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		placeholder={ p.Placeholder }
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-2 py-0.5"
+		data-on:input={ filters.FilterParamTextExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(cfg) }
+	/>
+}
+
+// filterParamPreset renders a preset dropdown that writes ALL param values at
+// once. The preset map is serialised into a data-presets attribute and read by
+// the DataStar expression on change.
+templ filterParamPreset(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<select
+		class="flex-1 text-xs font-mono bg-black text-white border border-white/20 px-1 py-0.5 rounded-none"
+		data-presets={ filters.FilterPresetDataAttr(p.Presets) }
+		data-on:change={ filters.FilterPresetExpr(index) + "; " + filters.FilterParamSaveExpr(cfg) }
+	>
+		for _, opt := range p.Options {
+			<option
+				value={ opt.Value }
+				if opt.Value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal) {
+					selected
+				}
+			>
+				{ opt.Label }
+			</option>
+		}
+	</select>
+}
+
+// filterParamColor renders a color picker swatch with hex text readout.
+templ filterParamColor(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<input
+		type="color"
+		value={ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+		class="filter-color shrink-0"
+		data-on:input={ filters.FilterParamColorExpr(index, p.Key) }
+		data-on:change={ filters.FilterParamSaveExpr(cfg) }
+	/>
+	<span
+		class="text-xs text-white/40 font-mono"
+		data-text={ fmt.Sprintf("%d<$_filterStack.length?$_filterStack[%d]?.params?.%s:'%s'", index, index, p.Key, p.DefaultVal) }
+	>
+		{ filters.ParamValue(filter.Params, p.Key, p.DefaultVal) }
+	</span>
+}
+
+// filterParamIconSelect renders options as a row of visual icon buttons.
+templ filterParamIconSelect(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<div class="flex-1 flex flex-wrap gap-1">
+		for _, opt := range p.Options {
+			<button
+				type="button"
+				class={
+					"flex flex-col items-center gap-0.5 px-2 py-1 text-xs font-mono border transition-colors",
+					templ.KV("border-white/60 bg-white/10 text-white", opt.Value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal)),
+					templ.KV("border-white/10 text-white/50 hover:border-white/30 hover:text-white/70", opt.Value != filters.ParamValue(filter.Params, p.Key, p.DefaultVal)),
+				}
+				data-on:click={ filters.FilterParamSetValueExpr(index, p.Key, opt.Value, cfg) }
+				title={ opt.Label }
+			>
+				if opt.Icon != "" {
+					<i class={ "fa-sharp fa-solid fa-" + opt.Icon + " text-sm" } aria-hidden="true"></i>
+				}
+				<span class="text-xs leading-none">{ opt.Label }</span>
+			</button>
+		}
+	</div>
+}
+
+// filterParamPositionGrid renders a 3×3 clickable position grid.
+templ filterParamPositionGrid(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig) {
+	<div class="flex-1">
+		<div class="inline-grid grid-cols-3 gap-px border border-white/20 bg-white/10">
+			@positionGridCell(filter, index, p, cfg, "top-left")
+			@positionGridCell(filter, index, p, cfg, "top-center")
+			@positionGridCell(filter, index, p, cfg, "top-right")
+			<!-- empty cell for left-center (not in current options) -->
+			<div class="w-6 h-6 bg-black/40"></div>
+			@positionGridCell(filter, index, p, cfg, "center")
+			<div class="w-6 h-6 bg-black/40"></div>
+			@positionGridCell(filter, index, p, cfg, "bottom-left")
+			@positionGridCell(filter, index, p, cfg, "bottom-center")
+			@positionGridCell(filter, index, p, cfg, "bottom-right")
+		</div>
+	</div>
+}
+
+// positionGridCell renders a single cell in the 3×3 position grid.
+templ positionGridCell(filter filters.FilterStackEntry, index int, p filters.FilterParam, cfg filters.FilterConfig, value string) {
+	<button
+		type="button"
+		class={
+			"w-6 h-6 flex items-center justify-center transition-colors",
+			templ.KV("bg-white/30", value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal)),
+			templ.KV("bg-black/40 hover:bg-white/10", value != filters.ParamValue(filter.Params, p.Key, p.DefaultVal)),
+		}
+		data-on:click={ filters.FilterParamSetValueExpr(index, p.Key, value, cfg) }
+		title={ value }
+	>
+		if value == filters.ParamValue(filter.Params, p.Key, p.DefaultVal) {
+			<span class="w-2 h-2 bg-white rounded-full"></span>
+		} else {
+			<span class="w-1.5 h-1.5 bg-white/20 rounded-full"></span>
+		}
+	</button>
+}

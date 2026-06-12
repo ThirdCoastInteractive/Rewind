@@ -2,7 +2,7 @@ package components
 
 import (
 	"fmt"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
+
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
 
@@ -22,7 +22,7 @@ templ CropPresetButton(clipID, aspectRatio string) {
 	<button
 		type="button"
 		data-on:click={ fmt.Sprintf("@post('/api/clips/%s/crops', {payload: {aspect_ratio: '%s', name: '%s'}})", clipID, aspectRatio, aspectRatio) }
-		class={ viewtypes.GhostButtonSm }
+		class={ "ghost-btn-sm" }
 	>
 		{ aspectRatio }
 	</button>
@@ -31,7 +31,7 @@ templ CropPresetButton(clipID, aspectRatio string) {
 templ CropManager(clipID string, clipCrops crops.CropArray) {
 	<div class="space-y-3 pt-3 border-t-2 border-white/10" id="crop-manager">
 		<div class="flex items-center justify-between gap-2">
-			<div class={ viewtypes.SectionLabel }>Multi-Crop Presets</div>
+			<div class={ "section-label" }>Multi-Crop Presets</div>
 			<div class="text-xs text-white/60 font-mono" data-show="$_selectedCropId">
 				Selected:
 				<span class="text-white/80" data-text="$_selectedCropName"></span>
@@ -58,7 +58,7 @@ templ CropManager(clipID string, clipCrops crops.CropArray) {
 			<button
 				type="button"
 				data-on:click={ fmt.Sprintf("const input = document.getElementById('custom-aspect-%s'); const val = input.value.trim(); if (!val) return; const name = val.toUpperCase() + ' Custom'; @post('/api/clips/%s/crops', {payload: {aspect_ratio: val, name: name}}); input.value = '';", clipID, clipID) }
-				class={ viewtypes.GhostButtonSm + " whitespace-nowrap" }
+				class={ "ghost-btn-sm" + " whitespace-nowrap" }
 			>
 				Add Custom
 			</button>
@@ -86,7 +86,7 @@ templ CropRow(clipID string, crop crops.Crop) {
 	>
 		<button
 			type="button"
-			class="flex-1 text-left"
+			class="flex-1 text-left min-w-0"
 			data-crop-name={ crop.Name }
 			data-crop-aspect={ crop.AspectRatio }
 			data-crop-x={ fmt.Sprintf("%f", crop.X) }
@@ -95,7 +95,7 @@ templ CropRow(clipID string, crop crops.Crop) {
 			data-crop-h={ fmt.Sprintf("%f", crop.Height) }
 			data-on:click="cropRowSelect(el)"
 		>
-			<div class="text-xs text-white font-mono">
+			<div class="text-xs text-white font-mono truncate">
 				if crop.Name != "" {
 					{ crop.Name }
 				} else if crop.AspectRatio != "" {
@@ -110,13 +110,22 @@ templ CropRow(clipID string, crop crops.Crop) {
 				} else {
 					custom
 				}
+				<span class="text-neutral-600 ml-1">{ crop.ID[:8] }</span>
 			</div>
+		</button>
+		<button
+			type="button"
+			title="Rename crop"
+			data-on:click={ fmt.Sprintf("const name = prompt('Rename crop:', '%s'); if (name !== null && name.trim()) { @put('/api/clips/%s/crops/%s', {payload: {name: name.trim()}}); }", crop.Name, clipID, crop.ID) }
+			class="px-1 py-1 text-xs text-white/40 hover:text-white/70 transition-colors"
+		>
+			<i class="fa-sharp fa-solid fa-pen-to-square" aria-hidden="true"></i>
 		</button>
 		<button
 			type="button"
 			data-crop-delete-name={ cropLabel(crop) }
 			data-on:click={ fmt.Sprintf("confirm('Delete ' + evt.currentTarget.dataset.cropDeleteName + '?') && @delete('/api/clips/%s/crops/%s')", clipID, crop.ID) }
-			class="px-2 py-1 text-xs transition-all border-2 bg-transparent text-white/60 border-white/10 hover:border-red-500/40 hover:text-red-500 active:scale-95"
+			class="px-1 py-1 text-xs text-white/40 hover:text-red-500 transition-colors"
 		>
 			<i class="fa-sharp fa-solid fa-trash" aria-hidden="true"></i>
 		</button>

@@ -8,6 +8,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportsRequeueErrors serves POST /admin/exports/requeue-errors, resetting all failed exports to queued.
 func HandleAdminExportsRequeueErrors(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

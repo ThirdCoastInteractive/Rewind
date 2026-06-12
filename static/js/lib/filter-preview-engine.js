@@ -4,6 +4,15 @@
 
 import { AudioPreviewGraph } from './audio-preview-graph.js';
 
+// Parse a param value as a number, returning defaultVal when the value is
+// undefined, null, empty string, or NaN. Avoids the pitfall of nullish
+// coalescing (??) which passes through empty strings.
+function num(v, defaultVal) {
+  if (v === '' || v == null) return defaultVal;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaultVal;
+}
+
 export class FilterPreviewEngine {
   constructor(videoElement, container) {
     this.video = videoElement;
@@ -81,10 +90,10 @@ export class FilterPreviewEngine {
           filters.push(`brightness(${1 + (p.value || 0)})`);
           break;
         case 'contrast':
-          filters.push(`contrast(${p.value ?? 1})`);
+          filters.push(`contrast(${num(p.value, 1)})`);
           break;
         case 'saturation':
-          filters.push(`saturate(${p.value ?? 1})`);
+          filters.push(`saturate(${num(p.value, 1)})`);
           break;
         case 'gamma':
           // CSS doesn't have a gamma filter; approximate with brightness
@@ -100,7 +109,7 @@ export class FilterPreviewEngine {
           break;
         case 'color_temp': {
           // Approximate color temperature with sepia + hue-rotate
-          const temp = p.temperature ?? 6500;
+          const temp = num(p.temperature, 6500);
           if (temp < 6500) {
             // Warmer - add orange tint
             const warmth = (6500 - temp) / 5500;
@@ -110,23 +119,23 @@ export class FilterPreviewEngine {
             const coolness = (temp - 6500) / 5500;
             filters.push(`hue-rotate(${coolness * 30}deg) saturate(${1 - coolness * 0.15})`);
           }
-          const tint = p.tint ?? 0;
+          const tint = num(p.tint, 0);
           if (tint !== 0) {
             filters.push(`hue-rotate(${tint * 20}deg)`);
           }
           break;
         }
         case 'lift_gamma_gain': {
-          const lift = p.lift ?? 0;
-          const gamma = p.gamma ?? 1;
-          const gain = p.gain ?? 1;
+          const lift = num(p.lift, 0);
+          const gamma = num(p.gamma, 1);
+          const gain = num(p.gain, 1);
           if (lift !== 0) filters.push(`brightness(${1 + lift})`);
           if (gamma !== 1) filters.push(`brightness(${Math.pow(0.5, 1 / gamma) * 2})`);
           if (gain !== 1) filters.push(`contrast(${gain})`);
           break;
         }
         case 'exposure': {
-          const ev = p.exposure ?? 0;
+          const ev = num(p.exposure, 0);
           if (ev !== 0) filters.push(`brightness(${Math.pow(2, ev)})`);
           break;
         }
@@ -174,7 +183,7 @@ export class FilterPreviewEngine {
           muted = true;
           break;
         case 'vignette':
-          overlays.push({ type: 'vignette', angle: p.angle ?? 0.5 });
+          overlays.push({ type: 'vignette', angle: num(p.angle, 0.5) });
           break;
         case 'text':
           overlays.push({ type: 'text', text: p.text || '', position: p.position || 'bottom-right', size: p.size || 24 });
@@ -193,45 +202,45 @@ export class FilterPreviewEngine {
         }
         // Audio filters → Web Audio nodes
         case 'volume':
-          audioNodes.push({ type: 'gain', gain: p.gain ?? 1.0 });
+          audioNodes.push({ type: 'gain', gain: num(p.gain, 1.0) });
           break;
         case 'bass':
-          audioNodes.push({ type: 'biquad', filter: 'lowshelf', frequency: 200, gain: p.gain ?? 0 });
+          audioNodes.push({ type: 'biquad', filter: 'lowshelf', frequency: 200, gain: num(p.gain, 0) });
           break;
         case 'treble':
-          audioNodes.push({ type: 'biquad', filter: 'highshelf', frequency: 4000, gain: p.gain ?? 0 });
+          audioNodes.push({ type: 'biquad', filter: 'highshelf', frequency: 4000, gain: num(p.gain, 0) });
           break;
         case 'equalizer':
           audioNodes.push({
             type: 'biquad', filter: 'peaking',
-            frequency: p.frequency ?? 1000,
-            Q: (p.width ?? 200) > 0 ? (p.frequency ?? 1000) / (p.width ?? 200) : 5,
-            gain: p.gain ?? 0,
+            frequency: num(p.frequency, 1000),
+            Q: num(p.width, 200) > 0 ? num(p.frequency, 1000) / num(p.width, 200) : 5,
+            gain: num(p.gain, 0),
           });
           break;
         case 'highpass':
-          audioNodes.push({ type: 'biquad', filter: 'highpass', frequency: p.frequency ?? 200 });
+          audioNodes.push({ type: 'biquad', filter: 'highpass', frequency: num(p.frequency, 200) });
           break;
         case 'lowpass':
-          audioNodes.push({ type: 'biquad', filter: 'lowpass', frequency: p.frequency ?? 8000 });
+          audioNodes.push({ type: 'biquad', filter: 'lowpass', frequency: num(p.frequency, 8000) });
           break;
         case 'compressor':
           audioNodes.push({
             type: 'compressor',
-            threshold: p.threshold ?? -24,
-            ratio: p.ratio ?? 4,
-            attack: (p.attack ?? 20) / 1000, // ms → seconds for Web Audio
-            release: (p.release ?? 250) / 1000,
+            threshold: num(p.threshold, -24),
+            ratio: num(p.ratio, 4),
+            attack: num(p.attack, 20) / 1000, // ms → seconds for Web Audio
+            release: num(p.release, 250) / 1000,
           });
           break;
         case 'audio_fade_in':
-          audioNodes.push({ type: 'fade_in', duration: p.duration ?? 0.5 });
+          audioNodes.push({ type: 'fade_in', duration: num(p.duration, 0.5) });
           break;
         case 'audio_fade_out':
-          audioNodes.push({ type: 'fade_out', duration: p.duration ?? 0.5 });
+          audioNodes.push({ type: 'fade_out', duration: num(p.duration, 0.5) });
           break;
         case 'noise_gate':
-          audioNodes.push({ type: 'gate', threshold: p.threshold ?? -40 });
+          audioNodes.push({ type: 'gate', threshold: num(p.threshold, -40) });
           break;
       }
     }

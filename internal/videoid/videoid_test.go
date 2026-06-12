@@ -1,6 +1,8 @@
 package videoid
 
 import (
+	"context"
+	"net/url"
 	"testing"
 
 	"github.com/google/uuid"
@@ -61,4 +63,38 @@ func TestNormalizeSourceURL_Kick_StripsQuery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "kick.com", canon)
 	require.Equal(t, "https://kick.com/video/01234567-89ab-cdef-0123-456789abcdef", n)
+}
+
+func TestNormalizeSourceURL_Instagram_StripsQueryAndCanonicalizesHost(t *testing.T) {
+	n, canon, err := NormalizeSourceURL("https://www.instagram.com/p/DYc_k5PpRGA/?igshid=abc123")
+	require.NoError(t, err)
+	require.Equal(t, "instagram.com", canon)
+	require.Equal(t, "https://instagram.com/p/DYc_k5PpRGA", n)
+}
+
+func TestNormalizeSourceURL_Instagram_DistinctPostsDistinctSrc(t *testing.T) {
+	// Different Instagram posts must normalize to DIFFERENT srcs (regression: they
+	// used to all collapse onto facebook.com/unsupportedbrowser).
+	a, _, err := NormalizeSourceURL("https://www.instagram.com/reels/DQwKw_rDIGK/")
+	require.NoError(t, err)
+	b, _, err := NormalizeSourceURL("https://www.instagram.com/p/DYc_k5PpRGA/")
+	require.NoError(t, err)
+	require.NotEqual(t, a, b)
+	require.NotContains(t, a, "unsupportedbrowser")
+	require.NotContains(t, b, "unsupportedbrowser")
+}
+
+func TestExpandAndCanonicalizeURL_Instagram_NoNetworkExpansion(t *testing.T) {
+	// Known content hosts must NOT be HTTP-expanded (which would bounce Instagram
+	// to facebook.com/unsupportedbrowser). The URL is returned unchanged.
+	res, err := ExpandAndCanonicalizeURL(context.Background(), "https://www.instagram.com/p/DYc_k5PpRGA/")
+	require.NoError(t, err)
+	require.Equal(t, "instagram.com", res.CanonicalDomain)
+	require.NotContains(t, res.ExpandedURL, "unsupportedbrowser")
+	require.Contains(t, res.ExpandedURL, "DYc_k5PpRGA")
+}
+
+func TestIsDeadEndURL_UnsupportedBrowser(t *testing.T) {
+	u, _ := url.Parse("https://www.facebook.com/unsupportedbrowser")
+	require.True(t, isDeadEndURL(u))
 }

@@ -14,7 +14,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleDelete serves DELETE /videos/:id, soft-deleting a video and its associated data.
 func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		isDatastarRequest := strings.EqualFold(strings.TrimSpace(c.Request().Header.Get("Datastar-Request")), "true")

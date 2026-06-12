@@ -9,7 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleVideoCutPage serves GET /videos/:id/cut, rendering the clip editor for a video.
 func HandleVideoCutPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

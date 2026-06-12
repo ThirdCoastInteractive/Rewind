@@ -1,3 +1,5 @@
+// Package format provides human-readable formatting helpers for numbers,
+// byte sizes, durations, and other display values.
 package format
 
 import (
@@ -5,7 +7,7 @@ import (
 	"time"
 )
 
-// FormatBytes returns a human-readable byte size (e.g. "1.5 MB").
+// Bytes returns a human-readable byte size using binary units (e.g. "1.5 MB").
 func Bytes(b int64) string {
 	const unit = 1024
 	if b < unit {
@@ -52,7 +54,7 @@ func Truncate(s string, max int) string {
 	return s[:max-3] + "..."
 }
 
-// ToInt64 safely converts interface{} to int64.
+// ToInt64 converts a numeric value to int64, returning 0 for unsupported types.
 func ToInt64(v interface{}) int64 {
 	switch val := v.(type) {
 	case int64:

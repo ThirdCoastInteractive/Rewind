@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportsDeleteByStatus serves POST /admin/exports/delete/:status, deleting all exports with the given status.
 func HandleAdminExportsDeleteByStatus(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

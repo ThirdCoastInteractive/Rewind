@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleSettingsViewCookies serves GET /settings/cookies/view, rendering a read-only list of the user's stored cookies.
 func HandleSettingsViewCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

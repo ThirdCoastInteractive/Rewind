@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleStatus serves GET /jobs/:id/status, streaming real-time job progress updates via SSE.
 func HandleStatus(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		jobUUID, err := common.RequireUUIDParam(c, "id")

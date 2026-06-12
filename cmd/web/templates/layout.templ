@@ -9,12 +9,13 @@ templ Layout(title string, username string) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<meta name="view-transition" content="same-origin"/>
+			<meta name="description" content="Rewind — self-hosted video archival and management"/>
 			<title>{ title } - Rewind</title>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
-			<link rel="stylesheet" href="/static/dist/fontawesome/all.min.css"/>
-			<link rel="stylesheet" href="/static/dist/main.css"/>
-			<script src="/static/dist/main.js" defer></script>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/fontawesome/all.min.css") }/>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
+			<script src={ versionedAsset(ctx, "/static/dist/main.js") } defer></script>
 			<script>
 				// Generate bookmarklet with current app URL baked in
 				window.addEventListener('DOMContentLoaded', function() {
@@ -53,12 +54,13 @@ templ LayoutFullscreen(title string, username string) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<meta name="view-transition" content="same-origin"/>
+			<meta name="description" content="Rewind — self-hosted video archival and management"/>
 			<title>{ title } - Rewind</title>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
 			<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
-			<link rel="stylesheet" href="/static/dist/fontawesome/all.min.css"/>
-			<link rel="stylesheet" href="/static/dist/main.css"/>
-			<script src="/static/dist/main.js" defer></script>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/fontawesome/all.min.css") }/>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
+			<script src={ versionedAsset(ctx, "/static/dist/main.js") } defer></script>
 		</head>
 		<body class="h-screen overflow-hidden flex flex-col bg-black text-white font-mono">
 			@Navbar(username)
@@ -74,17 +76,16 @@ templ LayoutFullscreen(title string, username string) {
 	</html>
 }
 
-// Shared CSS class strings for navbar links
-var navLinkDesktop = "font-mono text-xs uppercase tracking-wider px-2 py-1.5 transition-colors border-2 border-transparent text-white/60 hover:text-white hover:border-white/20"
-var navLinkMobile = "font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 min-h-11 flex items-center hover:bg-white/5 transition border-b border-white/5"
-var navLinkMobileBlock = "font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white px-3 py-3 hover:bg-white/5 transition border-b border-white/5 block"
-var adminDropdownLink = "block px-4 py-3 font-mono text-xs text-white/80 hover:bg-white/5 hover:text-white transition border-b border-white/10"
+var navLinkDesktop = "nav-link"
+var navLinkMobile = "nav-link-mobile"
+var navLinkMobileBlock = "nav-link-mobile-block"
+var adminDropdownLink = "admin-dropdown-link"
 
 templ Navbar(username string) {
 	{{ accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string) }}
 	{{ registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool) }}
-	<nav class="border-b-2 border-white/10 bg-black">
-		<div class="mx-auto px-4">
+	<nav id="main-nav" class="border-b-2 border-white/10 bg-black">
+		<div class="mx-auto px-4 nav-content">
 			<div class="flex justify-between items-center h-10">
 				<a href="/" class="flex items-center gap-3 group">
 					<div class="w-8 h-8 border-2 border-white flex items-center justify-center transition-colors group-hover:bg-white">
@@ -99,6 +100,14 @@ templ Navbar(username string) {
 						<a href="/" class={ navLinkDesktop }>Home</a>
 						<a href="/jobs" class={ navLinkDesktop }>Jobs</a>
 						<a href="/videos" class={ navLinkDesktop }>Videos</a>
+						<a href="/upload" class={ navLinkDesktop }>
+							<i class="fa-sharp fa-solid fa-cloud-arrow-up mr-1" aria-hidden="true"></i>
+							Upload
+						</a>
+						<a href="/stitch" class={ navLinkDesktop }>
+							<i class="fa-sharp fa-solid fa-film mr-1" aria-hidden="true"></i>
+							Stitch
+						</a>
 						<a href="/producer" class={ navLinkDesktop }>
 							<i class="fa-sharp fa-solid fa-tv mr-1" aria-hidden="true"></i>
 							Producer
@@ -160,6 +169,12 @@ templ Navbar(username string) {
 						<a href="/" class={ navLinkMobile }>Home</a>
 						<a href="/jobs" class={ navLinkMobile }>Jobs</a>
 						<a href="/videos" class={ navLinkMobile }>Videos</a>
+						<a href="/upload" class={ navLinkMobile }>
+							<i class="fa-sharp fa-solid fa-cloud-arrow-up mr-1" aria-hidden="true"></i>Upload
+						</a>
+						<a href="/stitch" class={ navLinkMobile }>
+							<i class="fa-sharp fa-solid fa-film mr-1" aria-hidden="true"></i>Stitch
+						</a>
 						<a href="/producer" class={ navLinkMobile }>
 							<i class="fa-sharp fa-solid fa-tv mr-1" aria-hidden="true"></i>Producer
 						</a>
@@ -219,6 +234,7 @@ templ Navbar(username string) {
 				}
 			}, 200);
 		}
+
 	</script>
 }
 

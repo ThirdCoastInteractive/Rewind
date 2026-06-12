@@ -15,7 +15,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/filename"
 )
-
+// HandleDownloadExport serves GET /clip-exports/:id/download, streaming an encoded clip export file.
 func HandleDownloadExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, _, err := sm.GetSession(c.Request())

@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
+// HandleAdminHomePage serves GET /admin, rendering the admin dashboard with system metrics and charts.
 func HandleAdminHomePage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username, _ := c.Get("currentUsername").(string)

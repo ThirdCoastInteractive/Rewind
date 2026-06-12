@@ -1,0 +1,254 @@
+/* ============================================================================
+   REWIND DESIGN SYSTEM — CSS Components
+   Extracted from repeated Tailwind utility combos across templ files.
+   Use @layer components so utilities can still override when needed.
+   ============================================================================ */
+
+@layer components {
+
+  /* --------------------------------------------------------------------------
+     TYPOGRAPHY
+     -------------------------------------------------------------------------- */
+
+  .page-heading {
+    @apply text-2xl font-mono font-bold uppercase tracking-wider;
+  }
+
+  .sub-heading {
+    @apply text-lg font-mono font-bold uppercase tracking-wider;
+  }
+
+  .section-label {
+    @apply text-xs text-white/40 font-mono uppercase tracking-wider;
+  }
+
+  .meta-row {
+    @apply flex items-center gap-3 text-xs font-mono text-white/40;
+  }
+
+  /* --------------------------------------------------------------------------
+     CARDS
+     -------------------------------------------------------------------------- */
+
+  .card {
+    @apply bg-gray-10 border-2 border-white/10 transition-colors;
+  }
+
+  .card-elevated {
+    @apply card hover:border-white/30;
+  }
+
+  .card-header {
+    @apply border-b-2 border-white/10 px-4 py-2;
+  }
+
+  .card-header-title {
+    @apply font-mono font-bold text-sm tracking-tight text-white uppercase;
+  }
+
+  .card-body {
+    @apply p-4;
+  }
+
+  .card-footer {
+    @apply border-t-2 border-white/10 px-4 py-2;
+  }
+
+  /* --------------------------------------------------------------------------
+     VIDEO CARD
+     -------------------------------------------------------------------------- */
+
+  .video-card {
+    @apply block bg-black border-2 border-white/10 hover:border-white/20 transition-colors;
+  }
+
+  .video-card-thumb {
+    @apply aspect-video bg-center bg-cover bg-gray-10 relative;
+  }
+
+  .video-card-body {
+    @apply p-3 border-t-2 border-white/10;
+  }
+
+  .video-card-title {
+    @apply text-sm font-mono text-white mb-1 truncate group-hover:text-white/80 transition-colors;
+  }
+
+  .video-card-skeleton {
+    @apply block bg-black border-2 border-white/10;
+  }
+
+  /* --------------------------------------------------------------------------
+     SECTION HEADER ROW (title + "VIEW ALL ->" link)
+     -------------------------------------------------------------------------- */
+
+  .section-header {
+    @apply flex items-center justify-between mb-3 border-b-2 border-white/10 pb-2;
+  }
+
+  .section-header-title {
+    @apply font-mono font-bold text-sm uppercase tracking-wider text-white;
+  }
+
+  .section-header-link {
+    @apply font-mono text-xs uppercase tracking-wider text-white/60 hover:text-white transition-colors;
+  }
+
+  /* --------------------------------------------------------------------------
+     FORMS
+     -------------------------------------------------------------------------- */
+
+  .form-input {
+    @apply w-full px-3 py-2 bg-black border-2 border-white/20 text-white font-mono text-sm
+           placeholder:text-white/40 focus:outline-none focus:border-white/60 transition-colors;
+  }
+
+  .form-select {
+    @apply bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5
+           focus:border-white/40 outline-none cursor-pointer;
+  }
+
+  .form-checkbox {
+    @apply w-4 h-4 bg-black border-2 border-white/40 text-white
+           focus:ring-2 focus:ring-white/20 transition-colors;
+  }
+
+  .form-label {
+    @apply block font-mono text-xs uppercase tracking-wider text-white/80;
+  }
+
+  .form-textarea {
+    @apply form-input resize-y;
+  }
+
+  /* --------------------------------------------------------------------------
+     BUTTONS
+     -------------------------------------------------------------------------- */
+
+  .btn {
+    @apply font-mono uppercase tracking-wider transition-all border-2
+           inline-flex items-center justify-center active:scale-95;
+  }
+
+  .btn-primary {
+    @apply btn bg-white text-black border-white hover:bg-black hover:text-white;
+  }
+
+  .btn-secondary {
+    @apply btn bg-black text-white border-white hover:bg-white hover:text-black;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-white border-white/20 hover:border-white;
+  }
+
+  .btn-danger {
+    @apply btn bg-black text-white border-white hover:bg-white hover:text-black;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1 text-xs;
+  }
+
+  .btn-md {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  .ghost-btn-sm {
+    @apply btn-ghost btn-sm;
+  }
+
+  /* --------------------------------------------------------------------------
+     BADGES
+     -------------------------------------------------------------------------- */
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 border-2 border-white/20
+           font-mono text-xs uppercase tracking-wider text-white;
+  }
+
+  /* --------------------------------------------------------------------------
+     INFO BOX (detail panels, stat containers)
+     -------------------------------------------------------------------------- */
+
+  .info-box {
+    @apply bg-black border-2 border-white/10 p-3;
+  }
+
+  /* --------------------------------------------------------------------------
+     NAVIGATION
+     -------------------------------------------------------------------------- */
+
+  .nav-link {
+    @apply font-mono text-xs uppercase tracking-wider px-2 py-1.5 transition-colors
+           border-2 border-transparent text-white/60 hover:text-white hover:border-white/20;
+  }
+
+  .nav-link-mobile {
+    @apply font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white
+           px-3 py-3 min-h-11 flex items-center hover:bg-white/5 transition
+           border-b border-white/5;
+  }
+
+  .nav-link-mobile-block {
+    @apply font-mono text-xs uppercase tracking-wider text-white/80 hover:text-white
+           px-3 py-3 hover:bg-white/5 transition border-b border-white/5 block;
+  }
+
+  .admin-dropdown-link {
+    @apply block px-4 py-3 font-mono text-xs text-white/80 hover:bg-white/5
+           hover:text-white transition border-b border-white/10;
+  }
+
+  /* --------------------------------------------------------------------------
+     SKELETON LOADING
+     -------------------------------------------------------------------------- */
+
+  .skeleton {
+    @apply bg-white/5;
+  }
+
+  .skeleton-text {
+    @apply bg-white/10;
+  }
+
+  /* --------------------------------------------------------------------------
+     TAB BUTTONS
+     -------------------------------------------------------------------------- */
+
+  .tab-btn {
+    @apply px-2 py-1 text-xs font-mono uppercase tracking-wider border-b-2 -mb-0.5;
+  }
+
+  .tab-btn-active {
+    @apply tab-btn text-white border-white;
+  }
+
+  .tab-btn-inactive {
+    @apply tab-btn text-white/40 hover:text-white/70 border-transparent;
+  }
+
+  /* --------------------------------------------------------------------------
+     EMPTY STATE
+     -------------------------------------------------------------------------- */
+
+  .empty-state {
+    @apply text-center py-8;
+  }
+
+  .empty-state-icon {
+    @apply mx-auto text-white/20 text-4xl;
+  }
+
+  .empty-state-title {
+    @apply mt-3 font-mono font-bold text-sm text-white/80 uppercase;
+  }
+
+  .empty-state-description {
+    @apply mt-1 font-mono text-xs text-white/60;
+  }
+}

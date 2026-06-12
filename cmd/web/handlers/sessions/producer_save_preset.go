@@ -10,7 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleProducerSaveScenePreset serves POST /producer/:code/scenes/presets, saving the current scene as a reusable preset.
 func HandleProducerSaveScenePreset(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		accessLevel := c.Get("accessLevel").(string)

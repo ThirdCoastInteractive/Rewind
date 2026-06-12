@@ -143,7 +143,7 @@ func HandleClipsCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 
 				// Patch filter cards (empty for a new clip)
 				_ = sse.PatchElementTempl(
-					components.FilterCardList(nil, c.Param("id"), []filters.FilterOption{
+					components.FilterCardList(nil, filters.CutFilterConfig(c.Param("id")), []filters.FilterOption{
 						{Value: "", Label: "(select crop)"},
 					}),
 					datastar.WithSelectorID("filter-stack-list"),
@@ -191,7 +191,7 @@ func DefaultVideosListParams() VideosListParams {
 		HasClips:   false,
 		HasMarkers: false,
 		Page:       1,
-		PageSize:   48,
+		PageSize:   24,
 	}
 }
 
@@ -204,7 +204,7 @@ func (p *VideosListParams) Validate() {
 	// Validate page size
 	validSizes := map[int]bool{24: true, 48: true, 96: true}
 	if !validSizes[p.PageSize] {
-		p.PageSize = 48
+		p.PageSize = 24
 	}
 	// Validate sort
 	validSorts := map[string]bool{

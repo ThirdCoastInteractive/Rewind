@@ -18,11 +18,13 @@ import (
 
 const defaultBaseURL = "https://sponsor.ajay.app"
 
+// Client communicates with the SponsorBlock API to fetch crowd-sourced video segment data.
 type Client struct {
 	baseURL string
 	http    *http.Client
 }
 
+// NewClient creates a Client targeting the given base URL, falling back to the public SponsorBlock API.
 func NewClient(baseURL string) *Client {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -38,6 +40,7 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
+// SkipSegment represents a single crowd-sourced segment returned by the SponsorBlock API.
 type SkipSegment struct {
 	Segment       []float64 `json:"segment"`
 	UUID          string    `json:"UUID"`
@@ -49,6 +52,7 @@ type SkipSegment struct {
 	Description   string    `json:"description"`
 }
 
+// SkipSegmentsParams holds the query parameters for a GetSkipSegments request.
 type SkipSegmentsParams struct {
 	VideoID     string
 	Service     string
@@ -56,6 +60,7 @@ type SkipSegmentsParams struct {
 	ActionTypes []string
 }
 
+// GetSkipSegments fetches skip segments for a video from the SponsorBlock API.
 func (c *Client) GetSkipSegments(ctx context.Context, params SkipSegmentsParams) ([]SkipSegment, error) {
 	videoID := strings.TrimSpace(params.VideoID)
 	if videoID == "" {

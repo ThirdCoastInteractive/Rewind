@@ -42,7 +42,7 @@ templ Container(width string) {
 templ ResponsiveGrid(gridType string) {
 	<div
 		class={
-			templ.KV("grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 ultra:grid-cols-6 gap-4", gridType == "videos"),
+			templ.KV("grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4", gridType == "videos"),
 			templ.KV("grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4", gridType == "jobs"),
 			templ.KV("grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6", gridType == "cards"),
 		}
@@ -57,7 +57,7 @@ templ ResponsiveGrid(gridType string) {
 
 // StatusBadge displays job status with icon (black & white only)
 templ StatusBadge(status db.JobStatus) {
-	<span class="inline-flex items-center gap-1 px-2 py-1 border-2 border-white/20 font-mono text-xs uppercase tracking-wider text-white">
+	<span class="badge">
 		if status == db.JobStatusQueued {
 			<i class="fa-sharp fa-solid fa-clock" aria-hidden="true"></i>
 			{ string(status) }
@@ -96,10 +96,10 @@ templ Alert(alertType, message string) {
 
 // EmptyState displays when no content is available
 templ EmptyState(icon, title, description string) {
-	<div class="text-center py-8">
-		<i class={ "fa-sharp fa-solid fa-" + icon, "mx-auto text-white/20 text-4xl" } aria-hidden="true"></i>
-		<h3 class="mt-3 font-mono font-bold text-sm text-white/80 uppercase">{ title }</h3>
-		<p class="mt-1 font-mono text-xs text-white/60">{ description }</p>
+	<div class="empty-state">
+		<i class={ "fa-sharp fa-solid fa-" + icon, "empty-state-icon" } aria-hidden="true"></i>
+		<h3 class="empty-state-title">{ title }</h3>
+		<p class="empty-state-description">{ description }</p>
 	</div>
 }
 
@@ -112,7 +112,7 @@ templ JobCard(job Job) {
 	<a
 		href={ templ.SafeURL("/jobs/" + job.ID) }
 		id={ "job-card-" + job.ID }
-		class="block bg-gray-10 border-2 border-white/10 hover:border-white/30 transition-all p-4 lift-hover"
+		class="block card-elevated p-4 lift-hover"
 		data-status={ job.Status }
 		data-transition
 		style={ "view-transition-name: job-" + job.ID }

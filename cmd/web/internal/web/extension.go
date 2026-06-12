@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
+	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
@@ -197,7 +198,7 @@ type ExtensionCookiesRequest struct {
 	CookiesContent string `json:"cookies_content"`
 }
 
-// HandleAPIExtensionStatus returns status information for the extension
+// HandleAPIExtensionStatus serves GET /api/extension/status, returning connection and job info for the browser extension.
 func (s *Webserver) HandleAPIExtensionStatus(c echo.Context) error {
 	user, _, err := s.requireExtensionBearerToken(c)
 	if err != nil {
@@ -251,7 +252,7 @@ func (s *Webserver) HandleAPIExtensionStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-// HandleAPIExtensionCookies handles cookie uploads from the extension
+// HandleAPIExtensionCookies serves POST /api/extension/cookies, importing Netscape-format cookies uploaded by the browser extension.
 func (s *Webserver) HandleAPIExtensionCookies(c echo.Context) error {
 	user, _, err := s.requireExtensionBearerToken(c)
 	if err != nil {
@@ -462,25 +463,15 @@ func (s *Webserver) HandleAPIExtensionArchive(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url is required"})
 	}
 
-	refresh := false
-	if existing, err := s.dbc.Queries(c.Request().Context()).SelectVideoBySrc(c.Request().Context(), req.URL); err == nil && existing != nil {
-		refresh = true
-	}
-
-	job, err := s.dbc.Queries(c.Request().Context()).EnqueueDownloadJob(c.Request().Context(), &db.EnqueueDownloadJobParams{
-		URL:        req.URL,
-		ArchivedBy: user.ID,
-		Refresh:    refresh,
-		ExtraArgs:  []string{},
-	})
+	res, err := archival.EnqueueURL(c.Request().Context(), s.dbc.Queries(c.Request().Context()), req.URL, user.ID)
 	if err != nil {
 		slog.Error("failed to enqueue job from extension", "error", err, "url", req.URL)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to enqueue job"})
 	}
 
 	return c.JSON(http.StatusOK, extensionArchiveResponse{
-		JobID:    job.ID.String(),
-		Redirect: "/jobs/" + job.ID.String(),
+		JobID:    res.Job.ID.String(),
+		Redirect: "/jobs/" + res.Job.ID.String(),
 	})
 }
 

@@ -414,12 +414,12 @@ func TestIntegration_ExtractThumbnail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := ExtractThumbnail(ctx, input, output, &ThumbnailOptions{
+	result := ExtractThumbnail(ctx, input, output, &ThumbnailOptions{
 		Offset:   1 * time.Second,
 		MaxWidth: 160,
 		Quality:  5,
 	})
-	require.NoError(t, err)
+	require.NoError(t, result.Err)
 
 	info, err := os.Stat(output)
 	require.NoError(t, err, "thumbnail not created")

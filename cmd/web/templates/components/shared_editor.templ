@@ -1,0 +1,125 @@
+package components
+
+// EditorToolbar is a shared top bar for all editor pages (cut, stitch).
+// It provides three zones: left (back link), center (title + save indicator), right (children slot).
+// Pass editor-specific action buttons as children.
+templ EditorToolbar(backHref string, backLabel string, titleSignal string, dirtySignal string, savingSignal string) {
+	<div class="shrink-0 flex items-center gap-2 border-b border-white/10 p-2">
+		<a href={ templ.SafeURL(backHref) } class="font-mono text-xs uppercase tracking-wider text-white/40 hover:text-white transition-colors shrink-0" title={ "Back to " + backLabel }>
+			<i class="fa-sharp fa-solid fa-arrow-left mr-1" aria-hidden="true"></i>{ backLabel }
+		</a>
+		if titleSignal != "" {
+			<div class="flex-1 min-w-0">
+				<input
+					type="text"
+					class="form-input py-1 text-sm"
+					placeholder="Project title"
+					data-bind={ titleSignal }
+					data-on:input__debounce.500ms={ "$" + dirtySignal + " = true" }
+				/>
+			</div>
+		} else {
+			<div class="flex-1"></div>
+		}
+		<div class="flex items-center gap-1 shrink-0">
+			if dirtySignal != "" && savingSignal != "" {
+				@SaveIndicator(dirtySignal, savingSignal)
+			}
+			{ children... }
+		</div>
+	</div>
+}
+
+// ToolbarDivider renders a thin vertical divider between toolbar button groups.
+templ ToolbarDivider() {
+	<div class="w-px h-5 bg-white/20 mx-1"></div>
+}
+
+// ExportButton renders the primary export action button used in the stitch toolbar.
+// disabledExpr is a DataStar expression for when the button should be disabled.
+// clickExpr is the DataStar on:click expression.
+// indicatorSignal is the signal name for the loading indicator.
+// icon is the Font Awesome icon name.
+templ ExportButton(disabledExpr string, clickExpr string, indicatorSignal string, icon string) {
+	<button
+		type="button"
+		class="btn-primary btn-sm disabled:opacity-30 disabled:pointer-events-none"
+		data-attr:disabled={ disabledExpr }
+		data-on:click={ clickExpr }
+		data-indicator={ indicatorSignal }
+	>
+		<i class={ "fa-sharp fa-solid fa-" + icon + " mr-1" } aria-hidden="true"></i>
+		<span data-show={ "!$" + indicatorSignal }>EXPORT</span>
+		<span data-show={ "$" + indicatorSignal }>EXPORTING...</span>
+	</button>
+}
+
+// ExportStatus is a shared SSE-patched export status indicator.
+// Used by the stitch editor. The id parameter sets the element ID for SSE targeting.
+// state: "queued" | "processing" | "ready" | "error" | ""
+templ ExportStatus(id string, text string, state string, downloadURL string) {
+	<div id={ id }>
+		if state == "ready" && downloadURL != "" {
+			<a
+				href={ templ.SafeURL(downloadURL) }
+				class="inline-flex items-center gap-2 px-3 py-2 border-2 border-green-500/60 text-green-400 hover:border-green-500 hover:text-green-300 text-sm font-mono transition-colors"
+				download
+			>
+				<i class="fa-sharp fa-solid fa-download" aria-hidden="true"></i>
+				Download Ready
+			</a>
+		} else if state == "queued" {
+			<span class="text-yellow-400/80 text-xs font-mono">
+				<i class="fa-sharp fa-solid fa-clock mr-1" aria-hidden="true"></i>
+				{ text }
+			</span>
+		} else if state == "processing" {
+			<span class="text-blue-400/80 text-xs font-mono">
+				<i class="fa-sharp fa-solid fa-circle-notch fa-spin mr-1" aria-hidden="true"></i>
+				{ text }
+			</span>
+		} else if state == "error" {
+			<span class="text-red-400/80 text-xs font-mono">
+				<i class="fa-sharp fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+				{ text }
+			</span>
+		}
+	</div>
+}
+
+// SaveIndicator shows save/dirty state inline. Used in editor top bars.
+// dirtySignal and savingSignal are DataStar signal names (without $ prefix).
+templ SaveIndicator(dirtySignal string, savingSignal string) {
+	<span class="text-xs font-mono text-green-500/60 mr-1" data-show={ "!$" + dirtySignal + " && !$" + savingSignal }>
+		<i class="fa-sharp fa-solid fa-check" aria-hidden="true"></i> Saved
+	</span>
+	<span class="text-xs font-mono text-yellow-500/60 mr-1" data-show={ "$" + savingSignal }>
+		<i class="fa-sharp fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Saving...
+	</span>
+}
+
+// ToggleButton renders a button that toggles a DataStar signal to a specific value.
+// Highlights when the signal matches the value.
+// signal is the DataStar signal name (without $ prefix).
+templ ToggleButton(signal string, value string, label string) {
+	<button
+		type="button"
+		class="px-2 py-1 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+		data-class={ "{'border-white/60 bg-white/10': $" + signal + " === '" + value + "'}" }
+		data-on:click={ "$" + signal + " = '" + value + "'" }
+	>
+		{ label }
+	</button>
+}
+
+// ToggleButtonDirty is like ToggleButton but also sets a dirty signal.
+templ ToggleButtonDirty(signal string, value string, dirtySignal string, label string) {
+	<button
+		type="button"
+		class="px-2 py-1 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+		data-class={ "{'border-white/60 bg-white/10': $" + signal + " === '" + value + "'}" }
+		data-on:click={ "$" + signal + " = '" + value + "'; $" + dirtySignal + " = true" }
+	>
+		{ label }
+	</button>
+}

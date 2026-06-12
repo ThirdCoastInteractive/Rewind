@@ -9,7 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleKeybindingReset serves POST /settings/keybindings/reset, restoring all key bindings to defaults.
 func HandleKeybindingReset(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

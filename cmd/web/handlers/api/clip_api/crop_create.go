@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
-
+// HandleCropCreate serves POST /clips/:clipId/crops, adding a crop region to a clip.
 func HandleCropCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
@@ -50,6 +50,7 @@ func HandleCropCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		if cropName == "" {
 			cropName = fmt.Sprintf("%s Crop", req.AspectRatio)
 		}
+		cropName = deduplicateCropName(cropName, clip.Crops)
 
 		if req.AspectRatio == "custom" && req.X != nil && req.Y != nil && req.Width != nil && req.Height != nil {
 			newCrop = crops.Crop{

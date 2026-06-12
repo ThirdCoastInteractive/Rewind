@@ -1,0 +1,18 @@
+package components
+
+// ScrubField renders a DAW-style draggable number input.
+// The JS behavior (drag-to-scrub, scroll, dblclick-edit) is wired by initScrubInputs().
+templ ScrubField(data ScrubFieldData) {
+	<div
+		class="scrub-field"
+		data-step={ fmtNum(data.Step) }
+		data-min={ fmtNum(data.Min) }
+		data-max={ fmtNum(data.Max) }
+		data-precision={ fmtNum(float64(data.Precision)) }
+		data-field-id={ data.ID }
+	>
+		<span class="scrub-label">{ data.Label }</span>
+		<span class="scrub-value">{ scrubDisplayValue(data.Value, data.Precision) }</span>
+		<input class="scrub-editor" type="number" step={ fmtNum(data.Step) } min={ fmtNum(data.Min) } max={ fmtNum(data.Max) } value={ scrubDisplayValue(data.Value, data.Precision) }/>
+	</div>
+}

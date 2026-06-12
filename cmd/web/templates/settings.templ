@@ -5,7 +5,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -17,10 +16,10 @@ templ Settings(cookiesValue string, message string, isLoggedIn bool, username st
 
 templ SettingsContent(cookiesValue string, message string, adminSettings *db.InstanceSetting) {
 	@Container("") {
-		<h1 class={ viewtypes.PageHeading + " mb-4" }>SETTINGS</h1>
+		<h1 class="page-heading mb-4">SETTINGS</h1>
 		@components.Card(false) {
 			<div class="flex justify-between items-start mb-2 p-4 pb-0">
-				<h2 class={ viewtypes.SubHeading }>COOKIES</h2>
+				<h2 class={ "sub-heading" }>COOKIES</h2>
 				if cookiesValue != "" {
 					<a
 						href="/settings/cookies/view"
@@ -55,7 +54,7 @@ templ SettingsContent(cookiesValue string, message string, adminSettings *db.Ins
 				}
 				<form method="POST" action="/settings/cookies">
 					<div class="mb-3">
-						<label for="cookies_content" class="block text-xs font-mono uppercase tracking-wider text-white mb-1">
+						<label for="cookies_content" class="form-label mb-1">
 							COOKIES (NETSCAPE FORMAT - TAB SEPARATED)
 						</label>
 						<textarea
@@ -81,7 +80,7 @@ templ SettingsContent(cookiesValue string, message string, adminSettings *db.Ins
 							<button
 								type="submit"
 								formaction="/settings/cookies/delete"
-								class="px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+								class="btn-ghost btn-sm"
 							>
 								CLEAR
 							</button>
@@ -185,7 +184,7 @@ templ SettingsContent(cookiesValue string, message string, adminSettings *db.Ins
 				}
 			}}
 			<div class="mt-4">
-				<h2 class={ viewtypes.SubHeading + " mb-2" }>ADMIN SETTINGS</h2>
+				<h2 class={ "sub-heading" + " mb-2" }>ADMIN SETTINGS</h2>
 				@AdminSettingsForm(adminSettings.RegistrationEnabled, limitStr, adminSettings.AdminEmails)
 			</div>
 		}

@@ -12,7 +12,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleSeekSheet serves GET /videos/:id/seek/levels/:level/:sheet, returning a seek sprite sheet image.
 func HandleSeekSheet(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, _, err := sm.GetSession(c.Request()); err != nil {

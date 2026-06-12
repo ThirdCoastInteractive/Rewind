@@ -1,0 +1,144 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"time"
+)
+
+templ StitchLibraryPage(projects []*db.ListStitchProjectsRow, exportMap map[string]*db.LatestStitchJobPerProjectRow, username string) {
+	@LayoutFullscreen("Stitch", username) {
+		@StitchLibrary(projects, exportMap)
+	}
+}
+
+templ StitchLibrary(projects []*db.ListStitchProjectsRow, exportMap map[string]*db.LatestStitchJobPerProjectRow) {
+	<div class="flex-1 min-h-0 flex flex-col p-6 overflow-auto">
+		<!-- Header -->
+		<div class="flex items-center justify-between mb-6">
+			<div class="flex items-center gap-3">
+				<i class="fa-sharp fa-solid fa-film text-white/40 text-lg" aria-hidden="true"></i>
+				<h1 class="font-mono text-lg uppercase tracking-wider text-white/80">Stitch Projects</h1>
+			</div>
+			<form method="POST" action="/api/stitch/projects">
+				<button
+					type="submit"
+					class="btn-primary btn-md"
+				>
+					<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
+					New Project
+				</button>
+			</form>
+		</div>
+		<!-- Project grid -->
+		if len(projects) == 0 {
+			<div class="flex-1 flex flex-col items-center justify-center text-white/30">
+				<i class="fa-sharp fa-solid fa-film text-4xl mb-4" aria-hidden="true"></i>
+				<p class="font-mono text-sm">No stitch projects yet</p>
+				<p class="font-mono text-xs mt-1">Create one to start combining clips</p>
+			</div>
+		} else {
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+				for _, p := range projects {
+					@StitchProjectCard(p, exportMap[p.ID.String()])
+				}
+			</div>
+		}
+	</div>
+}
+
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d min ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	case d < 30*24*time.Hour:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "yesterday"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
+func stitchSegmentCount(segments []byte) int {
+	// Quick count: just count top-level array entries
+	count := 0
+	depth := 0
+	for _, b := range segments {
+		if b == '[' || b == '{' {
+			depth++
+		} else if b == ']' || b == '}' {
+			depth--
+		} else if b == ',' && depth == 1 {
+			count++
+		}
+	}
+	if depth == 0 && len(segments) > 2 {
+		count++ // at least one element if array is non-empty
+	}
+	return count
+}
+
+templ StitchProjectCard(p *db.ListStitchProjectsRow, latestExport *db.LatestStitchJobPerProjectRow) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/stitch/%s", p.ID.String())) }
+		class="group border-2 border-white/10 hover:border-white/30 bg-neutral-950 transition-all p-4 block"
+	>
+		<div class="flex items-start justify-between mb-3">
+			<h3 class="font-mono text-sm text-white/80 group-hover:text-white transition-colors truncate flex-1 mr-2">
+				if p.Title != "" {
+					{ p.Title }
+				} else {
+					Untitled
+				}
+			</h3>
+			<span class="text-xs font-mono text-white/30 uppercase shrink-0">{ p.Format }</span>
+		</div>
+		<div class="flex items-center gap-3 text-xs font-mono text-white/30">
+			<span>
+				<i class="fa-sharp fa-solid fa-layer-group mr-1" aria-hidden="true"></i>
+				{ fmt.Sprintf("%d", stitchSegmentCount(p.Segments)) } segments
+			</span>
+			<span>{ p.Quality }</span>
+		</div>
+		<div class="mt-3 flex items-center justify-between">
+			<span class="text-xs font-mono text-white/20">
+				{ formatTimeAgo(p.UpdatedAt.Time) }
+			</span>
+			if latestExport != nil {
+				if latestExport.Status == db.ExportStatusReady {
+					<span class="text-xs font-mono text-green-500/60">
+						<i class="fa-sharp fa-solid fa-circle-check mr-1" aria-hidden="true"></i>Exported
+					</span>
+				} else if latestExport.Status == db.ExportStatusProcessing {
+					<span class="text-xs font-mono text-blue-400/60">
+						<i class="fa-sharp fa-solid fa-circle-notch fa-spin mr-1" aria-hidden="true"></i>{ fmt.Sprintf("%d%%", latestExport.ProgressPct) }
+					</span>
+				} else if latestExport.Status == db.ExportStatusQueued {
+					<span class="text-xs font-mono text-yellow-400/60">
+						<i class="fa-sharp fa-solid fa-clock mr-1" aria-hidden="true"></i>Queued
+					</span>
+				} else if latestExport.Status == db.ExportStatusError {
+					<span class="text-xs font-mono text-red-400/60">
+						<i class="fa-sharp fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Failed
+					</span>
+				}
+			}
+		</div>
+	</a>
+}

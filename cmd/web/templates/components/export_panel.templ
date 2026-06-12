@@ -2,7 +2,6 @@ package components
 
 import (
 	"fmt"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
 
@@ -15,7 +14,7 @@ templ CutExportPanel(cropList crops.CropArray) {
 		</div>
 		<div data-show="$_selectedClipId !== ''">
 			<div>
-				<div class={ viewtypes.SectionLabel + " mb-1" }>VARIANT</div>
+				<div class="section-label mb-1">VARIANT</div>
 				<div class="flex flex-wrap gap-1">
 					@ExportVariantButton("full", "Full Frame", "")
 					for _, crop := range cropList {
@@ -24,7 +23,7 @@ templ CutExportPanel(cropList crops.CropArray) {
 				</div>
 			</div>
 			<div class="mt-2">
-				<div class={ viewtypes.SectionLabel + " mb-1" }>FORMAT</div>
+				<div class="section-label mb-1">FORMAT</div>
 				<div class="flex gap-1">
 					@ExportFormatButton("mp4", "MP4")
 					@ExportFormatButton("webm", "WebM")
@@ -32,7 +31,7 @@ templ CutExportPanel(cropList crops.CropArray) {
 				</div>
 			</div>
 			<div class="mt-2">
-				<div class={ viewtypes.SectionLabel + " mb-1" }>QUALITY</div>
+				<div class="section-label mb-1">QUALITY</div>
 				<div class="flex gap-1">
 					@ExportQualityButton("high", "High", "CRF 21 / medium")
 					@ExportQualityButton("max", "Maximum", "CRF 17 / slow")
@@ -47,7 +46,7 @@ templ CutExportPanel(cropList crops.CropArray) {
 				</div>
 				<button
 					type="button"
-					class="w-full px-3 py-2 text-sm font-mono uppercase tracking-wider transition-all border-2 bg-white text-black border-white hover:bg-white/90 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+					class="w-full btn-primary btn-md disabled:opacity-30 disabled:pointer-events-none"
 					data-on:click="@post('/api/clips/' + $_selectedClipId + '/exports', {payload: {format: $_exportFormat, quality: $_exportQuality, variant: $_exportVariant, filters: $_filterStack}})"
 					data-attr:disabled="$_selectedClipId === ''"
 					data-indicator:exporting
@@ -81,7 +80,7 @@ templ ExportVariantButton(value, label, hint string) {
 templ ExportFormatButton(value, label string) {
 	<button
 		type="button"
-		class="flex-1 px-2 py-1 text-xs font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white/20 hover:border-white/40 active:scale-95"
+		class="flex-1 btn-ghost btn-sm"
 		data-class={ fmt.Sprintf("{'border-white/60 bg-white/10': $_exportFormat === '%s'}", value) }
 		data-on:click={ fmt.Sprintf("$_exportFormat = '%s'", value) }
 	>

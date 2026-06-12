@@ -57,6 +57,12 @@ SET filter_stack = sqlc.arg(filter_stack),
     updated_at = NOW()
 WHERE id = sqlc.arg(id);
 
+-- name: UpdateClipShotList :exec
+UPDATE clips
+SET shot_list = sqlc.arg(shot_list),
+    updated_at = NOW()
+WHERE id = sqlc.arg(id);
+
 -- name: DeleteClip :exec
 DELETE FROM clips
 WHERE id = sqlc.arg(id);

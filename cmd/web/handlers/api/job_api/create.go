@@ -2,17 +2,16 @@
 package job_api
 
 import (
-	"errors"
 	"log/slog"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
+	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleCreateDownload serves POST /download-jobs, enqueuing a new URL for download.
 func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		archivedByUUID, _, err := common.RequireSessionUser(c, sm)
@@ -31,29 +30,17 @@ func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 			return c.String(400, "url is required")
 		}
 
-		// Make first archive vs refresh transparent
-		refresh := false
-		if existing, err := dbc.Queries(c.Request().Context()).SelectVideoBySrc(c.Request().Context(), req.URL); err == nil && existing != nil {
-			refresh = true
-		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			slog.Error("failed to check existing video", "error", err)
-			return c.String(500, "failed to enqueue")
-		}
-
-		job, err := dbc.Queries(c.Request().Context()).EnqueueDownloadJob(c.Request().Context(), &db.EnqueueDownloadJobParams{
-			URL:        req.URL,
-			ArchivedBy: archivedByUUID,
-			Refresh:    refresh,
-			ExtraArgs:  []string{},
-		})
+		res, err := archival.EnqueueURL(c.Request().Context(), dbc.Queries(c.Request().Context()), req.URL, archivedByUUID)
 		if err != nil {
+			slog.Error("failed to enqueue download", "error", err)
 			return c.String(500, "failed to enqueue")
 		}
 
 		resp := map[string]any{
-			"id":      job.ID.String(),
-			"status":  job.Status,
-			"refresh": refresh,
+			"id":       res.Job.ID.String(),
+			"status":   res.Job.Status,
+			"refresh":  res.Refresh,
+			"playlist": res.IsPlaylist,
 		}
 		return c.JSON(200, resp)
 	}

@@ -14,7 +14,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleUpdate serves PUT /clips/:id, updating clip metadata such as label, timing, and filters.
 func HandleUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

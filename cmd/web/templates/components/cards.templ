@@ -8,8 +8,8 @@ package components
 templ Card(elevated bool) {
 	<div
 		class={
-			"bg-gray-10 border-2 border-white/10 transition-colors",
-			templ.KV("hover:border-white/30", elevated),
+			templ.KV("card", !elevated),
+			templ.KV("card-elevated", elevated),
 		}
 	>
 		{ children... }
@@ -20,8 +20,8 @@ templ Card(elevated bool) {
 templ CardBox(elevated bool, extraClasses string) {
 	<div
 		class={
-			"bg-gray-10 border-2 border-white/10 transition-colors",
-			templ.KV("hover:border-white/30", elevated),
+			templ.KV("card", !elevated),
+			templ.KV("card-elevated", elevated),
 			extraClasses,
 		}
 	>
@@ -31,9 +31,9 @@ templ CardBox(elevated bool, extraClasses string) {
 
 // CardHeader displays title and optional subtitle with bottom border
 templ CardHeader(title, subtitle string) {
-	<div class="border-b-2 border-white/10 px-4 py-2">
+	<div class="card-header">
 		if title != "" {
-			<h3 class="font-mono font-bold text-sm tracking-tight text-white uppercase">
+			<h3 class="card-header-title">
 				{ title }
 			</h3>
 		}
@@ -47,14 +47,14 @@ templ CardHeader(title, subtitle string) {
 
 // CardBody is the main content area with optional padding
 templ CardBody(padding bool) {
-	<div class={ templ.KV("p-4", padding) }>
+	<div class={ templ.KV("card-body", padding) }>
 		{ children... }
 	</div>
 }
 
 // CardFooter displays footer content with top border
 templ CardFooter() {
-	<div class="border-t-2 border-white/10 px-4 py-2">
+	<div class="card-footer">
 		{ children... }
 	</div>
 }

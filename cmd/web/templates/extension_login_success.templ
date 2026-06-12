@@ -7,7 +7,7 @@ templ ExtensionLoginSuccess() {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>Login Successful</title>
-			<link rel="stylesheet" href="/static/dist/main.css"/>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
 		</head>
 		<body class="flex items-center justify-center min-h-screen bg-black text-white font-mono">
 			<div class="border-2 border-white/10 p-8 text-center">
@@ -29,7 +29,7 @@ templ ExtensionLoginSuccessWithToken(token string, extensionID string) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>Login Successful</title>
-			<link rel="stylesheet" href="/static/dist/main.css"/>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
 		</head>
 		<body class="flex items-center justify-center min-h-screen bg-black text-white font-mono" data-token={ token } data-extension-id={ extensionID }>
 			<div class="border-2 border-white/10 p-8 text-center">

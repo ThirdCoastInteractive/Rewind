@@ -21,6 +21,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/crypto"
 )
 
+// HandleSettingsKeybindingsPage serves GET /settings/keybindings, rendering the keyboard shortcut configuration page.
 func HandleSettingsKeybindingsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

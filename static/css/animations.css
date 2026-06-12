@@ -1,0 +1,104 @@
+/* ============================================================================
+   VIEW TRANSITIONS & ANIMATIONS
+   Black & White Design System - Physical Interaction Model
+   ============================================================================ */
+
+/* Global view transition defaults */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+}
+
+/* Drawer slide animations (Jobs/Settings/Admin) */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+::view-transition-old(drawer),
+::view-transition-new(drawer) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+}
+
+::view-transition-new(drawer) {
+  animation-name: slide-in-right;
+}
+
+::view-transition-old(drawer) {
+  animation-name: slide-out-right;
+}
+
+/* Document morph animations (Video grid → detail) */
+::view-transition-old(video-*),
+::view-transition-new(video-*) {
+  animation-duration: 500ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  mix-blend-mode: normal;
+  overflow: clip;
+}
+
+/* Job slide-up animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+::view-transition-new(job-detail) {
+  animation: slide-up 400ms ease-out;
+}
+
+/* Lift animation (hover states) */
+@keyframes lift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+
+/* Dirty-save pulse glow (amber) */
+@keyframes save-pulse {
+  0%, 100% { box-shadow: 0 0 4px 0 rgba(251, 191, 36, 0.3); }
+  50%      { box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.6); }
+}
+.save-pulse-glow {
+  animation: save-pulse 2s ease-in-out infinite;
+}
+
+/* Fade animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Reduced motion support - CRITICAL for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

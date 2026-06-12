@@ -65,6 +65,10 @@ sql:
             go_type:
               import: "thirdcoast.systems/rewind/pkg/utils/crops"
               type: "CropArray"
+          - column: "clips.shot_list"
+            go_type:
+              import: "thirdcoast.systems/rewind/pkg/utils/crops"
+              type: "ShotList"
           - column: "videos.info"
             go_type:
               import: "thirdcoast.systems/rewind/pkg/videoinfo"

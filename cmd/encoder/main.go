@@ -83,6 +83,9 @@ func main() {
 	if err := dbc.Queries(ctx).ResetStuckExports(ctx); err != nil {
 		slog.Error("failed to recover stuck exports", "error", err)
 	}
+	if err := dbc.Queries(ctx).ResetStuckStitchJobs(ctx); err != nil {
+		slog.Error("failed to recover stuck stitch jobs", "error", err)
+	}
 
 	// Cleanup: requeue any "ready" exports where the file is missing
 	cleanupMissingExportFiles(ctx, dbc)
@@ -90,10 +93,15 @@ func main() {
 	wake := make(chan struct{}, 1)
 	go listenAndSignal(ctx, conf.DatabaseDSN, "clip_exports", wake)
 
+	stitchWake := make(chan struct{}, 1)
+	go listenAndSignal(ctx, conf.DatabaseDSN, "stitch_jobs", stitchWake)
+
 	slog.Info("Encoder workers started", "workers", workers, "worker_id", workerID)
 	for i := 0; i < workers; i++ {
 		go encoderWorker(ctx, dbc, exportsDir, downloadsDir, workerID, wake)
 	}
+	// Run one stitch worker (stitch jobs are typically slower / longer-running)
+	go stitchWorker(ctx, dbc, exportsDir, downloadsDir, workerID, stitchWake)
 
 	<-ctx.Done()
 	slog.Info("Encoder service stopping")

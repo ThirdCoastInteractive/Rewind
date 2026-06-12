@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportsIndex serves GET /admin/exports/index, streaming the paginated exports table via SSE.
 func HandleAdminExportsIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

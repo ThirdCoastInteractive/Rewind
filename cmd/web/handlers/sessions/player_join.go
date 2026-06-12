@@ -8,7 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandlePlayerJoin serves POST /player/join, validating a session code and redirecting to the player view.
 func HandlePlayerJoin(dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		code := strings.TrimSpace(c.FormValue("session_code"))

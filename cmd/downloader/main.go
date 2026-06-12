@@ -211,6 +211,9 @@ func main() {
 		go downloadWorker(ctx, dbc, client, spoolDir, encMgr, wake)
 	}
 
+	// Background backfill of comments for older videos that predate comment ingest.
+	go commentCatchupLoop(ctx, dbc, encMgr)
+
 	<-ctx.Done()
 	slog.Info("Downloader service stopping")
 }
@@ -329,6 +332,11 @@ func processDownloadJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 
 		slog.Info("Using cookies for authenticated download", "job_id", jobID, "user_id", job.ArchivedBy, "cookie_count", len(cookies), "cookies_bytes", len(cookiesContent), "line_count", len(lines))
 		slog.Info("Cookies preview", "job_id", jobID, "preview", preview)
+	}
+
+	// Playlist/channel jobs expand into child video jobs instead of downloading.
+	if job.Kind == "playlist" {
+		return processPlaylistJob(ctx, q, client, job)
 	}
 
 	destDir := filepath.Join(spoolDir, "downloads", jobID)

@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 
@@ -19,9 +20,13 @@ import (
 
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/clip_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/home_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/job_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/marker_api"
 	settingsapi "thirdcoast.systems/rewind/cmd/web/handlers/api/settings_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/stitch_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/tag_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/upload_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/video_api"
 
 	"thirdcoast.systems/rewind/cmd/web/internal/producer"
@@ -31,6 +36,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// Webserver is the main HTTP server that wires together routing, middleware, and all handler groups.
 type Webserver struct {
 	*echo.Echo
 	sessionManager      *auth.SessionManager
@@ -44,6 +50,7 @@ type Webserver struct {
 	allowedExtensionIDs map[string]struct{}
 }
 
+// NewWebserver initializes the Echo server, registers all routes and middleware, and returns a ready-to-start Webserver.
 func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionManager *encryption.Manager, sessionManager *auth.SessionManager) (*Webserver, error) {
 	e := echo.New()
 
@@ -99,15 +106,33 @@ func parseCommaSeparatedSet(raw string) map[string]struct{} {
 	return set
 }
 
+// securityHeaders adds standard security and privacy headers to every response.
+func securityHeaders(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		h := c.Response().Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		return next(c)
+	}
+}
+
 func (s *Webserver) setupMiddleware() error {
 	s.HideBanner = true
 	s.HidePort = true
-	s.Use(middleware.BodyLimit("2M"))
+	s.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
+		Limit: "2M",
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/api/upload"
+		},
+	}))
 	s.Use(middleware.Recover())
 	s.Use(middleware.RequestID())
 	s.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Level: 5,
 	}))
+	s.Use(securityHeaders)
 	s.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		Skipper: func(c echo.Context) bool {
 			switch c.Path() {
@@ -189,6 +214,7 @@ func (s *Webserver) setupMiddleware() error {
 			// Set both values in request context for templates
 			ctx := context.WithValue(c.Request().Context(), ctxkeys.AccessLevel, string(accessLevel))
 			ctx = context.WithValue(ctx, ctxkeys.RegistrationEnabled, regEnabled)
+			ctx = context.WithValue(ctx, ctxkeys.StaticVersion, s.staticCache.DistVersion())
 			c.SetRequest(c.Request().WithContext(ctx))
 
 			return next(c)
@@ -244,12 +270,13 @@ func (s *Webserver) registerRoutes() error {
 	adminGroup.DELETE("/exports/:id", admin.HandleAdminExportDelete(s.sessionManager, s.dbc))
 
 	apiGroup := s.Group("/api")
+	apiGroup.GET("/home/stats", home_api.HandleStats(s.sessionManager, s.dbc))
+	apiGroup.GET("/home/recent-published", home_api.HandleRecentPublished(s.sessionManager, s.dbc))
+	apiGroup.GET("/home/recent-clips", home_api.HandleRecentClips(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/index", video_api.HandleIndex(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/recent", video_api.HandleRecent(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/stream", video_api.HandleStream(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/streams/:filename", video_api.HandleStreamFile(s.sessionManager, s.dbc))
-	apiGroup.GET("/videos/:id/hls/*", video_api.HandleHLS(s.sessionManager, s.dbc))
-	apiGroup.GET("/videos/:id/hls-ready", video_api.HandleHLSCheck(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/thumbnail", video_api.HandleThumbnail(s.sessionManager, s.dbc, s.fileServer))
 	apiGroup.GET("/videos/:id/preview.mp4", video_api.HandlePreview(s.sessionManager, s.dbc, s.fileServer))
 	apiGroup.GET("/videos/:id/seek/seek.json", video_api.HandleSeekManifest(s.sessionManager, s.dbc, s.fileServer))
@@ -262,6 +289,11 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.GET("/videos/:id/markers", video_api.HandleMarkers(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/markers/render", video_api.HandleMarkersRender(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/comments/render", video_api.HandleCommentsRender(s.sessionManager, s.dbc))
+	apiGroup.GET("/videos/:id/tags/render", tag_api.HandleTagsRender(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/:id/tags", tag_api.HandleAddTag(s.sessionManager, s.dbc))
+	apiGroup.DELETE("/videos/:id/tags/:tagId", tag_api.HandleRemoveTag(s.sessionManager, s.dbc))
+	apiGroup.GET("/tags", tag_api.HandleListTags(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/bulk-tag", tag_api.HandleBulkTag(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/transcript/render", video_api.HandleTranscriptRender(s.sessionManager))
 	apiGroup.POST("/videos/:id/markers", video_api.HandleMarkersUpdate(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/clips", video_api.HandleClips(s.sessionManager, s.dbc))
@@ -284,6 +316,8 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.POST("/clips/:clipId/crops", clip_api.HandleCropCreate(s.sessionManager, s.dbc))
 	apiGroup.PUT("/clips/:clipId/crops/:cropId", clip_api.HandleCropUpdate(s.sessionManager, s.dbc))
 	apiGroup.DELETE("/clips/:clipId/crops/:cropId", clip_api.HandleCropDelete(s.sessionManager, s.dbc))
+	apiGroup.PUT("/clips/:clipId/shot-list", clip_api.HandleShotListUpdate(s.sessionManager, s.dbc))
+	apiGroup.POST("/clips/:clipId/multicam-export", clip_api.HandleMulticamExport(s.sessionManager, s.dbc))
 	apiGroup.POST("/clips/:id/exports", clip_api.HandleEnqueueExport(s.sessionManager, s.dbc))
 	apiGroup.GET("/clip-exports/:id/stream", clip_api.HandleExportStatusStream(s.sessionManager, s.dbc))
 	apiGroup.GET("/clip-exports/:id/download", clip_api.HandleDownloadExport(s.sessionManager, s.dbc))
@@ -292,6 +326,7 @@ func (s *Webserver) registerRoutes() error {
 	// Cut page SSE endpoints
 	apiGroup.POST("/videos/:id/cut/filter-cards", video_api.HandleFilterCards())
 
+	apiGroup.POST("/upload", upload_api.HandleUpload(s.sessionManager, s.dbc), middleware.BodyLimit("10G"))
 	apiGroup.POST("/download-jobs", job_api.HandleCreateDownload(s.sessionManager, s.dbc))
 	apiGroup.POST("/jobs/:id/retry", job_api.HandleRetry(s.sessionManager, s.dbc))
 	apiGroup.POST("/jobs/:id/cancel", job_api.HandleCancel(s.sessionManager, s.dbc))
@@ -357,6 +392,24 @@ func (s *Webserver) registerRoutes() error {
 	// Static file serving
 	s.GET("/static/*", s.staticCache.ServeStaticFile("/static/"))
 
+	// Favicon — serve a minimal transparent 1x1 ICO to prevent 404s on every page load.
+	s.GET("/favicon.ico", func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=86400")
+		// 1x1 transparent ICO (70 bytes)
+		ico := []byte{
+			0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x01,
+			0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x30, 0x00,
+			0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00,
+			0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00,
+			0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+		return c.Blob(http.StatusOK, "image/x-icon", ico)
+	})
+
 	// Auth routes
 	s.GET("/login", authhandlers.HandleLoginPage(s.sessionManager, s.dbc))
 	s.POST("/login", authhandlers.HandleLogin(s.sessionManager, s.dbc))
@@ -364,14 +417,31 @@ func (s *Webserver) registerRoutes() error {
 	s.POST("/register", authhandlers.HandleRegister(s.sessionManager, s.dbc, s.settingsCache))
 	s.GET("/logout", authhandlers.HandleLogout(s.sessionManager))
 
+	// Stitch routes
+	apiGroup.GET("/stitch/sources", stitch_api.HandleStitchSourceBrowser(s.sessionManager, s.dbc))
+	apiGroup.POST("/stitch/enqueue", stitch_api.HandleStitchEnqueue(s.sessionManager, s.dbc))
+	apiGroup.GET("/stitch/:id/download", stitch_api.HandleStitchDownload(s.sessionManager, s.dbc))
+	apiGroup.GET("/stitch/:id/stream", stitch_api.HandleStitchStream(s.sessionManager, s.dbc))
+	apiGroup.POST("/stitch/projects", stitch_api.HandleCreateProject(s.sessionManager, s.dbc))
+	apiGroup.PUT("/stitch/projects/:id", stitch_api.HandleSaveProject(s.sessionManager, s.dbc))
+	apiGroup.DELETE("/stitch/projects/:id", stitch_api.HandleDeleteProject(s.sessionManager, s.dbc))
+	apiGroup.GET("/stitch/projects/:id/exports", stitch_api.HandleProjectExports(s.sessionManager, s.dbc))
+	apiGroup.POST("/stitch/render-timeline", stitch_api.HandleRenderTimeline())
+	apiGroup.POST("/stitch/render-detail", stitch_api.HandleRenderDetail())
+	apiGroup.POST("/stitch/render-transition-popup", stitch_api.HandleRenderTransitionPopup())
+
 	// Content routes
+	s.GET("/stitch", content.HandleStitchLibrary(s.sessionManager, s.dbc))
+	s.GET("/stitch/:id", content.HandleStitchEditor(s.sessionManager, s.dbc))
 	s.GET("/jobs", content.HandleJobsPage(s.sessionManager, s.dbc))
 	s.GET("/jobs/:id", content.HandleJobDetailPage(s.sessionManager, s.dbc))
 	s.GET("/videos", content.HandleVideosPage(s.sessionManager, s.dbc))
 	s.GET("/videos/:id/cut", content.HandleVideoCutPage(s.sessionManager, s.dbc))
 	s.GET("/videos/:id", content.HandleVideoDetailPage(s.sessionManager, s.dbc))
+	s.GET("/upload", content.HandleUploadPage(s.sessionManager))
 	s.GET("/bookmarklet", content.HandleBookmarklet(s.sessionManager, s.dbc))
 	s.GET("/", content.HandleHomePage(s.sessionManager))
+	s.POST("/archive", content.HandleArchiveSubmit(s.sessionManager, s.dbc))
 
 	return nil
 }

@@ -1,0 +1,91 @@
+package components
+
+import "fmt"
+
+// TagItem is a single tag for rendering.
+type TagItem struct {
+	ID    string
+	Name  string
+	Color string // optional hex accent; empty = default styling
+}
+
+// TagEditorData holds a video's tags for the editable tag card.
+type TagEditorData struct {
+	VideoID string
+	Tags    []TagItem
+}
+
+// TagFilterItem is a tag with its video count, for the library filter bar.
+type TagFilterItem struct {
+	ID    string
+	Name  string
+	Count int64
+}
+
+// VideoTagEditor renders a video's tags with add/remove controls. The chips live
+// in a stable #video-tags-chips container so add/remove patch just the chips and
+// the add input keeps focus.
+templ VideoTagEditor(data TagEditorData) {
+	<div data-video-tags-editor>
+		<div id="video-tags-chips" class="flex flex-wrap gap-2 mb-3">
+			@TagChips(data)
+		</div>
+		<div class="flex gap-2">
+			<input
+				type="text"
+				class="flex-1 px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+				placeholder="Add a tag…"
+				data-bind="_newTag"
+				data-on:keydown__stop="true"
+			/>
+			<button
+				type="button"
+				class="px-3 py-1.5 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80 transition-colors"
+				data-on:click={ fmt.Sprintf("@post('/api/videos/%s/tags')", data.VideoID) }
+			>
+				Add
+			</button>
+		</div>
+	</div>
+}
+
+// TagChips renders a video's tag chips (each removable). Targeted by SSE on add/remove.
+templ TagChips(data TagEditorData) {
+	if len(data.Tags) == 0 {
+		<span class="text-xs text-white/30 font-mono">No tags yet.</span>
+	}
+	for _, t := range data.Tags {
+		<span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono border border-white/20 bg-white/5 text-white/80">
+			{ t.Name }
+			<button
+				type="button"
+				class="text-white/40 hover:text-white"
+				title="Remove tag"
+				data-on:click={ fmt.Sprintf("@delete('/api/videos/%s/tags/%s')", data.VideoID, t.ID) }
+			>
+				<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+			</button>
+		</span>
+	}
+}
+
+// TagFilterBar renders the library's clickable tag filter. Each chip toggles its
+// id in the $tagIds signal and re-fetches the grid; selected chips get a ring.
+templ TagFilterBar(tags []TagFilterItem) {
+	if len(tags) > 0 {
+		<div class="flex flex-wrap items-center gap-2 mb-4">
+			<span class="text-xs font-mono uppercase tracking-wider text-white/30 mr-1">Tags</span>
+			for _, t := range tags {
+				<button
+					type="button"
+					class="px-2 py-0.5 text-xs font-mono border-2 border-white/20 bg-white/5 text-white/70 hover:border-white/40 ring-white"
+					data-class={ fmt.Sprintf("{'ring-2': $tagIds.includes('%s')}", t.ID) }
+					data-on:click={ fmt.Sprintf("$tagIds = $tagIds.includes('%s') ? $tagIds.filter(x => x !== '%s') : [...$tagIds, '%s']; $page = 1; @get('/api/videos/index')", t.ID, t.ID, t.ID) }
+				>
+					{ t.Name }
+					<span class="text-white/30 ml-1">{ fmt.Sprintf("%d", t.Count) }</span>
+				</button>
+			}
+		</div>
+	}
+}

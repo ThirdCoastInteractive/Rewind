@@ -1,0 +1,129 @@
+/* ============================================================================
+   CUT PAGE TIMELINE COMPONENTS
+   ============================================================================ */
+
+/* Timeline container - base styles */
+.timeline-container {
+  position: relative;
+  user-select: none;
+  touch-action: none;
+}
+
+/* Timeline clip - rendered in content layer */
+.timeline-clip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid;
+  border-right: 2px solid;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.timeline-clip:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.timeline-clip.selected {
+  border-color: rgba(255, 255, 255, 0.8);
+  background-color: rgba(255, 255, 255, 0.2);
+  z-index: 5;
+}
+
+/* Clip resize handles */
+.clip-handle-left,
+.clip-handle-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.clip-handle-left {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.clip-handle-right {
+  right: 0;
+  transform: translateX(50%);
+}
+
+.timeline-clip:hover .clip-handle-left,
+.timeline-clip:hover .clip-handle-right,
+.timeline-clip.selected .clip-handle-left,
+.timeline-clip.selected .clip-handle-right {
+  opacity: 1;
+}
+
+/* Timeline markers */
+.timeline-marker-point {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.timeline-marker-point:hover {
+  filter: brightness(1.3);
+}
+
+.timeline-marker-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-top: 2px solid;
+  border-bottom: 2px solid;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.timeline-marker-range:hover {
+  filter: brightness(1.2);
+}
+
+/* Work window (overview timeline only) */
+.work-window {
+  cursor: move;
+  transition: background-color 150ms ease-out;
+}
+
+.work-window:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.work-handle-left,
+.work-handle-right {
+  transition: background-color 150ms ease-out;
+}
+
+.work-handle-left:hover,
+.work-handle-right:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Playhead lines */
+.playhead-video {
+  pointer-events: none;
+  transition: left 50ms linear;
+}
+
+.playhead-work {
+  pointer-events: none;
+  transition: left 50ms linear;
+}
+
+/* Forced cursor during drag operations – set via document.documentElement.dataset.dragCursor */
+html[data-drag-cursor="ew-resize"],
+html[data-drag-cursor="ew-resize"] * { cursor: ew-resize !important; }
+html[data-drag-cursor="grabbing"],
+html[data-drag-cursor="grabbing"] * { cursor: grabbing !important; }
+html[data-drag-cursor="crosshair"],
+html[data-drag-cursor="crosshair"] * { cursor: crosshair !important; }

@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleRegister serves POST /register, creating a new user account and logging them in.
 func HandleRegister(sm *webauth.SessionManager, dbc *db.DatabaseConnection, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username := strings.TrimSpace(c.FormValue("username"))

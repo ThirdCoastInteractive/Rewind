@@ -5,7 +5,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 )
-
+// HandleHomePage serves GET /, rendering the main landing page.
 func HandleHomePage(sm *auth.SessionManager) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var username string
@@ -13,8 +13,6 @@ func HandleHomePage(sm *auth.SessionManager) echo.HandlerFunc {
 			username = u
 		}
 
-		// Render a fast shell; recent videos are loaded asynchronously via Datastar SSE
-		// from /api/videos/recent.
-		return templates.Index(nil, username).Render(c.Request().Context(), c.Response())
+		return templates.Index(username).Render(c.Request().Context(), c.Response())
 	}
 }

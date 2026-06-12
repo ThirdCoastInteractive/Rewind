@@ -10,13 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
 )
 
 // moveVideoToPermanentStorage moves video files from spool to /downloads/{videoID}/
 // Returns: videoPath, thumbnailPath, fileHash, fileSize, error
-func moveVideoToPermanentStorage(videoID, spoolDir string) (*string, *string, *string, *int64, error) {
+func moveVideoToPermanentStorage(ctx context.Context, videoID, spoolDir string) (*string, *string, *string, *int64, error) {
 	// Create permanent directory: /downloads/{videoID}/
 	permanentDir := filepath.Join("/downloads", videoID)
 	if err := os.MkdirAll(permanentDir, 0755); err != nil {
@@ -29,7 +30,7 @@ func moveVideoToPermanentStorage(videoID, spoolDir string) (*string, *string, *s
 		return nil, nil, nil, nil, fmt.Errorf("glob spool files: %w", err)
 	}
 
-	preferredVideoSrcPath := pickPreferredVideoPath(files)
+	preferredVideoSrcPath := pickPreferredVideoPath(ctx, files)
 	preferredImageSrcPath := pickPreferredImagePath(files)
 
 	var videoPath *string
@@ -40,7 +41,7 @@ func moveVideoToPermanentStorage(videoID, spoolDir string) (*string, *string, *s
 		filename := filepath.Base(srcPath)
 		ext := strings.ToLower(filepath.Ext(filename))
 
-		isVideo := ext == ".mp4" || ext == ".mkv" || ext == ".webm" || ext == ".avi" || ext == ".mov"
+		isVideo := isVideoExt(ext)
 		if isVideo && preferredVideoSrcPath != "" && srcPath != preferredVideoSrcPath {
 			// yt-dlp can leave both the original container (e.g. .webm) and the remuxed file (e.g. .mkv).
 			// We only want one canonical video in permanent storage.
@@ -89,6 +90,19 @@ func moveVideoToPermanentStorage(videoID, spoolDir string) (*string, *string, *s
 	// Clean up spool directory (best-effort).
 	_ = os.RemoveAll(spoolDir)
 
+	// Normalize to a single browser-playable, faststart MP4. yt-dlp already remuxes
+	// to mp4 in the common case, so this is usually just a faststart. When it fell
+	// back to mkv (incompatible audio/subtitles) or this is a raw upload, the source
+	// is converted in one pass — video copied unless legacy, audio transcoded to AAC
+	// only when unplayable — and the verified-redundant source is removed.
+	if videoPath != nil {
+		if normalized, err := ensureStreamableMP4(ctx, *videoPath); err != nil {
+			slog.Warn("normalize to streamable mp4 failed (keeping original)", "path", *videoPath, "error", err)
+		} else {
+			videoPath = &normalized
+		}
+	}
+
 	// Compute SHA256 hash and size of video file if present
 	var fileHash *string
 	var fileSize *int64
@@ -132,7 +146,7 @@ func destFilenameForIngestAsset(videoID string, srcFilename string) string {
 
 	// Video file
 	ext := strings.ToLower(filepath.Ext(srcFilename))
-	if ext == ".mp4" || ext == ".mkv" || ext == ".webm" || ext == ".avi" || ext == ".mov" {
+	if isVideoExt(ext) {
 		return videoID + ".video" + ext
 	}
 
@@ -175,7 +189,7 @@ func moveOrCopyFile(srcPath, destPath string) error {
 	return nil
 }
 
-func migrateVideoDirAssets(videoID string, videoPath string, thumbnailPath *string) (string, *string, error) {
+func migrateVideoDirAssets(ctx context.Context, videoID string, videoPath string, thumbnailPath *string) (string, *string, error) {
 	videoID = strings.TrimSpace(videoID)
 	videoPath = strings.TrimSpace(videoPath)
 	if videoID == "" || videoPath == "" {
@@ -187,8 +201,9 @@ func migrateVideoDirAssets(videoID string, videoPath string, thumbnailPath *stri
 		return videoPath, thumbnailPath, nil
 	}
 
-	// VIDEO: rename preferred to <uuid>.video.<ext> and delete other video containers.
-	preferredVideo := pickPreferredVideoPath(files)
+	// VIDEO: rename the preferred (validated, readable) video to <uuid>.video.<ext>,
+	// then normalize it to a streamable MP4.
+	preferredVideo := pickPreferredVideoPath(ctx, files)
 	if preferredVideo != "" {
 		ext := strings.ToLower(filepath.Ext(preferredVideo))
 		desired := filepath.Join(dir, videoID+".video"+ext)
@@ -198,20 +213,40 @@ func migrateVideoDirAssets(videoID string, videoPath string, thumbnailPath *stri
 			}
 		}
 		videoPath = desired
-		for _, p := range files {
-			e := strings.ToLower(filepath.Ext(p))
-			isVideo := e == ".mp4" || e == ".mkv" || e == ".webm" || e == ".avi" || e == ".mov"
-			if !isVideo {
-				continue
+
+		// Prune other video containers ONLY when the kept video is a readable,
+		// valid video. Never delete a container in favour of an unreadable one —
+		// that was the cause of a real archive-deletion bug (a broken .mp4 stub
+		// displacing the real .mkv).
+		if isReadableVideoFile(ctx, videoPath) {
+			for _, p := range files {
+				if !isVideoExt(strings.ToLower(filepath.Ext(p))) {
+					continue
+				}
+				if filepath.Clean(p) == filepath.Clean(videoPath) {
+					continue
+				}
+				// Never prune derived assets — only source containers. The hover
+				// preview (<uuid>.preview.mp4) is an .mp4 but not a source video.
+				base := strings.ToLower(filepath.Base(p))
+				if base == "preview.mp4" || strings.Contains(base, ".preview.") {
+					continue
+				}
+				if err := os.Remove(p); err == nil {
+					slog.Info("pruned redundant video container", "video_id", videoID, "path", p)
+				}
 			}
-			if filepath.Clean(p) == filepath.Clean(videoPath) {
-				continue
-			}
-			_ = os.Remove(p)
+		} else {
+			slog.Warn("skip pruning extra video containers: preferred video is not readable",
+				"video_id", videoID, "preferred", videoPath)
 		}
 
-		// Migrate non-MP4 files to MP4 for browser compatibility
-		videoPath = migrateVideoToMp4(videoPath)
+		// Ensure the canonical video is a browser-playable, faststart MP4.
+		if normalized, err := ensureStreamableMP4(ctx, videoPath); err != nil {
+			slog.Warn("migrate: normalize to streamable mp4 failed (keeping original)", "path", videoPath, "error", err)
+		} else {
+			videoPath = normalized
+		}
 	}
 
 	// INFO: rename any *.info.json to <uuid>.info.json
@@ -329,7 +364,7 @@ func isCanonicalVideoDir(dir string, videoID string) bool {
 
 // migrateVideoAssetsToCanonicalDir moves assets from whatever directory videos.video_path points at
 // into the canonical /downloads/<uuid>/ directory, then renames into uuid.<kind>.*.
-func migrateVideoAssetsToCanonicalDir(videoID string, videoPath string, thumbnailPath *string) (string, *string, error) {
+func migrateVideoAssetsToCanonicalDir(ctx context.Context, videoID string, videoPath string, thumbnailPath *string) (string, *string, error) {
 	videoID = strings.TrimSpace(videoID)
 	videoPath = strings.TrimSpace(videoPath)
 	if videoID == "" || videoPath == "" {
@@ -338,7 +373,7 @@ func migrateVideoAssetsToCanonicalDir(videoID string, videoPath string, thumbnai
 
 	oldDir := filepath.Dir(videoPath)
 	if isCanonicalVideoDir(oldDir, videoID) {
-		return migrateVideoDirAssets(videoID, videoPath, thumbnailPath)
+		return migrateVideoDirAssets(ctx, videoID, videoPath, thumbnailPath)
 	}
 
 	newDir := filepath.Join(string(filepath.Separator)+"downloads", videoID)
@@ -371,7 +406,7 @@ func migrateVideoAssetsToCanonicalDir(videoID string, videoPath string, thumbnai
 
 	// Provide a "videoPath" inside the newDir so migrateVideoDirAssets scans the right directory.
 	stub := filepath.Join(newDir, filepath.Base(videoPath))
-	return migrateVideoDirAssets(videoID, stub, thumbnailPath)
+	return migrateVideoDirAssets(ctx, videoID, stub, thumbnailPath)
 }
 
 func suffixFromFirstDot(filename string) string {
@@ -384,49 +419,101 @@ func suffixFromFirstDot(filename string) string {
 	return filename[idx:]
 }
 
-func pickPreferredVideoPath(paths []string) string {
-	// Prefer MP4 when available (we remux to mp4 for browser compatibility), otherwise fall back.
-	// Within the same extension priority, prefer the largest file.
+// minValidVideoBytes is the smallest size we consider a plausibly-valid video
+// container. Anything smaller is treated as a broken/truncated stub and ignored
+// by preferred-video selection so it can never displace a real archive file.
+const minValidVideoBytes = 1024
+
+// pickPreferredVideoPath chooses the canonical video from a set of files. It
+// prefers MP4 (browser-native) then other containers, and within a priority the
+// largest file. Candidates are validated with ffprobe: a readable video always
+// beats an unreadable/broken one regardless of extension, so a corrupt ".mp4"
+// stub can never outrank a real ".mkv" (the cause of a real archive-deletion bug).
+// Only if NO candidate is readable does it fall back to the size/extension pick,
+// so a transiently-unprobeable file is still returned rather than dropped.
+func pickPreferredVideoPath(ctx context.Context, paths []string) string {
 	priorities := map[string]int{
 		".mp4":  0,
 		".webm": 1,
 		".mkv":  2,
 		".mov":  3,
 		".avi":  4,
+		".flv":  5,
+		".wmv":  5,
+		".mpg":  5,
+		".mpeg": 5,
+		".m4v":  1,
+		".ts":   5,
+		".mts":  5,
+		".m2ts": 5,
+		".vob":  5,
+		".3gp":  5,
+		".ogv":  5,
+		".divx": 5,
+		".asf":  5,
+		".f4v":  5,
+		".rm":   6,
+		".rmvb": 6,
 	}
 
-	bestPath := ""
-	bestPri := int(^uint(0) >> 1) // max int
-	var bestSize int64 = -1
+	pick := func(requireReadable bool) string {
+		bestPath := ""
+		bestPri := int(^uint(0) >> 1) // max int
+		var bestSize int64 = -1
 
-	for _, p := range paths {
-		base := strings.ToLower(filepath.Base(p))
-		// Never treat previews as the canonical video.
-		// Old layout: preview.mp4
-		// New layout: <uuid>.preview.mp4
-		if base == "preview.mp4" || strings.Contains(base, ".preview.") || strings.HasSuffix(base, ".preview.mp4") {
-			continue
+		for _, p := range paths {
+			base := strings.ToLower(filepath.Base(p))
+			// Never treat previews as the canonical video.
+			if base == "preview.mp4" || strings.Contains(base, ".preview.") || strings.HasSuffix(base, ".preview.mp4") {
+				continue
+			}
+
+			ext := strings.ToLower(filepath.Ext(p))
+			pri, ok := priorities[ext]
+			if !ok {
+				continue
+			}
+
+			sz := int64(-1)
+			if fi, err := os.Stat(p); err == nil {
+				sz = fi.Size()
+			}
+
+			// Skip obviously-broken/truncated outputs (e.g. a failed conversion
+			// that left an empty ftyp+mdat stub).
+			if sz >= 0 && sz < minValidVideoBytes {
+				continue
+			}
+
+			if requireReadable && !isReadableVideoFile(ctx, p) {
+				continue
+			}
+
+			if bestPath == "" || pri < bestPri || (pri == bestPri && sz > bestSize) {
+				bestPath = p
+				bestPri = pri
+				bestSize = sz
+			}
 		}
 
-		ext := strings.ToLower(filepath.Ext(p))
-		pri, ok := priorities[ext]
-		if !ok {
-			continue
-		}
-
-		sz := int64(-1)
-		if fi, err := os.Stat(p); err == nil {
-			sz = fi.Size()
-		}
-
-		if bestPath == "" || pri < bestPri || (pri == bestPri && sz > bestSize) {
-			bestPath = p
-			bestPri = pri
-			bestSize = sz
-		}
+		return bestPath
 	}
 
-	return bestPath
+	if p := pick(true); p != "" {
+		return p
+	}
+	return pick(false)
+}
+
+func isVideoExt(ext string) bool {
+	switch ext {
+	case ".mp4", ".mkv", ".webm", ".avi", ".mov",
+		".flv", ".wmv", ".mpg", ".mpeg", ".m4v",
+		".ts", ".mts", ".m2ts", ".vob", ".3gp",
+		".ogv", ".divx", ".asf", ".f4v", ".rm", ".rmvb":
+		return true
+	}
+	return false
 }
 
 // computeFileHashAndSize computes SHA256 hash and file size
@@ -476,92 +563,99 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, srcInfo.Mode())
 }
 
-// remuxToMp4 remuxes a video file to MP4 format using ffmpeg.
-// This is a migration step for existing videos that were remuxed to MKV or other formats.
-// Adds Rewind branding metadata to the output.
-// Returns the new mp4 path if successful, or empty string if remux failed/skipped.
-func remuxToMp4(srcPath string) (string, error) {
-	ext := strings.ToLower(filepath.Ext(srcPath))
-	if ext == ".mp4" {
-		// Already mp4, just add metadata if missing
-		return srcPath, nil
+// isReadableVideoFile reports whether ffprobe can read the file and finds at
+// least one video stream. Used to validate candidates before treating one as
+// the canonical video (and before deleting any "redundant" sibling), so a
+// broken/empty stub can never displace a real archive file.
+func isReadableVideoFile(ctx context.Context, path string) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	probe, err := ffmpeg.Probe(probeCtx, path)
+	if err != nil {
+		return false
 	}
-	if ext != ".mkv" && ext != ".webm" && ext != ".avi" && ext != ".mov" {
-		return "", nil
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return "", nil
-	}
-
-	// Build mp4 path
-	mp4Path := strings.TrimSuffix(srcPath, filepath.Ext(srcPath)) + ".mp4"
-
-	// If mp4 already exists, skip remux
-	if _, err := os.Stat(mp4Path); err == nil {
-		slog.Debug("mp4 already exists, skipping remux", "src", srcPath, "mp4", mp4Path)
-		return mp4Path, nil
-	}
-
-	slog.Info("remuxing to mp4", "src", srcPath, "dest", mp4Path)
-
-	// Use ffmpeg to remux (copy streams, no re-encoding)
-	// Add Rewind branding metadata and strip source handler names
-	if err := ffmpeg.Remux(context.Background(), srcPath, mp4Path, &ffmpeg.RemuxOptions{
-		Metadata: map[string]string{
-			"encoded_by":         "Rewind Video Archive",
-			"comment":            "Archived with Rewind",
-			"handler_name":       "Rewind Video Archive Handler",
-			"s:v:0:handler_name": "Rewind Video Archive Handler",
-			"s:a:0:handler_name": "Rewind Video Archive Handler",
-		},
-	}); err != nil {
-		slog.Error("ffmpeg remux failed", "error", err, "src", srcPath)
-		// Clean up partial output
-		_ = os.Remove(mp4Path)
-		return "", fmt.Errorf("ffmpeg remux failed: %w", err)
-	}
-
-	// Verify mp4 was created
-	if _, err := os.Stat(mp4Path); os.IsNotExist(err) {
-		return "", fmt.Errorf("mp4 file not created after remux")
-	}
-
-	// Remove the original file
-	if err := os.Remove(srcPath); err != nil {
-		slog.Warn("failed to remove original after remux", "path", srcPath, "error", err)
-	}
-
-	slog.Info("remux complete", "mp4", mp4Path)
-	return mp4Path, nil
+	return probe.VideoStreams >= 1 && strings.TrimSpace(probe.VideoCodec) != ""
 }
 
-// migrateVideoToMp4 checks if a video is in a non-MP4 format and remuxes it to MP4.
-// This is called during ingest to migrate existing videos.
-// Returns the updated video path (mp4 if migrated, original otherwise).
-func migrateVideoToMp4(videoPath string) string {
-	if videoPath == "" {
-		return videoPath
+// verifyPlayableMP4 reports whether path is a non-trivial MP4 with a decodable
+// video stream and browser-playable codecs. This is the gate that must pass
+// before a normalized output is allowed to replace (and trigger deletion of)
+// its source.
+func verifyPlayableMP4(ctx context.Context, path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() < minValidVideoBytes {
+		return false
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	probe, err := ffmpeg.Probe(probeCtx, path)
+	if err != nil {
+		return false
+	}
+	if probe.VideoStreams < 1 || strings.TrimSpace(probe.VideoCodec) == "" {
+		return false
+	}
+	// Normalization should have produced browser-playable codecs.
+	return !ffmpeg.NeedsVideoTranscode(probe) && !ffmpeg.NeedsAudioTranscode(probe)
+}
+
+// ensureStreamableMP4 makes videoPath a browser-playable, faststart MP4 in place.
+//
+//   - An already-streamable .mp4 just gets faststart applied and is returned as-is.
+//   - Otherwise it is normalized in one pass to <base>.mp4 (video copied unless the
+//     codec is legacy/unplayable, audio transcoded to AAC only when unplayable,
+//     subtitles dropped). The output is ffprobe-verified BEFORE the now-redundant
+//     source is deleted, so a failed conversion can never destroy the original.
+//
+// Returns the path to the streamable video (the new .mp4 on success, the original
+// on any failure).
+func ensureStreamableMP4(ctx context.Context, videoPath string) (string, error) {
+	if strings.TrimSpace(videoPath) == "" {
+		return videoPath, nil
+	}
+	probe, err := ffmpeg.Probe(ctx, videoPath)
+	if err != nil {
+		return videoPath, fmt.Errorf("ensure streamable: probe %s: %w", videoPath, err)
 	}
 
 	ext := strings.ToLower(filepath.Ext(videoPath))
-	if ext == ".mp4" {
-		return videoPath
-	}
-	if ext != ".mkv" && ext != ".webm" && ext != ".avi" && ext != ".mov" {
-		return videoPath
-	}
-
-	mp4Path, err := remuxToMp4(videoPath)
-	if err != nil {
-		slog.Warn("failed to migrate to mp4", "path", videoPath, "error", err)
-		return videoPath // Keep original on failure
+	if ext == ".mp4" && ffmpeg.IsStreamableMP4(probe) {
+		if !mp4HasFaststart(videoPath) {
+			if err := ffmpeg.ApplyFaststart(ctx, videoPath); err != nil {
+				slog.Warn("faststart failed (video still usable)", "path", videoPath, "error", err)
+			} else {
+				slog.Info("applied faststart to streamable mp4", "path", videoPath)
+			}
+		}
+		return videoPath, nil
 	}
 
-	if mp4Path != "" {
-		return mp4Path
+	mp4Path := strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".mp4"
+	tmpPath := mp4Path + ".normalize.tmp.mp4"
+	_ = os.Remove(tmpPath)
+
+	slog.Info("normalizing to streamable mp4",
+		"src", videoPath, "video_codec", probe.VideoCodec, "audio_codec", probe.AudioCodec,
+		"reencode_video", ffmpeg.NeedsVideoTranscode(probe), "transcode_audio", ffmpeg.NeedsAudioTranscode(probe))
+
+	if err := ffmpeg.NormalizeToStreamableMP4(ctx, videoPath, tmpPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return videoPath, fmt.Errorf("ensure streamable: normalize %s: %w", videoPath, err)
+	}
+	if !verifyPlayableMP4(ctx, tmpPath) {
+		_ = os.Remove(tmpPath)
+		return videoPath, fmt.Errorf("ensure streamable: normalized output failed verification: %s", tmpPath)
 	}
 
-	return videoPath
+	// Output verified. Now it is safe to retire the (verified-redundant) source.
+	if filepath.Clean(videoPath) != filepath.Clean(mp4Path) {
+		if err := os.Remove(videoPath); err != nil {
+			slog.Warn("failed to remove source after normalize", "path", videoPath, "error", err)
+		}
+	}
+	if err := os.Rename(tmpPath, mp4Path); err != nil {
+		return videoPath, fmt.Errorf("ensure streamable: rename %s -> %s: %w", tmpPath, mp4Path, err)
+	}
+	slog.Info("normalized to streamable mp4", "path", mp4Path)
+	return mp4Path, nil
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	_ "image/jpeg"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -94,10 +95,6 @@ func main() {
 		}
 	}()
 
-	// Best-effort: catch up missing thumbnails/previews/assets for already-ingested videos.
-	// Each ingest worker performs a small catchup unit on startup so scaled ingest replicas
-	// actually contribute to asset backfill.
-
 	workers := envInt("INGEST_WORKERS", 2)
 	wake := make(chan struct{}, 1)
 	go listenAndSignal(ctx, conf.DatabaseDSN, "ingest_jobs", wake)
@@ -106,6 +103,24 @@ func main() {
 	for i := 0; i < workers; i++ {
 		go ingestWorker(ctx, dbc, wake)
 	}
+
+	// Background asset backfill runs in its own goroutine, NOT in the worker loop,
+	// so heavy work (normalizing large videos can take many minutes) never starves
+	// the ingest job queue. One-time recovery/probe first, then steady catchup.
+	go func() {
+		recoverOrphanedVideoPaths(ctx, dbc)
+		runProbeBackfill(ctx, dbc)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			runAssetCatchupUnit(ctx, dbc)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 
 	<-ctx.Done()
 	slog.Info("Ingest service stopping")
@@ -148,6 +163,94 @@ func runProbeBackfill(ctx context.Context, dbc *db.DatabaseConnection) {
 				"audio_streams", probeResult.AudioStreams)
 		}
 	}
+}
+
+// recoverOrphanedVideoPaths resolves videos whose video_path is unset — ingests
+// that never completed, leaving a file on disk but no DB path (so the catchup
+// loop, which requires a non-null path, skips them forever).
+//
+// For each, it scans the canonical /downloads/<id>/ directory:
+//   - If a readable (ffprobe-validated) video file is found, its path is persisted
+//     so the asset-catchup loop will canonicalize and normalize it.
+//   - If only broken/unprobeable video files are present, the download is unusable,
+//     so those files are removed. The DB row is left intact.
+func recoverOrphanedVideoPaths(ctx context.Context, dbc *db.DatabaseConnection) {
+	q := dbc.Queries(ctx)
+	ids, err := q.ListVideosMissingVideoPath(ctx, 500)
+	if err != nil {
+		slog.Warn("orphan path recovery query failed", "error", err)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	slog.Info("orphan video path recovery start", "candidates", len(ids))
+
+	recovered, removed, skipped := 0, 0, 0
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		dir := filepath.Join("/downloads", id)
+		files, _ := filepath.Glob(filepath.Join(dir, "*"))
+
+		// Collect candidate source video files (exclude derived hover previews).
+		var videoFiles []string
+		for _, f := range files {
+			if !isVideoExt(strings.ToLower(filepath.Ext(f))) {
+				continue
+			}
+			base := strings.ToLower(filepath.Base(f))
+			if base == "preview.mp4" || strings.Contains(base, ".preview.") {
+				continue
+			}
+			videoFiles = append(videoFiles, f)
+		}
+		if len(videoFiles) == 0 {
+			skipped++
+			continue // nothing on disk to recover
+		}
+
+		// Partition into readable vs broken via ffprobe.
+		var readable, broken []string
+		for _, vf := range videoFiles {
+			if isReadableVideoFile(ctx, vf) {
+				readable = append(readable, vf)
+			} else {
+				broken = append(broken, vf)
+			}
+		}
+
+		if len(readable) > 0 {
+			candidate := pickPreferredVideoPath(ctx, readable)
+			if candidate == "" {
+				candidate = readable[0]
+			}
+			var idUUID pgtype.UUID
+			if err := idUUID.Scan(id); err != nil {
+				continue
+			}
+			if err := q.UpdateVideoPath(ctx, &db.UpdateVideoPathParams{ID: idUUID, VideoPath: &candidate}); err != nil {
+				slog.Warn("orphan path recovery: failed to set video_path", "video_id", id, "error", err)
+				continue
+			}
+			slog.Info("orphan path recovery: resolved video_path from disk", "video_id", id, "path", candidate)
+			recovered++
+			continue
+		}
+
+		// Every video file is a broken/unprobeable download — remove them.
+		for _, b := range broken {
+			if err := os.Remove(b); err != nil {
+				slog.Warn("orphan path recovery: failed to remove broken video file", "video_id", id, "path", b, "error", err)
+			} else {
+				slog.Info("orphan path recovery: removed broken video file", "video_id", id, "path", b)
+				removed++
+			}
+		}
+	}
+	slog.Info("orphan video path recovery complete",
+		"recovered", recovered, "broken_removed", removed, "skipped_no_file", skipped)
 }
 
 // runAssetCatchupUnit performs a small amount of asset backfill work (best-effort).
@@ -214,7 +317,7 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) {
 		}
 
 		// Migration: move from old DB paths into canonical /downloads/<uuid>/ and rename into uuid.<kind>.*.
-		migratedVideoPath, migratedThumbPath, _ := migrateVideoAssetsToCanonicalDir(videoID, videoPath, thumbPath)
+		migratedVideoPath, migratedThumbPath, _ := migrateVideoAssetsToCanonicalDir(ctx, videoID, videoPath, thumbPath)
 		if strings.TrimSpace(migratedVideoPath) != "" && strings.TrimSpace(migratedVideoPath) != videoPath {
 			videoPath = strings.TrimSpace(migratedVideoPath)
 			slog.Info("asset catchup migrated video path", "video_id", videoID, "new_path", videoPath)
@@ -266,6 +369,16 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) {
 
 		// Only attempt asset generation if the video file is readable
 		if _, hasProbeErr := assetErrors["video_file"]; !hasProbeErr {
+			// Faststart: repair MP4 moov atom position for instant browser seeking.
+			// Stream-copy only — no re-encoding, no quality loss.
+			if strings.ToLower(filepath.Ext(videoPath)) == ".mp4" && !mp4HasFaststart(videoPath) {
+				slog.Info("asset catchup: applying faststart to existing MP4", "video_id", videoID)
+				if err := ffmpeg.ApplyFaststart(ctx, videoPath); err != nil {
+					slog.Warn("asset catchup: faststart failed", "video_id", videoID, "error", err)
+					assetErrors["faststart"] = err.Error()
+				}
+			}
+
 			// Thumbnail: find existing or generate
 			if p, err := generateVideoThumbnail(ctx, videoPath, videoID, false); err == nil {
 				_ = q.UpdateVideoThumbnailPath(ctx, &db.UpdateVideoThumbnailPathParams{ID: idUUID, ThumbnailPath: p})
@@ -290,6 +403,17 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) {
 			if _, err := generateVideoWaveform(ctx, videoPath, videoID, durationSeconds, false); err != nil {
 				slog.Warn("asset catchup waveform failed", "video_id", videoID, "error", err)
 				assetErrors["waveform"] = err.Error()
+			}
+
+			// Ensure the canonical video is a browser-playable, faststart MP4.
+			// (Replaces the old HLS demux/transcode pipeline — playback is now a
+			// direct stream of a normalized MP4.)
+			if normalized, nErr := ensureStreamableMP4(ctx, videoPath); nErr != nil {
+				slog.Warn("asset catchup normalize failed", "video_id", videoID, "error", nErr)
+				assetErrors["video_normalize"] = nErr.Error()
+			} else if normalized != videoPath {
+				videoPath = normalized
+				_ = q.UpdateVideoPath(ctx, &db.UpdateVideoPathParams{ID: idUUID, VideoPath: &videoPath})
 			}
 
 			// Captions: find existing or generate via Whisper
@@ -532,10 +656,64 @@ func verifyAllAssetStatus(videoPath, videoID string, fileHash *string) map[strin
 	_, _, capOK := findCanonicalCaptionFilePath(dir, videoID)
 	status["captions"] = capOK
 
-	// HLS
-	status["hls"] = hasHLS(videoPath)
+	// Faststart: MP4 moov atom at front for instant browser seek.
+	// Non-MP4 formats (WebM, MKV) don't use this structure, mark as N/A (true).
+	if strings.ToLower(filepath.Ext(videoPath)) == ".mp4" {
+		status["faststart"] = mp4HasFaststart(videoPath)
+	} else {
+		status["faststart"] = true
+	}
 
 	return status
+}
+
+// mp4HasFaststart reports whether an MP4 file's moov atom appears before the
+// first mdat atom.  When true, browsers can seek without buffering the file.
+func mp4HasFaststart(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 8)
+	for {
+		if _, err := io.ReadFull(f, buf); err != nil {
+			return false
+		}
+		size := uint64(buf[0])<<24 | uint64(buf[1])<<16 | uint64(buf[2])<<8 | uint64(buf[3])
+		atomType := string(buf[4:8])
+
+		if atomType == "moov" {
+			return true
+		}
+		if atomType == "mdat" {
+			return false
+		}
+
+		// Extended size: size==1 means 8-byte size follows immediately.
+		if size == 1 {
+			var extBuf [8]byte
+			if _, err := io.ReadFull(f, extBuf[:]); err != nil {
+				return false
+			}
+			size = uint64(extBuf[0])<<56 | uint64(extBuf[1])<<48 | uint64(extBuf[2])<<40 | uint64(extBuf[3])<<32 |
+				uint64(extBuf[4])<<24 | uint64(extBuf[5])<<16 | uint64(extBuf[6])<<8 | uint64(extBuf[7])
+			if size < 16 {
+				return false
+			}
+			if _, err := f.Seek(int64(size-16), io.SeekCurrent); err != nil {
+				return false
+			}
+		} else {
+			if size < 8 {
+				return false
+			}
+			if _, err := f.Seek(int64(size-8), io.SeekCurrent); err != nil {
+				return false
+			}
+		}
+	}
 }
 
 func updateVideoAssetsStatus(ctx context.Context, q db.Querier, videoID string, status map[string]any) error {
@@ -552,18 +730,33 @@ func updateVideoAssetsStatus(ctx context.Context, q db.Querier, videoID string, 
 	})
 }
 
+// startHeartbeat begins a background goroutine that periodically touches updated_at
+// on a processing ingest job. This prevents the recovery goroutine from resetting
+// long-running jobs (e.g. Whisper, seek sprites, HLS) back to "queued".
+// Returns a cancel function that must be called when processing finishes.
+func startHeartbeat(ctx context.Context, q *db.Queries, jobID pgtype.UUID) context.CancelFunc {
+	hbCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-ticker.C:
+				if err := q.HeartbeatIngestJob(hbCtx, jobID); err != nil {
+					if hbCtx.Err() == nil {
+						slog.Warn("heartbeat failed for ingest job", "job_id", jobID, "error", err)
+					}
+				}
+			}
+		}
+	}()
+	return cancel
+}
+
 func ingestWorker(ctx context.Context, dbc *db.DatabaseConnection, wake <-chan struct{}) {
 	q := dbc.Queries(ctx)
-
-	// Ensure each worker contributes at least a little to asset catchup.
-	// This is intentionally best-effort and bounded.
-	runAssetCatchupUnit(ctx, dbc)
-
-	// Backfill probe_data for existing videos that don't have it yet.
-	runProbeBackfill(ctx, dbc)
-
-	catchupTicker := time.NewTicker(2 * time.Minute)
-	defer catchupTicker.Stop()
 
 	for {
 		if ctx.Err() != nil {
@@ -581,32 +774,48 @@ func ingestWorker(ctx context.Context, dbc *db.DatabaseConnection, wake <-chan s
 				break
 			}
 
-			// Dispatch to the appropriate handler based on job type
-			// Regeneration jobs have no info_json_path or spool_dir
-			isRegenerationJob := (job.InfoJsonPath == nil || strings.TrimSpace(*job.InfoJsonPath) == "") &&
-				(job.SpoolDir == nil || strings.TrimSpace(*job.SpoolDir) == "")
+			// Start heartbeat to prevent recovery goroutine from reclaiming
+			// this job while long-running operations (Whisper, seek sprites,
+			// HLS demux, etc.) are in progress.
+			stopHeartbeat := startHeartbeat(ctx, q, job.IngestJobID)
 
-			if isRegenerationJob {
-				if err := processAssetRegenerationJob(ctx, q, job); err != nil {
-					slog.Error("asset regeneration job failed", "ingest_job_id", job.IngestJobID, "error", err)
-					errMsg := err.Error()
-					_ = q.MarkIngestJobFailed(ctx, &db.MarkIngestJobFailedParams{ID: job.IngestJobID, LastError: &errMsg})
+			// Process with panic recovery so a crashing job doesn't kill the
+			// whole worker goroutine, and always marks the job as failed.
+			func() {
+				defer stopHeartbeat()
+				defer func() {
+					if r := recover(); r != nil {
+						errMsg := fmt.Sprintf("panic: %v", r)
+						slog.Error("ingest job panicked", "ingest_job_id", job.IngestJobID, "panic", r)
+						_ = q.MarkIngestJobFailed(ctx, &db.MarkIngestJobFailedParams{ID: job.IngestJobID, LastError: &errMsg})
+					}
+				}()
+
+				// Dispatch to the appropriate handler based on job type
+				// Regeneration jobs have no info_json_path or spool_dir
+				isRegenerationJob := (job.InfoJsonPath == nil || strings.TrimSpace(*job.InfoJsonPath) == "") &&
+					(job.SpoolDir == nil || strings.TrimSpace(*job.SpoolDir) == "")
+
+				if isRegenerationJob {
+					if err := processAssetRegenerationJob(ctx, q, job); err != nil {
+						slog.Error("asset regeneration job failed", "ingest_job_id", job.IngestJobID, "error", err)
+						errMsg := err.Error()
+						_ = q.MarkIngestJobFailed(ctx, &db.MarkIngestJobFailedParams{ID: job.IngestJobID, LastError: &errMsg})
+					}
+				} else {
+					if err := processIngestJob(ctx, q, job); err != nil {
+						slog.Error("ingest job failed", "ingest_job_id", job.IngestJobID, "error", err)
+						errMsg := err.Error()
+						_ = q.MarkIngestJobFailed(ctx, &db.MarkIngestJobFailedParams{ID: job.IngestJobID, LastError: &errMsg})
+					}
 				}
-			} else {
-				if err := processIngestJob(ctx, q, job); err != nil {
-					slog.Error("ingest job failed", "ingest_job_id", job.IngestJobID, "error", err)
-					errMsg := err.Error()
-					_ = q.MarkIngestJobFailed(ctx, &db.MarkIngestJobFailedParams{ID: job.IngestJobID, LastError: &errMsg})
-				}
-			}
+			}()
 		}
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-wake:
-		case <-catchupTicker.C:
-			runAssetCatchupUnit(ctx, dbc)
 		case <-time.After(5 * time.Second):
 		}
 	}
@@ -637,7 +846,7 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 		// video_path not set in DB - try to find the file at the canonical location
 		dir := filepath.Join("/downloads", videoID)
 		files, _ := filepath.Glob(filepath.Join(dir, "*"))
-		discovered := pickPreferredVideoPath(files)
+		discovered := pickPreferredVideoPath(ctx, files)
 		if discovered == "" {
 			return fmt.Errorf("video %s has no video_path and no video file found in %s", videoID, dir)
 		}
@@ -721,14 +930,10 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 		}
 	}
 
-	// Regenerate HLS (demux + segment)
-	if scope == "all" || scope == "hls" {
-		if _, hlsErr := regenerateHLS(ctx, videoPath, videoID); hlsErr != nil {
-			slog.Warn("HLS regeneration failed", "video_id", videoID, "error", hlsErr)
-		} else {
-			slog.Info("regenerated HLS", "video_id", videoID)
-		}
-		// Ensure streams manifest is up-to-date
+	// Refresh the alternate-quality streams manifest. (HLS has been removed —
+	// playback is a direct stream of the normalized MP4, and quality variants are
+	// offered as direct alternate <source> files.)
+	if scope == "all" || scope == "streams" {
 		writeStreamsManifest(ctx, videoPath)
 	}
 
@@ -980,7 +1185,7 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 
 	// Move files from spool to permanent storage
 	if job.SpoolDir != nil && *job.SpoolDir != "" {
-		videoPath, thumbPath, fileHash, fileSize, err = moveVideoToPermanentStorage(video.ID.String(), *job.SpoolDir)
+		videoPath, thumbPath, fileHash, fileSize, err = moveVideoToPermanentStorage(ctx, video.ID.String(), *job.SpoolDir)
 		if err != nil {
 			slog.Error("failed to move video to permanent storage", "video_id", video.ID, "error", err)
 		}
@@ -1056,14 +1261,6 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 					"audio_streams", probeResult.AudioStreams,
 					"codec", probeResult.VideoCodec,
 				)
-			}
-		}
-
-		// Generate HLS master playlist with separate audio tracks (best-effort).
-		// This demuxes each stream, fragments into fMP4 segments, and writes master.m3u8.
-		if probeResult, _ := ffmpeg.Probe(ctx, *videoPath); probeResult != nil && probeResult.AudioStreams > 1 {
-			if _, hlsErr := generateHLS(ctx, *videoPath, videoID); hlsErr != nil {
-				slog.Warn("failed to generate HLS", "video_id", videoID, "error", hlsErr)
 			}
 		}
 

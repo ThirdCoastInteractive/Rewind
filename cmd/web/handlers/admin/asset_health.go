@@ -12,6 +12,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminAssetHealthPage serves GET /admin/asset-health, showing videos with asset generation errors.
 func HandleAdminAssetHealthPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username, _ := c.Get("currentUsername").(string)
@@ -59,6 +60,7 @@ func HandleAdminAssetHealthPage(sm *auth.SessionManager, dbc *db.DatabaseConnect
 	}
 }
 
+// HandleAdminAssetHealthRetry serves POST /admin/asset-health/:id/retry, clearing errors for one video so assets are retried.
 func HandleAdminAssetHealthRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		videoID := c.Param("id")
@@ -79,6 +81,7 @@ func HandleAdminAssetHealthRetry(sm *auth.SessionManager, dbc *db.DatabaseConnec
 	}
 }
 
+// HandleAdminAssetHealthRetryAll serves POST /admin/asset-health/retry-all, clearing asset errors for all videos.
 func HandleAdminAssetHealthRetryAll(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

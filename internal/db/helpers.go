@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// IsUndefinedColumnErr reports whether err is a Postgres "undefined column" or "undefined table" error.
 func IsUndefinedColumnErr(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
@@ -18,6 +19,7 @@ func IsUndefinedColumnErr(err error) bool {
 	return false
 }
 
+// NilTimePtr converts a nullable pgtype.Timestamptz to a *time.Time, returning nil when invalid.
 func NilTimePtr(t pgtype.Timestamptz) *time.Time {
 	if !t.Valid {
 		return nil

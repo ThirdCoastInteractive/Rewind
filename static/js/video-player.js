@@ -5,6 +5,7 @@ import { DEFAULT_KEYBINDINGS, getKeybindingsFromDOM, buildKeyMap } from './lib/u
 import { FilterPreviewEngine } from './lib/filter-preview-engine.js';
 import { AudioPreviewGraph } from './lib/audio-preview-graph.js';
 import { AudioToolsEngine } from './lib/audio-tools-engine.js';
+import { SequencePlayback } from './lib/sequence-playback.js';
 
 class VideoPlayer {
   constructor(container) {
@@ -42,6 +43,9 @@ class VideoPlayer {
       muted: localStorage.getItem('videoPlayer.muted') === 'true'
     };
     
+    // Sequence playback engine
+    this._seq = null;
+    
     // Position tracking
     this.positionSaveInterval = null;
     this.lastSavedPosition = 0;
@@ -51,7 +55,7 @@ class VideoPlayer {
     this.qualities = []; // [{label, src, height}]
     this.qualitySelect = null;
     this._switchingQuality = false;
-    
+
     // Only initialize if there's a video element
     if (this.video) {
       this.init();
@@ -63,7 +67,7 @@ class VideoPlayer {
       console.warn('VideoPlayer: No video element found, skipping initialization');
       return;
     }
-    
+
     this.buildControls();
     this.attachEventListeners();
     this.restoreSettings();
@@ -79,7 +83,7 @@ class VideoPlayer {
       this.initPositionTracking();
     }
   }
-  
+
   buildControls() {
     // Controls are now server-rendered by the VideoPlayerControls templ
     // component. We just bind to the existing DOM elements by class name.
@@ -527,6 +531,10 @@ class VideoPlayer {
   }
   
   togglePlayPause() {
+    if (this._seq) {
+      if (this._seq.paused) this._seq.play(); else this._seq.pause();
+      return;
+    }
     if (this.video.paused) {
       this.video.play();
     } else {
@@ -550,6 +558,10 @@ class VideoPlayer {
   seekToPosition(e) {
     const rect = this.progressBar.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
+    if (this._seq) {
+      this._seq.seekTo(pos * this._seq.duration);
+      return;
+    }
     this.video.currentTime = pos * this.video.duration;
   }
   
@@ -698,6 +710,10 @@ class VideoPlayer {
   }
   
   seekRelative(seconds) {
+    if (this._seq) {
+      this._seq.seekTo(this._seq.currentTime + seconds);
+      return;
+    }
     this.video.currentTime = Math.max(0, Math.min(
       this.video.duration,
       this.video.currentTime + seconds
@@ -723,6 +739,65 @@ class VideoPlayer {
     this.video.currentTime = (percent / 100) * this.video.duration;
   }
 
+  // ── Sequence Playback ──────────────────────────────────────────────────
+  
+  /**
+   * Load a sequence of clips for back-to-back playback with transitions.
+   * Extends the player to act as a multi-clip sequence player.
+   *
+   * @param {Array<Object>} segments
+   * @param {string} segments[].src      - Video source URL
+   * @param {number} segments[].startTime - Start time in source video (seconds)
+   * @param {number} segments[].endTime   - End time in source video (seconds)
+   * @param {string} [segments[].label]   - Display label
+   * @param {Object|null} [segments[].transition] - Transition into this segment
+   * @param {string} segments[].transition.type     - Transition type name
+   * @param {number} segments[].transition.duration  - Duration in seconds
+   * @param {Object} [segments[].transition.behavior]
+   * @param {string} segments[].transition.behavior.outgoing - 'play'|'freeze'|'play-past'
+   * @param {string} segments[].transition.behavior.audio    - 'crossfade'|'cut'|'fade-out-in'
+   */
+  loadSequence(segments) {
+    this.clearSequence();
+    if (!segments || segments.length === 0) return;
+    
+    // The video element's parent must be the positioned container
+    var seqContainer = this.video.parentElement;
+    this._seq = new SequencePlayback(seqContainer);
+    
+    // Wire events to player UI
+    var self = this;
+    this._seq.on('timeupdate', function(vt, dur) {
+      if (!self.progressFill) return;
+      self.progressFill.style.width = (dur > 0 ? (vt / dur * 100) : 0) + '%';
+      if (self.timeDisplay) {
+        self.timeDisplay.textContent = self.formatTime(vt) + ' / ' + self.formatTime(dur);
+      }
+    });
+    this._seq.on('play', function() { self.updatePlayButton(); });
+    this._seq.on('pause', function() { self.updatePlayButton(); });
+    this._seq.on('ended', function() { self.updatePlayButton(); });
+    this._seq.on('segmentchange', function(idx) {
+      self.container.dispatchEvent(new CustomEvent('sequencesegmentchange', { detail: { index: idx } }));
+    });
+    
+    this._seq.load(segments);
+    this._seq.setVolume(this.video.volume);
+    this._seq.setMuted(this.video.muted);
+  }
+  
+  clearSequence() {
+    if (!this._seq) return;
+    this._seq.destroy();
+    this._seq = null;
+  }
+  
+  /** @returns {boolean} Whether the player is in sequence playback mode. */
+  isSequenceMode() { return !!this._seq; }
+  
+  /** @returns {SequencePlayback|null} The active sequence engine, if any. */
+  getSequence() { return this._seq; }
+  
   // Position tracking methods
   initPositionTracking() {
     // Start interval to save position periodically (every 5 seconds during playback)

@@ -43,7 +43,7 @@ func HandleFilterCards() echo.HandlerFunc {
 		}
 
 		sse.PatchElementTempl(
-			components.FilterCardList(signals.FilterStack, videoID, cropOptions),
+			components.FilterCardList(signals.FilterStack, filters.CutFilterConfig(videoID), cropOptions),
 			datastar.WithSelectorID("filter-stack-list"),
 		)
 

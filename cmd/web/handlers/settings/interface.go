@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// HandleSettingsInterface serves POST /settings/interface, saving user interface preferences like sound and motion settings.
 func HandleSettingsInterface(sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

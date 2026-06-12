@@ -6,7 +6,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleVideosPage serves GET /videos, rendering the video library grid.
 func HandleVideosPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, username, err := sm.GetSession(c.Request())

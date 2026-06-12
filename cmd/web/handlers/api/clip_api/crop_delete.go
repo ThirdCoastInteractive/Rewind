@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
-
+// HandleCropDelete serves DELETE /clips/:clipId/crops/:cropId, removing a crop region from a clip.
 func HandleCropDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

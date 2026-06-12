@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminExportsDeleteAll serves POST /admin/exports/delete-all, removing all export records and their files from disk.
 func HandleAdminExportsDeleteAll(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

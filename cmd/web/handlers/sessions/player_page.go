@@ -4,7 +4,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 )
-
+// HandlePlayerPage serves GET /player, rendering the session code entry form.
 func HandlePlayerPage() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username := ""

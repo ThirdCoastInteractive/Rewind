@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandlePlayerSessionPage serves GET /player/:code, rendering the synchronized player view for a live session.
 func HandlePlayerSessionPage(dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		code := c.Param("code")

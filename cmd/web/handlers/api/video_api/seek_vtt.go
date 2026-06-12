@@ -12,7 +12,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleSeekVTT serves GET /videos/:id/seek/levels/:level/seek.vtt, returning the WebVTT cue file for seek thumbnails.
 func HandleSeekVTT(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, _, err := sm.GetSession(c.Request()); err != nil {

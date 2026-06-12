@@ -103,13 +103,21 @@ WHERE status = 'queued'
 -- Skips jobs that have already been retried too many times.
 -- name: DequeueIngestJob :one
 WITH cte AS (
-    SELECT id
-    FROM ingest_jobs
-    WHERE status = 'queued'
-      AND attempts < 5
-    ORDER BY created_at
+    SELECT ij.id
+    FROM ingest_jobs ij
+    JOIN download_jobs dj ON dj.id = ij.download_job_id
+    WHERE ij.status = 'queued'
+      AND ij.attempts < 5
+    ORDER BY
+      -- Real ingests (fresh downloads with a spool/info.json) take priority over
+      -- background asset-regeneration jobs, so a large regen batch never starves
+      -- user-initiated downloads. 0 = ingest, 1 = regeneration.
+      (CASE WHEN (dj.info_json_path IS NOT NULL AND btrim(dj.info_json_path) <> '')
+              OR (dj.spool_dir IS NOT NULL AND btrim(dj.spool_dir) <> '')
+            THEN 0 ELSE 1 END),
+      ij.created_at
     LIMIT 1
-    FOR UPDATE SKIP LOCKED
+    FOR UPDATE OF ij SKIP LOCKED
 )
 UPDATE ingest_jobs AS ij
 SET status = 'processing',
@@ -130,6 +138,14 @@ RETURNING
     dj.video_id AS video_id,
     ij.asset_scope AS asset_scope,
     dj.extra_args AS extra_args;
+
+-- HeartbeatIngestJob touches updated_at to prevent the recovery goroutine from
+-- resetting a long-running job back to "queued" while it is still being processed.
+-- name: HeartbeatIngestJob :exec
+UPDATE ingest_jobs
+SET updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND status = 'processing';
 
 -- MarkIngestJobSucceeded marks ingest done.
 -- name: MarkIngestJobSucceeded :exec
@@ -220,6 +236,44 @@ SET archived = TRUE,
     updated_at = NOW()
 WHERE id = ANY(sqlc.arg(job_ids)::uuid[]);
 
+-- EnqueueUploadIngestJob creates a download + ingest job pair for a local file upload.
+-- The download_job is pre-marked as succeeded (no yt-dlp download needed).
+-- name: EnqueueUploadIngestJob :one
+WITH new_download_job AS (
+    INSERT INTO download_jobs (
+        url,
+        archived_by,
+        status,
+        refresh,
+        spool_dir,
+        info_json_path,
+        finished_at
+    )
+    VALUES (
+        sqlc.arg(url),
+        sqlc.arg(archived_by),
+        'succeeded',
+        false,
+        sqlc.arg(spool_dir),
+        sqlc.arg(info_json_path),
+        NOW()
+    )
+    RETURNING *
+),
+new_ingest_job AS (
+    INSERT INTO ingest_jobs (
+        download_job_id,
+        status
+    )
+    SELECT new_download_job.id, 'queued'
+    FROM new_download_job
+    RETURNING *
+)
+SELECT
+    new_ingest_job.id AS ingest_job_id,
+    new_download_job.id AS download_job_id
+FROM new_ingest_job, new_download_job;
+
 -- EnqueueAssetRegenerationJob creates a download + ingest job pair for regenerating assets.
 -- asset_scope: NULL = all assets, or one of 'thumbnail', 'preview', 'seek', 'waveform'.
 -- name: EnqueueAssetRegenerationJob :one
@@ -259,3 +313,40 @@ SELECT
     new_download_job.id AS download_job_id,
     new_download_job.video_id AS video_id
 FROM new_ingest_job, new_download_job;
+
+-- EnqueuePlaylistJob inserts a parent "playlist" job. The downloader expands it
+-- into child video jobs (see EnqueueChildDownloadJobs) rather than downloading.
+-- name: EnqueuePlaylistJob :one
+INSERT INTO download_jobs (
+    url,
+    archived_by,
+    status,
+    kind
+)
+VALUES (
+    sqlc.arg(url),
+    sqlc.arg(archived_by),
+    'queued',
+    'playlist'
+)
+RETURNING *;
+
+-- EnqueueChildDownloadJobs bulk-inserts one normal video download job per URL,
+-- all linked to a parent playlist job. Each insert fires the download_jobs
+-- NOTIFY trigger, so existing downloader workers pick them up unchanged.
+-- name: EnqueueChildDownloadJobs :execrows
+INSERT INTO download_jobs (url, archived_by, status, kind, parent_job_id)
+SELECT u, sqlc.arg(archived_by), 'queued', 'video', sqlc.arg(parent_job_id)
+FROM unnest(sqlc.arg(urls)::text[]) AS u;
+
+-- CompletePlaylistJob marks a playlist parent job done after fan-out and records
+-- how many child jobs were enqueued (batch_total) and a human label (batch_label).
+-- name: CompletePlaylistJob :exec
+UPDATE download_jobs
+SET status = 'succeeded',
+    finished_at = NOW(),
+    updated_at = NOW(),
+    batch_total = sqlc.arg(batch_total),
+    batch_label = sqlc.arg(batch_label),
+    last_error = NULL
+WHERE id = sqlc.arg(id);

@@ -14,6 +14,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminRefreshAssets serves POST /admin/refresh-assets, queueing asset regeneration jobs for all videos.
 func HandleAdminRefreshAssets(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		slog.Info("Admin triggered bulk asset regeneration")

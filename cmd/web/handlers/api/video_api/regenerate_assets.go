@@ -19,7 +19,7 @@ var validAssetScopes = map[string]bool{
 	"seek":      true,
 	"waveform":  true,
 	"captions":  true,
-	"hls":       true,
+	"streams":   true,
 }
 
 // HandleRegenerateAssets triggers regeneration of video assets.

@@ -1,0 +1,68 @@
+/* ============================================================================
+   SCRUB INPUT — DAW-style draggable number fields
+   ============================================================================ */
+
+.scrub-field,
+.scrub-input {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+}
+
+.scrub-label,
+.scrub-input-label {
+  flex-shrink: 0;
+  min-width: 1.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: ew-resize;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 4px;
+  touch-action: none;
+  transition: color 0.1s;
+}
+.scrub-label:hover,
+.scrub-label.scrub-active,
+.scrub-input-label:hover,
+.scrub-input-label.scrub-active {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.scrub-value,
+.scrub-input-value {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: text;
+  text-align: right;
+  transition: border-color 0.1s;
+}
+.scrub-value:hover,
+.scrub-input-value:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.scrub-editor,
+.scrub-input-editor {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  color: white;
+  background: black;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: right;
+  outline: none;
+}
+.scrub-editor:focus,
+.scrub-input-editor:focus {
+  border-color: rgba(255, 255, 255, 0.8);
+}

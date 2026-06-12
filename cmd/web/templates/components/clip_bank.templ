@@ -2,7 +2,6 @@ package components
 
 import (
 	"fmt"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
@@ -183,25 +182,11 @@ templ ClipList(clips []*db.Clip, variant string) {
 }
 
 // ============================================================================
-// ClipBankCard - Full card for cut interface
-// ============================================================================
-templ ClipBankCard(clips []*db.Clip) {
-	@CardBox(false, "flex-1 min-h-0 flex flex-col") {
-		@CardHeader("CLIP BANK", "Clips pulled from this Video")
-		<div class="p-4 flex-1 min-h-0 overflow-y-auto">
-			<div data-clip-bank>
-				@ClipList(clips, "cut")
-			</div>
-		</div>
-	}
-}
-
-// ============================================================================
 // ClipBankList - Just the list, no card wrapper (for new flat layout)
 // ============================================================================
 templ ClipBankList(clips []*db.Clip) {
 	<div class="p-2" data-clip-bank>
-		<div class={ viewtypes.SectionLabel + " mb-1" }>CLIP BANK</div>
+		<div class="section-label mb-1">CLIP BANK</div>
 		@ClipList(clips, "cut")
 	</div>
 }

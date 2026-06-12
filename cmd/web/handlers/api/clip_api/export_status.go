@@ -10,7 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleExportStatusStream serves GET /clip-exports/:id/stream, sending SSE progress updates for an encoding export.
 func HandleExportStatusStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		_, _, err := sm.GetSession(c.Request())

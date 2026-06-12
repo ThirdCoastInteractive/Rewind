@@ -14,10 +14,12 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+// DatabaseConnection wraps a pgxpool.Pool with migration and transaction helpers.
 type DatabaseConnection struct {
 	*pgxpool.Pool
 }
 
+// DBRetryCount is the maximum number of connection attempts before giving up.
 const DBRetryCount = 15
 
 // NewDatabaseConnection creates a new database connection
@@ -45,10 +47,12 @@ func (db *DatabaseConnection) Close() {
 	db.Pool.Close()
 }
 
+// Queries returns a new Queries handle bound to the connection pool.
 func (db *DatabaseConnection) Queries(ctx context.Context) *Queries {
 	return New(db)
 }
 
+// NewWithTX begins a transaction and returns a Queries handle bound to it along with the transaction.
 func (db *DatabaseConnection) NewWithTX(ctx context.Context) (*Queries, pgx.Tx, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {

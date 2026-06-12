@@ -1,0 +1,130 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// sourceURL builds the stitch source browser URL with all params.
+func sourceURL(extra string) string {
+	return "'/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=' + $_stitchBrowserSourceFilter + '&offset=' + " + extra + " + '&limit=' + $_stitchBrowserLimit"
+}
+
+// StitchSourceBrowserResults is SSE-patched into the stitch source browser panel.
+templ StitchSourceBrowserResults(rows []*db.SearchSourcesForStitchRow, offset int, hasMore bool) {
+	<div id="stitch-source-browser-results">
+		if len(rows) == 0 {
+			<div class="text-xs text-white/40 font-mono py-4 text-center">No sources found.</div>
+		} else {
+			<div class="divide-y divide-white/5">
+				for _, row := range rows {
+					@StitchSourceBrowserRow(row)
+				}
+			</div>
+			if hasMore || offset > 0 {
+				<div class="flex items-center justify-between pt-2 mt-2 border-t border-white/10">
+					if offset > 0 {
+						<button
+							type="button"
+							class="px-2 py-1 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+							data-on:click={ fmt.Sprintf("$_stitchBrowserOffset = Math.max(0, %d - $_stitchBrowserLimit); @get(%s)", offset, sourceURL(fmt.Sprintf("Math.max(0, %d - $_stitchBrowserLimit)", offset))) }
+						>
+							<i class="fa-sharp fa-solid fa-chevron-left mr-1" aria-hidden="true"></i>
+							Prev
+						</button>
+					} else {
+						<span></span>
+					}
+					if hasMore {
+						<button
+							type="button"
+							class="px-2 py-1 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+							data-on:click={ fmt.Sprintf("$_stitchBrowserOffset = %d + $_stitchBrowserLimit; @get(%s)", offset, sourceURL(fmt.Sprintf("(%d + $_stitchBrowserLimit)", offset))) }
+						>
+							Next
+							<i class="fa-sharp fa-solid fa-chevron-right ml-1" aria-hidden="true"></i>
+						</button>
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+// sourceTypeBadge returns the CSS classes for a source-type badge.
+func sourceTypeBadge(sourceType string) string {
+	switch sourceType {
+	case "clip":
+		return "bg-blue-500/20 text-blue-400 border-blue-500/30"
+	case "video":
+		return "bg-green-500/20 text-green-400 border-green-500/30"
+	case "compose":
+		return "bg-purple-500/20 text-purple-400 border-purple-500/30"
+	case "stitch":
+		return "bg-amber-500/20 text-amber-400 border-amber-500/30"
+	default:
+		return "bg-white/10 text-white/50 border-white/20"
+	}
+}
+
+// sourceTypeLabel returns a short label for the badge.
+func sourceTypeLabel(sourceType string) string {
+	switch sourceType {
+	case "clip":
+		return "CLIP"
+	case "video":
+		return "VID"
+	case "compose":
+		return "CMP"
+	case "stitch":
+		return "STI"
+	default:
+		return sourceType
+	}
+}
+
+// StitchSourceBrowserRow renders a single source row. The onclick handler
+// calls the appropriate window.addStitch{Type}(el) function which reads
+// data attributes and pushes to the $_stitchSegments signal.
+templ StitchSourceBrowserRow(row *db.SearchSourcesForStitchRow) {
+	<div
+		class="flex items-center gap-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer group"
+		data-source-type={ row.SourceType }
+		data-source-id={ row.SourceID.String() }
+		data-video-id={ row.VideoID.String() }
+		data-duration={ fmt.Sprintf("%g", row.Duration) }
+		data-start-ts={ fmt.Sprintf("%g", row.StartTs) }
+		data-end-ts={ fmt.Sprintf("%g", row.EndTs) }
+		data-title={ row.Title }
+		data-color={ row.Color }
+		onclick="window.addStitchSource(this)"
+		title={ fmt.Sprintf("Add: %s", row.Title) }
+	>
+		<div class="shrink-0 flex flex-col items-end gap-0.5 w-16">
+			<span class={ "text-xs font-mono tabular-nums px-1 border rounded-sm leading-tight " + sourceTypeBadge(row.SourceType) }>
+				{ sourceTypeLabel(row.SourceType) }
+			</span>
+			<span class="text-xs font-mono tabular-nums text-white/40">
+				{ format.Duration(row.Duration) }
+			</span>
+		</div>
+		<div class="flex-1 min-w-0">
+			<div class="text-xs font-mono truncate text-white/80 group-hover:text-white transition-colors">
+				if row.Title != "" {
+					{ row.Title }
+				} else {
+					<span class="italic text-white/40">(untitled)</span>
+				}
+			</div>
+			if row.ParentTitle != "" {
+				<div class="text-xs font-mono truncate text-white/30">
+					{ row.ParentTitle }
+				</div>
+			}
+		</div>
+		<div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-white/60 pr-1">
+			<i class="fa-sharp fa-solid fa-plus text-xs" aria-hidden="true"></i>
+		</div>
+	</div>
+}

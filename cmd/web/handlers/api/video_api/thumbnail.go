@@ -13,7 +13,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleThumbnail serves GET /videos/:id/thumbnail, returning the video thumbnail image at the requested size.
 func HandleThumbnail(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, _, err := sm.GetSession(c.Request()); err != nil {

@@ -22,7 +22,7 @@ templ Select(label, name string, options []SelectOption, selected string, extraA
 		<select
 			id={ name }
 			name={ name }
-			class="bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5 focus:border-white/40 outline-none cursor-pointer"
+			class="form-select"
 			{ extraAttrs... }
 		>
 			for _, opt := range options {

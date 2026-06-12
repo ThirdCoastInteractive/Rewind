@@ -46,7 +46,11 @@ func (c *Client) WriteComments(ctx context.Context, url string, destDir string, 
 	args := []string{
 		"--skip-download",
 		"--write-comments",
-		"--extractor-args", "youtube:max_comments=2500,all,all,all",
+		// max_comments is max-comments,max-parents,max-replies,max-replies-per-thread.
+		// A bare total cap (the old 2500,all,all,all) gets fully consumed by
+		// top-level comments on large videos, so reply threads were never fetched.
+		// Allow a larger total and bound replies-per-thread so threads come in too.
+		"--extractor-args", "youtube:max_comments=4000,all,all,8",
 		"-o", tmpl,
 	}
 	args = append(args, extraArgs...)

@@ -1,0 +1,128 @@
+package components
+
+import "fmt"
+
+// StitchTimeline renders the stitch timeline with proportional-width segment blocks.
+// Patched into #stitch-timeline via SSE.
+templ StitchTimeline(segments []StitchSegment, selectedIdx int) {
+	<div id="stitch-timeline" class="h-full flex items-stretch py-1 px-1">
+		if len(segments) == 0 {
+			<div class="flex-1 flex items-center justify-center">
+				<span class="text-xs font-mono text-white/20">
+					<i class="fa-sharp fa-solid fa-film mr-2 text-white/10" aria-hidden="true"></i>
+					Add clips from the browser to build your sequence
+				</span>
+			</div>
+		} else {
+			for i, seg := range segments {
+				<!-- Transition indicator between segments -->
+				if i > 0 {
+					if seg.Transition != nil && seg.Transition.Type != "" {
+						<div
+							class="shrink-0 w-5 flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 transition-colors select-none"
+							onclick={ templ.ComponentScript{Call: fmt.Sprintf("event.stopPropagation(); window.openTransitionPopup(%d, this)", i)} }
+							title={ transitionLabel(seg.Transition.Type) + " " + fmtFloat1(seg.Transition.Duration) + "s" }
+						>
+							<span class="text-sm leading-none text-yellow-500/70">◇</span>
+							<span class="text-xs font-mono leading-none mt-0.5 text-yellow-500/70 truncate" style="font-size:9px">
+								{ trAbbrev(seg.Transition.Type) }
+							</span>
+						</div>
+					} else {
+						<div
+							class="shrink-0 w-5 flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 transition-colors select-none"
+							onclick={ templ.ComponentScript{Call: fmt.Sprintf("event.stopPropagation(); window.openTransitionPopup(%d, this)", i)} }
+							title="Hard cut — click to add transition"
+						>
+							<span class="text-sm leading-none text-white/15">│</span>
+						</div>
+					}
+				}
+				<!-- Segment block -->
+				<div
+					class={ "border border-l-4 cursor-pointer hover:brightness-125 transition-all overflow-hidden flex flex-col justify-between p-1 group relative",
+					templ.KV("border-white/50", i == selectedIdx),
+					templ.KV("border-white/10", i != selectedIdx),
+					stitchSegBgClass(seg, i == selectedIdx) }
+					style={ segFlexBasis(seg.Duration) + "border-left-color:" + stitchSegLeftColor(seg) }
+					data-seg-idx={ fmt.Sprintf("%d", i) }
+					onclick={ templ.ComponentScript{Call: fmt.Sprintf("window.selectStitchSegment(%d)", i)} }
+				>
+					<div class="flex items-start gap-1 min-w-0">
+						@stitchSegTypeBadge(seg.Type)
+						<span
+							class={ "text-xs font-mono truncate leading-tight",
+						templ.KV("text-rose-300/80", seg.Type == "title"),
+							templ.KV("text-white/80", seg.Type != "title") }
+						>
+							{ segName(seg) }
+						</span>
+					</div>
+					<div class="flex items-end justify-between gap-1">
+						<span
+							class={ "text-xs font-mono tabular-nums leading-none",
+						templ.KV("text-rose-400/40", seg.Type == "title"),
+							templ.KV("text-white/40", seg.Type != "title") }
+						>
+							if seg.Duration > 0 {
+								{ fmtFloat1(seg.Duration) + "s" }
+							}
+						</span>
+						<div class="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+							if i > 0 {
+								<button
+									type="button"
+									onclick={ templ.ComponentScript{Call: fmt.Sprintf("event.stopPropagation();window.moveStitchSegment(%d,-1)", i)} }
+									class="text-white/30 hover:text-white"
+									title="Move left"
+								>
+									<i class="fa-sharp fa-solid fa-chevron-left" style="font-size:10px" aria-hidden="true"></i>
+								</button>
+							}
+							if i < len(segments)-1 {
+								<button
+									type="button"
+									onclick={ templ.ComponentScript{Call: fmt.Sprintf("event.stopPropagation();window.moveStitchSegment(%d,1)", i)} }
+									class="text-white/30 hover:text-white"
+									title="Move right"
+								>
+									<i class="fa-sharp fa-solid fa-chevron-right" style="font-size:10px" aria-hidden="true"></i>
+								</button>
+							}
+							<button
+								type="button"
+								onclick={ templ.ComponentScript{Call: fmt.Sprintf("event.stopPropagation();window.removeStitchSegment(%d)", i)} }
+								class="text-white/30 hover:text-red-400"
+								title="Remove"
+							>
+								<i class="fa-sharp fa-solid fa-xmark" style="font-size:10px" aria-hidden="true"></i>
+							</button>
+						</div>
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
+// StitchTotalDuration renders the total duration text.
+templ StitchTotalDuration(segments []StitchSegment) {
+	<span id="stitch-total-duration" class="text-xs font-mono text-white/30 tabular-nums">
+		{ stitchTotalDuration(segments) }
+	</span>
+}
+
+templ stitchSegTypeBadge(segType string) {
+	switch segType {
+		case "title":
+			<span class="text-xs font-mono text-rose-400/50 shrink-0 leading-none">T</span>
+		case "video":
+			<span class="text-xs font-mono text-green-400/50 shrink-0 leading-none">V</span>
+		case "compose":
+			<span class="text-xs font-mono text-purple-400/50 shrink-0 leading-none">C</span>
+		case "stitch":
+			<span class="text-xs font-mono text-amber-400/50 shrink-0 leading-none">S</span>
+		default:
+			<span class="text-xs font-mono text-blue-400/50 shrink-0 leading-none">P</span>
+	}
+}

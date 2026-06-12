@@ -334,12 +334,16 @@ export class Timeline {
       }
 
       bar.addEventListener('click', (e) => {
-        e.stopPropagation();
         if (ed.suppressNextWorkClick) {
           ed.suppressNextWorkClick = false;
+          e.stopPropagation();
           return;
         }
-        if (isSelected) return;
+        if (isSelected) {
+          // Already selected — let click bubble to workEl for playhead seek
+          return;
+        }
+        e.stopPropagation();
         const seekT = timeFromEvent(ed.workEl, e, ed.workStart, ed.workEnd);
         ed.selectClip(cl, seekT);
       });

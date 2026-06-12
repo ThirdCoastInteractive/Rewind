@@ -1,0 +1,41 @@
+package components
+
+import "fmt"
+
+// StitchTransitionPopup renders content for the fixed-position transition popup.
+// The popup positioning is still handled client-side; this just renders the inner content.
+// Patched into #stitch-transition-popup via SSE or set directly.
+templ StitchTransitionPopup(segments []StitchSegment, segIdx int) {
+	<div id="stitch-transition-popup">
+		if segIdx >= 0 && segIdx < len(segments) {
+			<div class="text-xs font-mono uppercase tracking-wider text-white/40 mb-2">TRANSITION</div>
+			<select
+				class="stitch-detail-input"
+				onchange={ templ.ComponentScript{Call: fmt.Sprintf("window._setTransPopup(%d, 'type', this.value)", segIdx)} }
+			>
+				for _, t := range StitchTransitionList() {
+					<option value={ t.Value } selected?={ stitchTrType(segments[segIdx]) == t.Value }>{ t.Label }</option>
+				}
+			</select>
+			<div
+				class={ "mt-2", templ.KV("opacity-30 pointer-events-none", stitchTrType(segments[segIdx]) == "") }
+				id="stitch-tr-popup-dur"
+			>
+				<div class="text-xs font-mono uppercase tracking-wider text-white/40 mb-1">DURATION</div>
+				<div class="flex items-center gap-2">
+					<input
+						type="range"
+						class="flex-1 accent-yellow-500"
+						min="0.1"
+						max="3"
+						step="0.1"
+						value={ fmtFloat1(stitchTrDuration(segments[segIdx])) }
+						oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(1) + 's'"
+						onchange={ templ.ComponentScript{Call: fmt.Sprintf("window._setTransPopup(%d, 'duration', parseFloat(this.value))", segIdx)} }
+					/>
+					<span class="text-xs font-mono text-white/40 w-8 text-right">{ fmtFloat1(stitchTrDuration(segments[segIdx])) }s</span>
+				</div>
+			</div>
+		}
+	</div>
+}

@@ -1,0 +1,291 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+)
+
+// StitchProjectData holds the initial state loaded from a stitch_project row.
+type StitchProjectData struct {
+	ID                string // UUID string
+	Title             string
+	Format            string
+	Quality           string
+	SegmentsJSON      string // raw JSON array string
+	GlobalFiltersJSON string // raw JSON array string
+}
+
+templ StitchPage(project StitchProjectData, username string) {
+	@LayoutFullscreen("Stitch", username) {
+		@StitchContent(project)
+	}
+}
+
+templ StitchContent(project StitchProjectData) {
+	<div
+		class="flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden"
+		data-stitch-page
+		data-signals={ fmt.Sprintf("{_stitchProjectId: '%s', _stitchSegments: %s, _stitchTitle: '%s', _stitchFormat: '%s', _stitchQuality: '%s', _stitchExporting: false, _stitchSaving: false, _stitchDirty: false, _stitchBrowserQuery: '', _stitchBrowserSort: 'recent', _stitchBrowserSourceFilter: 'all', _stitchBrowserOffset: 0, _stitchBrowserLimit: 30, _localStitchBrowserOpen: true, _localStitchTitleCardOpen: false, _localStitchExportsOpen: true, _stitchSelectedIdx: -1, _stitchTrIdx: -1}", project.ID, project.SegmentsJSON, project.Title, project.Format, project.Quality) }
+		data-init="@get('/api/stitch/sources?q=&sort=recent&source=all&offset=0&limit=30')"
+		data-effect="window.stitchAutoSave && window.stitchAutoSave($_stitchDirty, $_stitchProjectId, $_stitchTitle, $_stitchFormat, $_stitchQuality, $_stitchSegments)"
+	>
+		<!-- Reactive SSE renderers -->
+		<span
+			class="hidden"
+			data-effect__debounce.100ms="$_stitchSegments; $_stitchTrIdx; if ($_stitchTrIdx >= 0) @post('/api/stitch/render-transition-popup', {filterSignals:{exclude:/^$/}})"
+		></span>
+		<span
+			class="hidden"
+			data-effect__debounce.100ms="$_stitchSegments; $_stitchSelectedIdx; window.stitchEditor && window.stitchEditor._onSignalsChanged()"
+		></span>
+		<span
+			class="hidden"
+			data-effect__debounce.100ms="$_stitchSegments; if ($_stitchSelectedIdx >= 0 && $_stitchSelectedIdx < $_stitchSegments.length) { @post('/api/stitch/render-detail', {filterSignals:{exclude:/^$/}}) }"
+		></span>
+		<!-- TOP BAR -->
+		@components.EditorToolbar("/stitch", "STITCH", "_stitchTitle", "_stitchDirty", "_stitchSaving") {
+			@components.ToggleButtonDirty("_stitchFormat", "mp4", "_stitchDirty", "MP4")
+			@components.ToggleButtonDirty("_stitchFormat", "webm", "_stitchDirty", "WebM")
+			@components.ToolbarDivider()
+			@components.ToggleButtonDirty("_stitchQuality", "high", "_stitchDirty", "High")
+			@components.ToggleButtonDirty("_stitchQuality", "max", "_stitchDirty", "Max")
+			@components.ToolbarDivider()
+			@components.ExportButton(
+				"$_stitchSegments.length === 0",
+				"@post('/api/stitch/enqueue', {payload: {title: $_stitchTitle, format: $_stitchFormat, quality: $_stitchQuality, segments: $_stitchSegments, global_filters: [], project_id: $_stitchProjectId}})",
+				"_stitchExporting",
+				"film",
+			)
+		}
+		<!-- MAIN AREA -->
+		<div class="flex-1 min-h-0 flex gap-2 overflow-hidden">
+			<!-- LEFT SIDEBAR -->
+			<div class="w-64 shrink-0 min-h-0 flex flex-col gap-2 overflow-y-auto overflow-x-hidden">
+				@components.SidebarPanel("SOURCE BROWSER", "_localStitchBrowserOpen") {
+					<div class="p-2 space-y-2">
+						<input
+							type="text"
+							class="form-input py-1 text-xs"
+							placeholder="Search sources..."
+							data-bind="_stitchBrowserQuery"
+							data-on:input__debounce.300ms="$_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=' + $_stitchBrowserSourceFilter + '&offset=0&limit=' + $_stitchBrowserLimit)"
+						/>
+						<!-- Source type filter -->
+						<div class="flex gap-1 flex-wrap">
+							<button
+								type="button"
+								class="px-1.5 py-0.5 text-xs font-mono border border-white/20 hover:border-white/40 transition-colors"
+								data-class="{'border-white/60 bg-white/10': $_stitchBrowserSourceFilter === 'all'}"
+								data-on:click="$_stitchBrowserSourceFilter = 'all'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=all&offset=0&limit=' + $_stitchBrowserLimit)"
+							>All</button>
+							<button
+								type="button"
+								class="px-1.5 py-0.5 text-xs font-mono border border-blue-500/30 text-blue-400 hover:border-blue-400/60 transition-colors"
+								data-class="{'border-blue-400/60 bg-blue-500/20': $_stitchBrowserSourceFilter === 'clip'}"
+								data-on:click="$_stitchBrowserSourceFilter = 'clip'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=clip&offset=0&limit=' + $_stitchBrowserLimit)"
+							>Clips</button>
+							<button
+								type="button"
+								class="px-1.5 py-0.5 text-xs font-mono border border-green-500/30 text-green-400 hover:border-green-400/60 transition-colors"
+								data-class="{'border-green-400/60 bg-green-500/20': $_stitchBrowserSourceFilter === 'video'}"
+								data-on:click="$_stitchBrowserSourceFilter = 'video'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=video&offset=0&limit=' + $_stitchBrowserLimit)"
+							>Videos</button>
+							<button
+								type="button"
+								class="px-1.5 py-0.5 text-xs font-mono border border-amber-500/30 text-amber-400 hover:border-amber-400/60 transition-colors"
+								data-class="{'border-amber-400/60 bg-amber-500/20': $_stitchBrowserSourceFilter === 'stitch'}"
+								data-on:click="$_stitchBrowserSourceFilter = 'stitch'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=' + $_stitchBrowserSort + '&source=stitch&offset=0&limit=' + $_stitchBrowserLimit)"
+							>Stitch</button>
+						</div>
+						<!-- Sort buttons -->
+						<div class="flex gap-1">
+							<button
+								type="button"
+								class="flex-1 px-1 py-0.5 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+								data-class="{'border-white/60 bg-white/10': $_stitchBrowserSort === 'recent'}"
+								data-on:click="$_stitchBrowserSort = 'recent'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=recent&source=' + $_stitchBrowserSourceFilter + '&offset=0&limit=' + $_stitchBrowserLimit)"
+							>Recent</button>
+							<button
+								type="button"
+								class="flex-1 px-1 py-0.5 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+								data-class="{'border-white/60 bg-white/10': $_stitchBrowserSort === 'alpha'}"
+								data-on:click="$_stitchBrowserSort = 'alpha'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=alpha&source=' + $_stitchBrowserSourceFilter + '&offset=0&limit=' + $_stitchBrowserLimit)"
+							>A–Z</button>
+							<button
+								type="button"
+								class="flex-1 px-1 py-0.5 text-xs font-mono border-2 border-white/20 hover:border-white/40 transition-colors"
+								data-class="{'border-white/60 bg-white/10': $_stitchBrowserSort === 'duration'}"
+								data-on:click="$_stitchBrowserSort = 'duration'; $_stitchBrowserOffset = 0; @get('/api/stitch/sources?q=' + $_stitchBrowserQuery + '&sort=duration&source=' + $_stitchBrowserSourceFilter + '&offset=0&limit=' + $_stitchBrowserLimit)"
+							>Long</button>
+						</div>
+						@components.StitchSourceBrowserResults(nil, 0, false)
+					</div>
+				}
+				@components.SidebarPanel("ADD TITLE CARD", "_localStitchTitleCardOpen") {
+					<div class="p-2 space-y-2">
+						<div class="section-label">TEXT</div>
+						<input
+							type="text"
+							id="stitch-title-card-text"
+							class="form-input py-1 text-xs"
+							placeholder="Title card text..."
+						/>
+						<div class="section-label mt-2">DURATION (seconds)</div>
+						<input
+							type="number"
+							id="stitch-title-card-duration"
+							class="form-input py-1 text-xs"
+							value="3"
+							min="1"
+							max="30"
+							step="0.5"
+						/>
+						<button
+							type="button"
+							class="w-full btn-ghost btn-sm"
+							onclick="window.addStitchTitleCard()"
+						>
+							<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
+							Add Title Card
+						</button>
+					</div>
+				}
+				<!-- Segment detail panel (context-sensitive, shown when a segment is selected) -->
+				<div
+					class="border-2 border-white/10 bg-neutral-900 shrink-0"
+					data-show="$_stitchSelectedIdx >= 0 && $_stitchSelectedIdx < $_stitchSegments.length"
+				>
+					<div class="px-3 py-1.5 flex items-center justify-between border-b border-white/5">
+						<span class="section-label">SEGMENT DETAIL</span>
+						<button
+							type="button"
+							class="text-xs text-white/40 hover:text-white transition-colors"
+							data-on:click="$_stitchSelectedIdx = -1"
+						>
+							<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+						</button>
+					</div>
+					<div id="stitch-detail-content" class="p-2 space-y-3"></div>
+				</div>
+				<!-- Export history panel -->
+				@components.SidebarPanel("EXPORTS", "_localStitchExportsOpen") {
+					<div
+						class="p-2"
+						data-init={ fmt.Sprintf("@get('/api/stitch/projects/%s/exports')", project.ID) }
+					>
+						@components.StitchExportHistory(nil)
+					</div>
+				}
+				<div class="mt-auto shrink-0">
+					@FooterInline()
+				</div>
+			</div>
+			<!-- RIGHT: video + transport + overview + timeline -->
+			<div class="flex-1 min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden">
+				<!-- Video player: flex-1 child -->
+				<div class="flex-1 min-h-0 flex flex-col">
+					<!-- Preview pane -->
+					<div class="flex-1 min-h-0 border-2 border-white/10 bg-black relative stitch-preview-container">
+						<video
+							id="stitch-preview-video"
+							class="absolute inset-0 w-full h-full object-contain hidden"
+							playsinline
+							preload="metadata"
+						></video>
+						<div
+							id="stitch-preview-title"
+							class="absolute inset-0 w-full h-full hidden flex-col items-center justify-center"
+						>
+							<div id="stitch-preview-title-text" class="font-mono font-bold text-white text-center"></div>
+							<div id="stitch-preview-title-subtitle" class="font-mono text-white/60 text-center mt-2"></div>
+						</div>
+						<div
+							id="stitch-preview-empty"
+							class="absolute inset-0 w-full h-full flex items-center justify-center"
+						>
+							<span class="text-xs font-mono text-white/20">Select a segment to preview</span>
+						</div>
+						<div
+							id="stitch-preview-transition"
+							class="absolute inset-0 w-full h-full hidden overflow-hidden"
+						>
+							<canvas id="stitch-tr-to" class="absolute inset-0 w-full h-full object-contain"></canvas>
+							<canvas id="stitch-tr-from" class="absolute inset-0 w-full h-full object-contain" style="will-change:transform,opacity,clip-path,filter"></canvas>
+							<div id="stitch-tr-overlay" class="absolute inset-0 pointer-events-none" style="display:none"></div>
+							<div class="absolute bottom-2 left-1/2 -translate-x-1/2">
+								<span class="text-xs font-mono text-white/50 bg-black/60 px-2 py-0.5" id="stitch-tr-label"></span>
+							</div>
+						</div>
+						<!-- Thin progress bar at bottom of video -->
+						<div class="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10">
+							<div id="stitch-preview-progress" class="h-full bg-white/40" style="width:0%"></div>
+						</div>
+					</div>
+					<!-- Transport bar -->
+					<div class="shrink-0 flex justify-center">
+						<div class="inline-flex items-center gap-2 px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900">
+							@components.CutIconButton("backward-step", "default", templ.Attributes{"onclick": "window.stitchTransportStart()", "title": "Go to start"})
+							@components.CutIconButton("caret-left", "default", templ.Attributes{"onclick": "window.stitchTransportPrevFrame()", "title": "Previous frame"})
+							@components.CutIconButton("play", "default", templ.Attributes{"onclick": "window.stitchPreviewToggle()", "title": "Play/Pause", "id": "stitch-transport-play-btn"})
+							@components.CutIconButton("caret-right", "default", templ.Attributes{"onclick": "window.stitchTransportNextFrame()", "title": "Next frame"})
+							@components.CutIconButton("forward-step", "default", templ.Attributes{"onclick": "window.stitchTransportEnd()", "title": "Go to end"})
+							<div class="w-px h-6 bg-white/20"></div>
+							@components.CutIconButton("forward", "default", templ.Attributes{"onclick": "window.stitchPlayAll()", "title": "Play all"})
+							@components.CutIconButton("stop", "default", templ.Attributes{"onclick": "window.stitchStopAll()", "title": "Stop"})
+							<div class="w-px h-6 bg-white/20"></div>
+							@components.CutIconButton("volume-high", "default", templ.Attributes{"onclick": "window.stitchToggleAudio()", "title": "Toggle audio (M)", "id": "stitch-audio-btn"})
+							<div class="w-px h-6 bg-white/20"></div>
+							<div class="text-sm text-white/80 font-mono tabular-nums text-right min-w-[12ch]" id="stitch-transport-time">0:00 / 0:00</div>
+						</div>
+					</div>
+				</div>
+				<!-- Export status -->
+				<div class="shrink-0">
+					@components.StitchExportStatus("", "", "")
+				</div>
+				<!-- Overview -->
+				<div class="shrink-0 h-10">
+					<div class="section-label">OVERVIEW</div>
+					<div class="relative h-6 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer" id="stitch-overview">
+						<canvas class="absolute inset-0 w-full h-full" id="stitch-overview-canvas"></canvas>
+					</div>
+				</div>
+				<!-- Work area timeline -->
+				<div class="shrink-0 h-32">
+					<div class="section-label">TIMELINE</div>
+					<div
+						class="relative border-2 border-white/10 bg-neutral-950 overflow-hidden"
+						style="height: calc(100% - 1.25rem);"
+						id="stitch-timeline-wrapper"
+					>
+						<canvas id="stitch-work-canvas" class="absolute inset-0 w-full h-full"></canvas>
+					</div>
+					<div id="stitch-transition-popup"></div>
+				</div>
+				<!-- Button bar -->
+				<div class="shrink-0 flex items-center gap-1 flex-wrap">
+					@components.CutIconButton("magnifying-glass-minus", "default", templ.Attributes{"onclick": "window.stitchZoomOut()", "title": "Zoom out"})
+					@components.CutIconButton("magnifying-glass-plus", "default", templ.Attributes{"onclick": "window.stitchZoomIn()", "title": "Zoom in"})
+					@components.CutIconButton("compress", "default", templ.Attributes{"onclick": "window.stitchZoomReset()", "title": "Reset zoom"})
+					<div class="grow"></div>
+					<div class="text-xs text-white/40 font-mono tabular-nums">
+						<span data-text="$_stitchSegments.length"></span> segment(s)
+						<span id="stitch-total-duration" class="ml-2"></span>
+					</div>
+					@components.CutButton("CLEAR", "danger", templ.Attributes{
+						"data-show":     "$_stitchSegments.length > 0",
+						"data-on:click": "confirm('Clear all segments?') && ($_stitchSegments = [], $_stitchSelectedIdx = -1)",
+					})
+					<button
+						type="button"
+						class="btn btn-sm bg-black text-white/40 border-white/10 hover:border-red-500/40 hover:text-red-400"
+						onclick="if(confirm('Delete this project permanently?')) window.stitchDeleteProject()"
+					>
+						DELETE
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script src={ versionedAsset(ctx, "/static/dist/stitch-page.js") }></script>
+}

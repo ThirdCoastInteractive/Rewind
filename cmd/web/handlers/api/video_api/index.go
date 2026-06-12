@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
@@ -30,6 +32,7 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			Duration   string   `json:"duration"`
 			Uploader   string   `json:"uploader"`
 			Tags       []string `json:"tags"`
+			TagIDs     []string `json:"tagIds"`
 			DateType   *string  `json:"dateType"`
 			DateFrom   *string  `json:"dateFrom"`
 			DateTo     *string  `json:"dateTo"`
@@ -46,6 +49,7 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			signals.Duration = c.QueryParam("duration")
 			signals.Uploader = c.QueryParam("uploader")
 			signals.Tags = parseTagsString(c.QueryParam("tags"))
+			signals.TagIDs = parseTagsString(c.QueryParam("tagIds"))
 			if dt := c.QueryParam("dateType"); dt != "" {
 				signals.DateType = &dt
 			}
@@ -103,6 +107,7 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			ChannelID:      nil,
 			DurationFilter: nullableString(params.Duration),
 			Tags:           params.Tags,
+			TagIds:         parseUUIDList(signals.TagIDs),
 			DateType:       nullableString(params.DateType),
 			DateFrom:       parseDate(params.DateFrom),
 			DateTo:         parseDate(params.DateTo),
@@ -157,4 +162,23 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 
 		return nil
 	}
+}
+
+// parseUUIDList parses tag id strings into a UUID slice for the tag filter,
+// returning nil (→ NULL filter, i.e. no tag filtering) when none are valid.
+func parseUUIDList(ids []string) []pgtype.UUID {
+	out := make([]pgtype.UUID, 0, len(ids))
+	for _, s := range ids {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if g, err := uuid.Parse(s); err == nil {
+			out = append(out, pgtype.UUID{Bytes: [16]byte(g), Valid: true})
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

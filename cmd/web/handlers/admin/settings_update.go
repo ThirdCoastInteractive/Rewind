@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminSettings serves POST /admin/settings, persisting registration, storage-limit, and email settings.
 func HandleAdminSettings(sm *auth.SessionManager, dbc *db.DatabaseConnection, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		enabled := c.FormValue("registration_enabled") != ""

@@ -7,7 +7,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleSavePlaybackPosition serves POST /videos/:id/position, persisting the playback resume position.
 func HandleSavePlaybackPosition(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, _, err := common.RequireSessionUser(c, sm)

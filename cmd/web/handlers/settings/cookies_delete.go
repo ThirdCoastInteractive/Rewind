@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// HandleSettingsDeleteCookies serves POST /settings/cookies/delete, removing all stored cookies for the current user.
 func HandleSettingsDeleteCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

@@ -4,7 +4,7 @@ import "time"
 import "thirdcoast.systems/rewind/cmd/web/templates/components"
 
 // Shared CSS for aspect ratio toggle buttons in producer scene preview
-var aspectBtnClass = "font-mono uppercase tracking-wider transition-all border-2 inline-flex items-center justify-center bg-black text-white border-white/20 hover:border-white hover:bg-white hover:text-black active:scale-95 px-2 py-1 text-xs"
+var aspectBtnClass = "btn-ghost btn-sm"
 
 type ScenePresetInfo struct {
 	ID        string
@@ -58,7 +58,7 @@ templ ProducerContent(sessionCode string, presets []ScenePresetInfo, currentScen
 								<button
 									type="button"
 									onclick={ templ.JSFuncCall("navigator.clipboard.writeText", sessionCode) }
-									class="flex-1 font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-4 py-2 text-sm inline-flex items-center justify-center"
+									class="flex-1 btn-secondary btn-md"
 								>
 									<i class="fa-sharp fa-solid fa-copy mr-2"></i>
 									Copy Code
@@ -66,7 +66,7 @@ templ ProducerContent(sessionCode string, presets []ScenePresetInfo, currentScen
 								<a
 									href="/player"
 									target="_blank"
-									class="flex-1 inline-flex items-center justify-center font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-4 py-2 text-sm"
+									class="flex-1 btn-secondary btn-md"
 								>
 									<i class="fa-sharp fa-solid fa-arrow-up-right-from-square mr-2"></i>
 									Open Player
@@ -170,12 +170,12 @@ templ ProducerContent(sessionCode string, presets []ScenePresetInfo, currentScen
 									name="preset_name"
 									placeholder="Preset name (e.g. Nebula)"
 									required
-									class="w-full bg-black border-2 border-white/10 text-white font-mono px-4 py-3 focus:border-white focus:outline-none"
+									class="form-input px-4 py-3"
 								/>
 								<select
 									id="scene-background-mode"
 									name="background_mode"
-									class="w-full bg-black border-2 border-white/10 text-white font-mono px-4 py-3 focus:border-white focus:outline-none"
+									class="form-input px-4 py-3"
 								>
 									<option value="perlin-nebula">Perlin Nebula</option>
 									<option value="none">None</option>
@@ -275,7 +275,7 @@ templ ProducerContent(sessionCode string, presets []ScenePresetInfo, currentScen
 													<div class="flex justify-end gap-2">
 														<button
 															type="button"
-															class="font-mono uppercase tracking-wider transition-all border-2 inline-flex items-center justify-center bg-black text-white border-white hover:bg-white hover:text-black active:scale-95 px-3 py-1 text-xs"
+															class="btn-secondary btn-sm"
 															data-scene-b64={ p.SceneB64 }
 															data-preset-name={ p.Name }
 														>

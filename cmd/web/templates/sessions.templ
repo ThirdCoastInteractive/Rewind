@@ -63,7 +63,7 @@ templ Sessions(sessions []SessionInfo, username string) {
 											<button
 												type="button"
 												onclick={ templ.JSFuncCall("deleteSession", session.ID, session.SessionCode) }
-												class="font-mono uppercase tracking-wider transition-all border-2 bg-black text-white border-red-500 hover:bg-red-500 hover:text-white active:scale-95 px-3 py-1.5 text-xs inline-flex items-center justify-center"
+												class="btn-danger btn-sm border-red-500 hover:bg-red-500"
 											>
 												<i class="fa-sharp fa-solid fa-trash mr-2"></i>
 												Delete

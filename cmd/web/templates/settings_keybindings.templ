@@ -3,7 +3,6 @@ package templates
 import (
 	"fmt"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
-	"thirdcoast.systems/rewind/cmd/web/viewtypes"
 )
 
 type KeybindingAction struct {
@@ -24,7 +23,7 @@ templ SettingsKeybindingsPage(username string, rows []KeybindingRowModel, keybin
 	@Layout("Keyboard Shortcuts", username) {
 		@Container("") {
 			@KeybindingsData(keybindings)
-			<h1 class={ viewtypes.PageHeading + " mb-4" }>KEYBOARD SHORTCUTS</h1>
+			<h1 class="page-heading mb-4">KEYBOARD SHORTCUTS</h1>
 			@components.Card(false) {
 				@components.CardHeader("KEYBINDINGS", "Click a field, press any key to rebind. Hardware keys (F14-F24) are recommended.")
 				@components.CardBody(true) {
@@ -51,7 +50,7 @@ templ KeybindingSettingsContent(rows []KeybindingRowModel) {
 		<div class="pt-3 border-t-2 border-white/10">
 			<button
 				type="button"
-				class={ viewtypes.GhostButtonSm }
+				class="ghost-btn-sm"
 				data-on:click="@post('/api/settings/keybindings/reset')"
 			>
 				RESET ALL TO DEFAULTS

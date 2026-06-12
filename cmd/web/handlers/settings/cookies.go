@@ -13,6 +13,7 @@ import (
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
+// HandleSettingsCookies serves POST /settings/cookies, importing Netscape-format cookies for authenticated downloads.
 func HandleSettingsCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userUUID, username, err := common.RequireSessionUser(c, sm)

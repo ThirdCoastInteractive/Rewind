@@ -1,3 +1,5 @@
+// Package videoinfo provides structured representations of video metadata from
+// yt-dlp and ffprobe, along with formatting helpers for UI display.
 package videoinfo
 
 // InfoPair is a simple label/value pair for data-driven info displays.

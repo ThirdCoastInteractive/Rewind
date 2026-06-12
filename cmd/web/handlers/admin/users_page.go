@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// HandleAdminUsersPage serves GET /admin/users, rendering the user management table.
 func HandleAdminUsersPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username, _ := c.Get("currentUsername").(string)

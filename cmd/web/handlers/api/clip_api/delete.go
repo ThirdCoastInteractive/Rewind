@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 )
-
+// HandleDelete serves DELETE /clips/:id, removing a clip and its associated exports.
 func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()

@@ -1,0 +1,105 @@
+package components
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"time"
+)
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// StitchExportHistory renders the export history panel for a project.
+templ StitchExportHistory(jobs []*db.ListStitchJobsByProjectRow) {
+	<div id="stitch-export-history">
+		if len(jobs) > 0 {
+			<div class="space-y-1">
+				for _, j := range jobs {
+					@StitchExportHistoryRow(j)
+				}
+			</div>
+		} else {
+			<div class="text-xs font-mono text-white/20 py-2 text-center">No exports yet</div>
+		}
+	</div>
+}
+
+templ StitchExportHistoryRow(j *db.ListStitchJobsByProjectRow) {
+	<div class="flex items-center gap-2 px-2 py-1.5 border border-white/5 bg-neutral-950 text-xs font-mono">
+		<!-- Status icon -->
+		if j.Status == db.ExportStatusReady {
+			<i class="fa-sharp fa-solid fa-circle-check text-green-500 shrink-0" aria-hidden="true"></i>
+		} else if j.Status == db.ExportStatusProcessing {
+			<i class="fa-sharp fa-solid fa-circle-notch fa-spin text-blue-400 shrink-0" aria-hidden="true"></i>
+		} else if j.Status == db.ExportStatusQueued {
+			<i class="fa-sharp fa-solid fa-clock text-yellow-400/60 shrink-0" aria-hidden="true"></i>
+		} else if j.Status == db.ExportStatusError {
+			<i class="fa-sharp fa-solid fa-triangle-exclamation text-red-400 shrink-0" aria-hidden="true"></i>
+		}
+		<!-- Title / info -->
+		<div class="flex-1 min-w-0 truncate text-white/60">
+			if j.Title != "" {
+				{ j.Title }
+			} else {
+				Export
+			}
+		</div>
+		<!-- Status text / action -->
+		if j.Status == db.ExportStatusReady {
+			<span class="text-white/30 shrink-0">{ formatBytes(j.SizeBytes) }</span>
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/api/stitch/%s/download", j.ID.String())) }
+				class="text-green-400 hover:text-green-300 shrink-0"
+				download
+				title="Download"
+			>
+				<i class="fa-sharp fa-solid fa-download" aria-hidden="true"></i>
+			</a>
+		} else if j.Status == db.ExportStatusProcessing {
+			<span class="text-blue-400/60 shrink-0">{ fmt.Sprintf("%d%%", j.ProgressPct) }</span>
+		} else if j.Status == db.ExportStatusQueued {
+			<span class="text-yellow-400/40 shrink-0">Queued</span>
+		} else if j.Status == db.ExportStatusError {
+			<span class="text-red-400/60 shrink-0 truncate max-w-24" title={ errorText(j.LastError) }>
+				{ errorText(j.LastError) }
+			</span>
+		}
+		<!-- Time -->
+		<span class="text-white/20 shrink-0">
+			{ formatTimeAgoShort(j.CreatedAt.Time) }
+		</span>
+	</div>
+}
+
+func errorText(s *string) string {
+	if s != nil && *s != "" {
+		return *s
+	}
+	return "Failed"
+}
+
+func formatTimeAgoShort(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	default:
+		return t.Format("Jan 2")
+	}
+}
