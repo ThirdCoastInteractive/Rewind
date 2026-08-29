@@ -161,14 +161,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	ytdlpUpdateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	err = ytdlp.New().Update(ytdlpUpdateCtx)
-	if err != nil {
-		slog.Warn("failed to update yt-dlp", "error", err)
+	// YTDLP_PINNED is set by downloader.Dockerfile when the image was built
+	// against a specific yt-dlp ref. Updating would discard that ref.
+	if pinned := os.Getenv("YTDLP_PINNED"); pinned != "" {
+		slog.Info("yt-dlp pinned at build time, skipping self-update")
 	} else {
-		slog.Info("yt-dlp updated successfully")
-		cancel()
+		ytdlpUpdateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		if err := ytdlp.New().Update(ytdlpUpdateCtx); err != nil {
+			slog.Warn("failed to update yt-dlp", "error", err)
+		} else {
+			slog.Info("yt-dlp updated successfully")
+			cancel()
+		}
 	}
 
 	pool, err := application.OpenDBPoolWithRetry(ctx, *conf)
@@ -214,6 +219,12 @@ func main() {
 	// Background backfill of comments for older videos that predate comment ingest.
 	go commentCatchupLoop(ctx, dbc, encMgr)
 
+	// Skip-download metadata + comment refresh for already-archived videos.
+	go metadataRefreshLoop(ctx, dbc, encMgr)
+
+	// Turn due channel watches into scan jobs on their cron schedules.
+	go watchSchedulerLoop(ctx, dbc)
+
 	<-ctx.Done()
 	slog.Info("Downloader service stopping")
 }
@@ -242,7 +253,7 @@ func downloadWorker(ctx context.Context, dbc *db.DatabaseConnection, client *ytd
 			jobClient.Path = client.Path
 			jobClient.ExtraArgs = client.ExtraArgs
 
-			if err := processDownloadJob(ctx, q, jobClient, spoolDir, encMgr, job); err != nil {
+			if err := processDownloadJob(ctx, dbc, q, jobClient, spoolDir, encMgr, job); err != nil {
 				jobID := uuidString(job.ID)
 
 				// Log detailed error information
@@ -275,7 +286,7 @@ func downloadWorker(ctx context.Context, dbc *db.DatabaseConnection, client *ytd
 	}
 }
 
-func processDownloadJob(ctx context.Context, q *db.Queries, client *ytdlp.Client, spoolDir string, encMgr *encryption.Manager, job *db.DownloadJob) error {
+func processDownloadJob(ctx context.Context, dbc *db.DatabaseConnection, q *db.Queries, client *ytdlp.Client, spoolDir string, encMgr *encryption.Manager, job *db.DownloadJob) error {
 	jobID := uuidString(job.ID)
 	if jobID == "" {
 		return errors.New("invalid job id")
@@ -336,7 +347,10 @@ func processDownloadJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 
 	// Playlist/channel jobs expand into child video jobs instead of downloading.
 	if job.Kind == "playlist" {
-		return processPlaylistJob(ctx, q, client, job)
+		return processPlaylistJob(ctx, dbc, q, client, job)
+	}
+	if job.Kind == "metadata-catalog" {
+		return processMetadataCatalogJob(ctx, q, client, job)
 	}
 
 	destDir := filepath.Join(spoolDir, "downloads", jobID)
@@ -345,6 +359,9 @@ func processDownloadJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 	}
 
 	var infoPath string
+	if job.Kind == "metadata" {
+		return processMetadataJob(ctx, q, client, job, destDir)
+	}
 	if job.Refresh {
 		infoPath = filepath.Join(destDir, "refresh.info.json")
 		slog.Info("Refreshing metadata", "job_id", jobID, "url", job.URL)
@@ -377,6 +394,18 @@ func processDownloadJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 		}
 	} else {
 		slog.Info("Downloading", "job_id", jobID, "url", job.URL)
+
+		// Apply the instance-wide quality cap (0 = no cap). Read fresh per job so
+		// admin changes in the dashboard take effect without restarting workers.
+		if maxH, err := q.GetMaxDownloadHeight(ctx); err != nil {
+			if !db.IsUndefinedColumnErr(err) {
+				slog.Warn("failed to read download quality cap; downloading uncapped", "job_id", jobID, "error", err)
+			}
+		} else if maxH > 0 {
+			client.MaxHeight = int(maxH)
+			slog.Info("Applying download quality cap", "job_id", jobID, "max_height", maxH)
+		}
+
 		downloadArgs := []string{"--no-playlist"}
 		if len(job.ExtraArgs) > 0 {
 			downloadArgs = append(downloadArgs, job.ExtraArgs...)

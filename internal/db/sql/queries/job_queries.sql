@@ -28,13 +28,20 @@ VALUES (
 )
 RETURNING *;
 
--- DequeueDownloadJob claims one queued download job.
+-- DequeueDownloadJob claims one queued download job. Playlist/channel-scan
+-- jobs are claimed before video downloads: they are quick flat enumerations
+-- whose expansion feeds the queue, and letting them ride FIFO behind a large
+-- download backlog would delay watch scans (and playlist expansion) by hours.
 -- name: DequeueDownloadJob :one
 WITH cte AS (
     SELECT id
     FROM download_jobs
     WHERE status = 'queued'
-    ORDER BY created_at
+    ORDER BY (CASE
+        WHEN kind IN ('playlist', 'metadata-catalog') THEN 0
+        WHEN kind = 'metadata' THEN 2
+        ELSE 1
+      END), created_at
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
@@ -137,7 +144,8 @@ RETURNING
     dj.info_json_path AS info_json_path,
     dj.video_id AS video_id,
     ij.asset_scope AS asset_scope,
-    dj.extra_args AS extra_args;
+    dj.extra_args AS extra_args,
+    dj.kind AS kind;
 
 -- HeartbeatIngestJob touches updated_at to prevent the recovery goroutine from
 -- resetting a long-running job back to "queued" while it is still being processed.
@@ -337,6 +345,28 @@ RETURNING *;
 -- name: EnqueueChildDownloadJobs :execrows
 INSERT INTO download_jobs (url, archived_by, status, kind, parent_job_id)
 SELECT u, sqlc.arg(archived_by), 'queued', 'video', sqlc.arg(parent_job_id)
+FROM unnest(sqlc.arg(urls)::text[]) AS u;
+
+-- EnqueueMetadataCatalogJob inserts a parent job that fans out metadata-only children.
+-- name: EnqueueMetadataCatalogJob :one
+INSERT INTO download_jobs (
+    url,
+    archived_by,
+    status,
+    kind
+)
+VALUES (
+    sqlc.arg(url),
+    sqlc.arg(archived_by),
+    'queued',
+    'metadata-catalog'
+)
+RETURNING *;
+
+-- EnqueueChildMetadataJobs bulk-inserts skip-download metadata jobs for catalog expansion.
+-- name: EnqueueChildMetadataJobs :execrows
+INSERT INTO download_jobs (url, archived_by, status, kind, parent_job_id)
+SELECT u, sqlc.arg(archived_by), 'queued', 'metadata', sqlc.arg(parent_job_id)
 FROM unnest(sqlc.arg(urls)::text[]) AS u;
 
 -- CompletePlaylistJob marks a playlist parent job done after fan-out and records

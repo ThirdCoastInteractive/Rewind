@@ -65,8 +65,8 @@ func HandleCommentsRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 
 		// Read signals
 		type Signals struct {
-			CommentSearch string `json:"_commentSearch"`
-			CommentPage   int    `json:"_commentPage"`
+			CommentSearch string `json:"commentSearch"`
+			CommentPage   int    `json:"commentPage"`
 		}
 		signals := &Signals{}
 		_ = datastar.ReadSignals(c.Request(), signals)

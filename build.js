@@ -65,6 +65,58 @@ await esbuild.build({
 
 console.log('✓ Built stitch-page.js');
 
+// Bundle show-notes.js (drag-drop for the show-note outline)
+await esbuild.build({
+  entryPoints: ['static/js/show-notes.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/show-notes.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built show-notes.js');
+
+// Bundle webrtc-room.js (producer/viewer WebRTC client driving the SFU)
+await esbuild.build({
+  entryPoints: ['static/js/webrtc-room.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/webrtc-room.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built webrtc-room.js');
+
+// Bundle three-scene.js (Three.js scene compositor — bundles three)
+await esbuild.build({
+  entryPoints: ['static/js/three-scene.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/three-scene.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built three-scene.js');
+
+// Bundle producer-scene-editor.js (the producer's client-side scene editor)
+await esbuild.build({
+  entryPoints: ['static/js/producer-scene-editor.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/producer-scene-editor.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built producer-scene-editor.js');
+
 // Bundle remote-player-background.js
 await esbuild.build({
   entryPoints: ['static/js/remote-player-background.js'],
@@ -103,6 +155,18 @@ await esbuild.build({
 });
 
 console.log('✓ Built admin-dashboard.js');
+
+await esbuild.build({
+  entryPoints: ['static/js/network-page.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/network-page.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built network-page.js');
 
 // Minify video-player.css to dist
 await esbuild.build({

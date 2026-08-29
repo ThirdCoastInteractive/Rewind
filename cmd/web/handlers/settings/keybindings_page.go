@@ -40,7 +40,7 @@ func HandleSettingsKeybindingsPage(sm *auth.SessionManager, dbc *db.DatabaseConn
 }
 
 // Helper functions
-func renderSettingsPage(c echo.Context, sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache, userUUID pgtype.UUID, username string, cookiesValue string, message string) error {
+func renderSettingsPage(c echo.Context, sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache, userUUID pgtype.UUID, username string, cookiesValue string, message string, mcpToken string) error {
 	ctx := c.Request().Context()
 	var adminSettings *db.InstanceSetting
 
@@ -75,7 +75,12 @@ func renderSettingsPage(c echo.Context, sm *auth.SessionManager, dbc *db.Databas
 		adminSettings = settings
 	}
 
-	return templates.Settings(cookiesValue, message, true, username, adminSettings).Render(ctx, c.Response())
+	tokens, err := dbc.Queries(ctx).ListAPITokensByUser(ctx, userUUID)
+	if err != nil {
+		slog.Error("failed to list api tokens", "error", err)
+		tokens = nil
+	}
+	return templates.Settings(cookiesValue, message, true, username, adminSettings, mcpToken, tokens).Render(ctx, c.Response())
 }
 
 func generateCookiesFile(encMgr *encryption.Manager, cookies []*db.GetUserCookiesRow) string {

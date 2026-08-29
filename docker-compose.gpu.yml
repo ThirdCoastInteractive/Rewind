@@ -1,0 +1,20 @@
+# NVIDIA overlay: whisper.cpp CUDA ingest.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Requires the NVIDIA Container Toolkit. GGML weights still live in ./bin/models.
+
+services:
+  ingest:
+    build:
+      target: runtime-cuda
+    environment:
+      WHISPER_DEVICE: cuda
+      INGEST_RUNTIME: runtime-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

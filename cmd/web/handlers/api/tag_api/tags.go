@@ -129,7 +129,8 @@ func HandleBulkTag(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 
 		var sig struct {
 			SelectedVideoIDs []string `json:"selectedVideoIds"`
-			BulkTag          string   `json:"_bulkTag"`
+			// No leading underscore: Datastar excludes _-prefixed signals from POSTs by default.
+			BulkTag string `json:"bulkTag"`
 		}
 		_ = datastar.ReadSignals(c.Request(), &sig)
 
@@ -151,7 +152,7 @@ func HandleBulkTag(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 				datastar.WithSelector("[data-tag-filter-bar]"), datastar.WithModeInner())
 		}
 		// Clear selection + input regardless.
-		_ = sse.PatchSignals([]byte(`{"selectedVideoIds":[],"_bulkTag":""}`))
+		_ = sse.PatchSignals([]byte(`{"selectedVideoIds":[],"bulkTag":""}`))
 		return nil
 	}
 }

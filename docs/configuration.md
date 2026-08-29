@@ -34,48 +34,39 @@ These must be set before starting Rewind.
 
 The `DATABASE_DSN` is constructed automatically from these values in Docker Compose.
 
-## Transcription (Whisper)
+## Transcription (whisper.cpp)
 
-Rewind uses [OpenAI Whisper](https://github.com/openai/whisper) to generate searchable transcripts for every video.
+Rewind transcribes with [whisper.cpp](https://github.com/ggml-org/whisper.cpp). GGML weights are **not** in the image: the ingest worker downloads `WHISPER_MODEL` into `/models` (compose maps `./bin/models`) on first boot.
 
-| Variable           | Default | Description                                                        |
-| ------------------ | ------- | ------------------------------------------------------------------ |
-| `WHISPER_ENABLED`  | `true`  | Set to `false` to skip transcription entirely                      |
-| `WHISPER_MODEL`    | `small` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v2` |
-| `WHISPER_DEVICE`   | `cpu`   | Set to `cuda` for NVIDIA GPU acceleration                          |
-| `WHISPER_LANGUAGE` | `en`    | Language code (`en`, `es`, `ja`, etc.)                             |
+| Variable            | Default        | Description |
+| ------------------- | -------------- | ----------- |
+| `WHISPER_ENABLED`   | `true`         | Set `false` to skip transcription |
+| `WHISPER_CMD`       | `whisper-cli`  | whisper.cpp binary |
+| `WHISPER_MODEL`     | `small`        | GGML id: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`, `small.en`, … |
+| `WHISPER_MODEL_DIR` | `/models`      | Persistent cache for `ggml-*.bin` |
+| `WHISPER_LANGUAGE`  | `en`           | ISO 639-1, or `auto` to detect |
+| `WHISPER_TASK`      | `transcribe`   | `transcribe` or `translate` (English via `-tr`) |
+| `INGEST_RUNTIME`    | `runtime-cpu`  | Dockerfile target: `runtime-cpu`, `runtime-cuda`, `runtime-rocm` |
 
-**Model size trade-offs:**
+**Model trade-offs:**
 
-| Model      | RAM    | Speed     | Accuracy  |
-| ---------- | ------ | --------- | --------- |
-| `tiny`     | ~1 GB  | Very fast | Low       |
-| `base`     | ~1 GB  | Fast      | Fair      |
-| `small`    | ~2 GB  | Moderate  | Good      |
-| `medium`   | ~5 GB  | Slow      | Very good |
-| `large-v2` | ~10 GB | Very slow | Best      |
-
-The `small` model is a good default. Upgrade to `medium` or `large-v2` if accuracy matters more than processing time.
+| Model            | Speed        | Notes |
+| ---------------- | ------------ | ----- |
+| `tiny` / `base`  | Very fast    | Rough captions |
+| `small`          | Moderate     | Default |
+| `medium`         | Slower       | Better multilingual |
+| `large-v3`       | Slow         | Best quality / translation |
+| `large-v3-turbo` | Fast large   | Strong quality, much quicker |
 
 ## GPU Acceleration
 
-If you have an NVIDIA GPU, you can speed up Whisper transcription significantly.
-
-### Setup
+NVIDIA:
 
 1. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-2. Set `WHISPER_DEVICE=cuda` in `.env`
-3. Uncomment the GPU section in the `ingest` service in `docker-compose.yml`:
+2. Set `INGEST_RUNTIME=runtime-cuda` and `WHISPER_DEVICE=cuda` in `.env`
+3. `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build`
 
-```yaml
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-```
-
-4. Restart the stack: `make down && make up`
+AMD ROCm: `INGEST_RUNTIME=runtime-rocm`. Weights stay in `./bin/models` across rebuilds.
 
 ## Downloads
 

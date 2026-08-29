@@ -55,7 +55,9 @@ func TestCommentRow_HighlightRaw(t *testing.T) {
 	mustNotContain(t, html, "PLAINTEXT")
 }
 
-// CommentRow must surface avatar + badges from the raw fields.
+// CommentRow must surface badges from the raw fields — but never the avatar:
+// author thumbnails are external CDN URLs, and this instance self-hosts all
+// assets (no hotlinking).
 func TestCommentRow_Badges(t *testing.T) {
 	html := renderComp(t, components.CommentRow(components.CommentItem{
 		Author:      "creator",
@@ -68,14 +70,14 @@ func TestCommentRow_Badges(t *testing.T) {
 		IsFavorited: true,
 	}))
 	mustContain(t, html,
-		"https://yt3.example/avatar.jpg", // avatar
-		"Creator",                        // uploader badge
-		"fa-circle-check",                // verified
-		"Pinned",                         // pinned
-		"fa-heart",                       // creator-hearted
-		"2 years ago",                    // relative time
-		"1.5K",                           // compact like count
+		"Creator",         // uploader badge
+		"fa-circle-check", // verified
+		"Pinned",          // pinned
+		"fa-heart",        // creator-hearted
+		"2 years ago",     // relative time
+		"1.5K",            // compact like count
 	)
+	mustNotContain(t, html, "yt3.example") // external avatar must not be hotlinked
 }
 
 // CommentRow must render a reply expander + container only when ReplyCount > 0.
@@ -100,7 +102,7 @@ func TestCommentLoadMore(t *testing.T) {
 	more := renderComp(t, components.CommentLoadMore(components.CommentListData{
 		VideoID: "VID", Page: 1, HasMore: true,
 	}))
-	mustContain(t, more, "LOAD MORE", "mode=page", "$_commentPage = 2")
+	mustContain(t, more, "LOAD MORE", "mode=page", "$commentPage = 2")
 
 	none := renderComp(t, components.CommentLoadMore(components.CommentListData{
 		VideoID: "VID", Page: 1, HasMore: false,
@@ -115,9 +117,9 @@ func TestCommentSection_SearchWiring(t *testing.T) {
 		VideoID: "VID", TotalCount: 42,
 	}))
 	mustContain(t, html,
-		`data-bind="_commentSearch"`,
+		`data-bind="commentSearch"`,
 		"mode=search",
-		"$_commentPage = 0",
+		"$commentPage = 0",
 		`id="comments-list-content"`,
 		`id="comments-load-more"`,
 		"42 COMMENTS",

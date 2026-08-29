@@ -57,6 +57,14 @@ DO UPDATE SET
     raw = EXCLUDED.raw,
     updated_at = NOW();
 
+-- ListDistinctCommentAuthorURLs returns unique comment author profile URLs for a video.
+-- name: ListDistinctCommentAuthorURLs :many
+SELECT DISTINCT author_url::text AS author_url
+FROM video_comments
+WHERE video_id = sqlc.arg(video_id)
+  AND author_url IS NOT NULL
+  AND btrim(author_url) <> '';
+
 -- CountVideoComments returns total comments ingested for a video.
 -- name: CountVideoComments :one
 SELECT COUNT(*)
@@ -125,7 +133,11 @@ SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author
                  WHERE rc.video_id = c.video_id AND rc.parent_id = c.comment_id), 0)::bigint AS reply_count
 FROM video_comments c
 WHERE c.video_id = sqlc.arg(video_id)
-  AND c.search @@ plainto_tsquery('simple', sqlc.arg(query)::text)
+  AND (
+    c.search @@ plainto_tsquery('simple', sqlc.arg(query)::text)
+    OR COALESCE(c.text, '') ILIKE '%' || sqlc.arg(query) || '%'
+    OR COALESCE(c.author, '') ILIKE '%' || sqlc.arg(query) || '%'
+  )
 ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
 LIMIT sqlc.arg(page_size)::int
 OFFSET sqlc.arg(page_offset)::int;

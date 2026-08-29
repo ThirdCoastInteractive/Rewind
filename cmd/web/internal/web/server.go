@@ -18,7 +18,9 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/sessions"
 	settingspage "thirdcoast.systems/rewind/cmd/web/handlers/settings"
 
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/channel_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/clip_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/creator_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/home_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/job_api"
@@ -28,11 +30,13 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/tag_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/upload_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/video_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/watch_api"
 
 	"thirdcoast.systems/rewind/cmd/web/internal/producer"
 	"thirdcoast.systems/rewind/cmd/web/internal/telemetry"
 	staticpkg "thirdcoast.systems/rewind/cmd/web/internal/web/utils/static"
 	"thirdcoast.systems/rewind/internal/db"
+	rewindmcp "thirdcoast.systems/rewind/internal/mcp"
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
@@ -131,12 +135,16 @@ func (s *Webserver) setupMiddleware() error {
 	s.Use(middleware.RequestID())
 	s.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Level: 5,
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/mcp"
+		},
 	}))
 	s.Use(securityHeaders)
 	s.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		Skipper: func(c echo.Context) bool {
 			switch c.Path() {
-			case "/api/player-sessions/:code/player/telemetry",
+			case "/mcp",
+				"/api/player-sessions/:code/player/telemetry",
 				"/api/player-sessions/:code/player/stream",
 				"/api/player-sessions/:code/producer/stream":
 				return true
@@ -305,6 +313,14 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.GET("/videos/:id/jobs", video_api.HandleJobs(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/position", settingsapi.HandleSavePlaybackPosition(s.sessionManager, s.dbc))
 
+	apiGroup.GET("/channels/index", channel_api.HandleIndex(s.sessionManager, s.dbc))
+	apiGroup.GET("/creators/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
+	apiGroup.GET("/creators/:id/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches", watch_api.HandleCreate(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/toggle", watch_api.HandleToggle(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/scan", watch_api.HandleScanNow(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/delete", watch_api.HandleDelete(s.sessionManager, s.dbc))
+
 	apiGroup.PUT("/markers/:id", marker_api.HandleCreateOrUpdate(s.sessionManager, s.dbc))
 	apiGroup.DELETE("/markers/:id", marker_api.HandleDelete(s.sessionManager, s.dbc))
 
@@ -368,6 +384,8 @@ func (s *Webserver) registerRoutes() error {
 	settingsGroup.POST("/cookies/delete", settingspage.HandleSettingsDeleteCookies(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 	settingsGroup.POST("/interface", settingspage.HandleSettingsInterface(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 	settingsGroup.GET("/keybindings", settingspage.HandleSettingsKeybindingsPage(s.sessionManager, s.dbc))
+	settingsGroup.POST("/tokens", settingspage.HandleCreateToken(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
+	settingsGroup.POST("/tokens/:id/revoke", settingspage.HandleRevokeToken(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 
 	producerGroup := s.Group("/producer")
 	producerGroup.GET("", sessions.HandleProducerHomePage(s.sessionManager, s.dbc))
@@ -430,10 +448,31 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.POST("/stitch/render-detail", stitch_api.HandleRenderDetail())
 	apiGroup.POST("/stitch/render-transition-popup", stitch_api.HandleRenderTransitionPopup())
 
+	s.Any("/mcp", echo.WrapHandler(rewindmcp.Handler(s.dbc)))
+
 	// Content routes
 	s.GET("/stitch", content.HandleStitchLibrary(s.sessionManager, s.dbc))
 	s.GET("/stitch/:id", content.HandleStitchEditor(s.sessionManager, s.dbc))
 	s.GET("/jobs", content.HandleJobsPage(s.sessionManager, s.dbc))
+	s.GET("/follows", content.HandleFollowsPage(s.sessionManager, s.dbc))
+	s.GET("/watches", func(c echo.Context) error {
+		if q := c.Request().URL.RawQuery; q != "" {
+			return c.Redirect(302, "/follows?"+q)
+		}
+		return c.Redirect(302, "/follows")
+	})
+	s.GET("/creators", content.HandleCreatorsPage(s.sessionManager, s.dbc))
+	s.POST("/creators", content.HandleCreatorCreate(s.sessionManager, s.dbc))
+	s.GET("/creators/new", content.HandleCreatorWizardPage(s.sessionManager))
+	s.GET("/creators/:id", content.HandleCreatorViewPage(s.sessionManager, s.dbc))
+	s.POST("/creators/:id/link", content.HandleCreatorLinkChannel(s.sessionManager, s.dbc))
+	s.POST("/creators/:id/unlink", content.HandleCreatorUnlinkChannel(s.sessionManager, s.dbc))
+	s.POST("/creators/suggestions/:id/accept", content.HandleCreatorSuggestionAccept(s.sessionManager, s.dbc))
+	s.POST("/creators/suggestions/:id/dismiss", content.HandleCreatorSuggestionDismiss(s.sessionManager, s.dbc))
+	s.GET("/network", content.HandleNetworkPage(s.sessionManager, s.dbc))
+	s.GET("/channels", content.HandleChannelsPage(s.sessionManager, s.dbc))
+	s.GET("/channels/view", content.HandleChannelViewPage(s.sessionManager, s.dbc))
+	s.POST("/channels/view/index-metadata", content.HandleIndexChannelMetadata(s.sessionManager, s.dbc))
 	s.GET("/jobs/:id", content.HandleJobDetailPage(s.sessionManager, s.dbc))
 	s.GET("/videos", content.HandleVideosPage(s.sessionManager, s.dbc))
 	s.GET("/videos/:id/cut", content.HandleVideoCutPage(s.sessionManager, s.dbc))

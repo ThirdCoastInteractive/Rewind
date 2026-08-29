@@ -734,7 +734,9 @@ SELECT source_type, source_id, video_id, title, parent_title, duration, start_ts
            ''::text AS file_path
     FROM videos v
     WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'video')
-      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('english', $2))
+      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('simple', $2)
+           OR strpos(lower(v.title), lower($2)) > 0
+           OR strpos(lower(v.uploader), lower($2)) > 0)
 
     UNION ALL
 
@@ -825,7 +827,9 @@ type SearchSourcesForStitchRow struct {
 //	           ''::text AS file_path
 //	    FROM videos v
 //	    WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'video')
-//	      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('english', $2))
+//	      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('simple', $2)
+//	           OR strpos(lower(v.title), lower($2)) > 0
+//	           OR strpos(lower(v.uploader), lower($2)) > 0)
 //
 //	    UNION ALL
 //

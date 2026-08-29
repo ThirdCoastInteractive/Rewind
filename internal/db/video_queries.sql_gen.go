@@ -73,6 +73,91 @@ func (q *Queries) ClaimVideosForCommentCatchup(ctx context.Context, batchSize in
 	return items, nil
 }
 
+const claimVideosForMetadataRefresh = `-- name: ClaimVideosForMetadataRefresh :many
+UPDATE videos SET metadata_refreshed_at = NOW()
+WHERE id IN (
+    SELECT v.id FROM videos v
+    WHERE v.src IS NOT NULL AND btrim(v.src) <> ''
+      AND (v.metadata_refreshed_at IS NULL
+           OR v.metadata_refreshed_at < NOW() - INTERVAL '7 days')
+    ORDER BY
+      CASE WHEN EXISTS (
+        SELECT 1 FROM watched_channels wc
+        WHERE wc.channel_id = v.channel_row_id AND wc.enabled
+      ) THEN 0 ELSE 1 END,
+      v.metadata_refreshed_at NULLS FIRST,
+      v.created_at DESC
+    LIMIT $1::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, src, archived_by, title, description, uploader, tags, channel_row_id, duration_seconds
+`
+
+type ClaimVideosForMetadataRefreshRow struct {
+	ID              pgtype.UUID `db:"id" json:"ID"`
+	Src             string      `db:"src" json:"Src"`
+	ArchivedBy      pgtype.UUID `db:"archived_by" json:"ArchivedBy"`
+	Title           string      `db:"title" json:"Title"`
+	Description     string      `db:"description" json:"Description"`
+	Uploader        string      `db:"uploader" json:"Uploader"`
+	Tags            []string    `db:"tags" json:"Tags"`
+	ChannelRowID    pgtype.UUID `db:"channel_row_id" json:"ChannelRowID"`
+	DurationSeconds *int32      `db:"duration_seconds" json:"DurationSeconds"`
+}
+
+// ClaimVideosForMetadataRefresh atomically claims up to batch_size videos whose
+// metadata is stale (never refreshed, or older than 7 days), marking
+// metadata_refreshed_at so other downloader replicas skip them. Followed-channel
+// videos are claimed first. FOR UPDATE SKIP LOCKED prevents cross-replica
+// double-claims.
+//
+//	UPDATE videos SET metadata_refreshed_at = NOW()
+//	WHERE id IN (
+//	    SELECT v.id FROM videos v
+//	    WHERE v.src IS NOT NULL AND btrim(v.src) <> ''
+//	      AND (v.metadata_refreshed_at IS NULL
+//	           OR v.metadata_refreshed_at < NOW() - INTERVAL '7 days')
+//	    ORDER BY
+//	      CASE WHEN EXISTS (
+//	        SELECT 1 FROM watched_channels wc
+//	        WHERE wc.channel_id = v.channel_row_id AND wc.enabled
+//	      ) THEN 0 ELSE 1 END,
+//	      v.metadata_refreshed_at NULLS FIRST,
+//	      v.created_at DESC
+//	    LIMIT $1::int
+//	    FOR UPDATE SKIP LOCKED
+//	)
+//	RETURNING id, src, archived_by, title, description, uploader, tags, channel_row_id, duration_seconds
+func (q *Queries) ClaimVideosForMetadataRefresh(ctx context.Context, batchSize int32) ([]*ClaimVideosForMetadataRefreshRow, error) {
+	rows, err := q.db.Query(ctx, claimVideosForMetadataRefresh, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ClaimVideosForMetadataRefreshRow
+	for rows.Next() {
+		var i ClaimVideosForMetadataRefreshRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Src,
+			&i.ArchivedBy,
+			&i.Title,
+			&i.Description,
+			&i.Uploader,
+			&i.Tags,
+			&i.ChannelRowID,
+			&i.DurationSeconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearAllVideoAssetErrors = `-- name: ClearAllVideoAssetErrors :exec
 UPDATE videos
 SET assets_status = assets_status - '_error_count' - '_last_error_at' - '_errors',
@@ -241,7 +326,8 @@ INSERT INTO videos (
     file_hash,
     file_size,
     probe_data,
-    search
+    search,
+    media
 )
 VALUES (
     $1,
@@ -271,11 +357,13 @@ VALUES (
     $21,
     $22,
     $23,
-    to_tsvector('simple'::regconfig,
-        coalesce($4, '') || ' ' ||
-        coalesce($8, '') || ' ' ||
-        coalesce(array_to_string($9::text[], ' '), '')
-    )
+    video_search_vector(
+        $4,
+        $10,
+        $9::text[],
+        $8
+    ),
+    COALESCE(NULLIF(btrim($24), ''), 'file')
 )
 ON CONFLICT (src)
 DO UPDATE SET
@@ -295,13 +383,17 @@ DO UPDATE SET
     like_count = EXCLUDED.like_count,
     info = EXCLUDED.info,
     comments = EXCLUDED.comments,
-    video_path = EXCLUDED.video_path,
-    thumbnail_path = EXCLUDED.thumbnail_path,
-    file_hash = EXCLUDED.file_hash,
-    file_size = EXCLUDED.file_size,
+    video_path = COALESCE(EXCLUDED.video_path, videos.video_path),
+    thumbnail_path = COALESCE(EXCLUDED.thumbnail_path, videos.thumbnail_path),
+    file_hash = COALESCE(EXCLUDED.file_hash, videos.file_hash),
+    file_size = COALESCE(EXCLUDED.file_size, videos.file_size),
     probe_data = COALESCE(EXCLUDED.probe_data, videos.probe_data),
+    media = CASE
+        WHEN videos.media = 'file' OR EXCLUDED.media = 'file' THEN 'file'
+        ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
+    END,
     search = EXCLUDED.search
-RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 `
 
 type InsertVideoParams struct {
@@ -328,6 +420,7 @@ type InsertVideoParams struct {
 	FileHash           *string              `db:"file_hash" json:"FileHash"`
 	FileSize           *int64               `db:"file_size" json:"FileSize"`
 	ProbeData          *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
+	Media              string               `db:"media" json:"Media"`
 }
 
 // InsertVideo inserts a video row.
@@ -356,7 +449,8 @@ type InsertVideoParams struct {
 //	    file_hash,
 //	    file_size,
 //	    probe_data,
-//	    search
+//	    search,
+//	    media
 //	)
 //	VALUES (
 //	    $1,
@@ -386,11 +480,13 @@ type InsertVideoParams struct {
 //	    $21,
 //	    $22,
 //	    $23,
-//	    to_tsvector('simple'::regconfig,
-//	        coalesce($4, '') || ' ' ||
-//	        coalesce($8, '') || ' ' ||
-//	        coalesce(array_to_string($9::text[], ' '), '')
-//	    )
+//	    video_search_vector(
+//	        $4,
+//	        $10,
+//	        $9::text[],
+//	        $8
+//	    ),
+//	    COALESCE(NULLIF(btrim($24), ''), 'file')
 //	)
 //	ON CONFLICT (src)
 //	DO UPDATE SET
@@ -410,13 +506,17 @@ type InsertVideoParams struct {
 //	    like_count = EXCLUDED.like_count,
 //	    info = EXCLUDED.info,
 //	    comments = EXCLUDED.comments,
-//	    video_path = EXCLUDED.video_path,
-//	    thumbnail_path = EXCLUDED.thumbnail_path,
-//	    file_hash = EXCLUDED.file_hash,
-//	    file_size = EXCLUDED.file_size,
+//	    video_path = COALESCE(EXCLUDED.video_path, videos.video_path),
+//	    thumbnail_path = COALESCE(EXCLUDED.thumbnail_path, videos.thumbnail_path),
+//	    file_hash = COALESCE(EXCLUDED.file_hash, videos.file_hash),
+//	    file_size = COALESCE(EXCLUDED.file_size, videos.file_size),
 //	    probe_data = COALESCE(EXCLUDED.probe_data, videos.probe_data),
+//	    media = CASE
+//	        WHEN videos.media = 'file' OR EXCLUDED.media = 'file' THEN 'file'
+//	        ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
+//	    END,
 //	    search = EXCLUDED.search
-//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Video, error) {
 	row := q.db.QueryRow(ctx, insertVideo,
 		arg.ID,
@@ -442,6 +542,7 @@ func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Vid
 		arg.FileHash,
 		arg.FileSize,
 		arg.ProbeData,
+		arg.Media,
 	)
 	var i Video
 	err := row.Scan(
@@ -473,6 +574,13 @@ func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Vid
 		&i.Search,
 		&i.ProbeData,
 		&i.CommentsCheckedAt,
+		&i.ChannelURL,
+		&i.UploaderURL,
+		&i.ChannelRowID,
+		&i.Format,
+		&i.MetadataRefreshedAt,
+		&i.LinksHarvestedAt,
+		&i.Media,
 	)
 	return &i, err
 }
@@ -485,13 +593,14 @@ AND (
     -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
     lower(video_path) NOT LIKE '%.mp4'
     OR assets_status = '{}'::jsonb
-    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart'])
+    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart','captions_clean'])
     OR assets_status @> '{"thumbnail": false}'::jsonb
     OR assets_status @> '{"preview": false}'::jsonb
     OR assets_status @> '{"waveform": false}'::jsonb
     OR assets_status @> '{"file_hash": false}'::jsonb
     OR assets_status @> '{"seek": false}'::jsonb
     OR assets_status @> '{"faststart": false}'::jsonb
+    OR assets_status @> '{"captions_clean": false}'::jsonb
 )
 AND (
     -- No errors yet, or backoff period has elapsed.
@@ -528,13 +637,14 @@ type ListVideosForAssetCatchupRow struct {
 //	    -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
 //	    lower(video_path) NOT LIKE '%.mp4'
 //	    OR assets_status = '{}'::jsonb
-//	    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart'])
+//	    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart','captions_clean'])
 //	    OR assets_status @> '{"thumbnail": false}'::jsonb
 //	    OR assets_status @> '{"preview": false}'::jsonb
 //	    OR assets_status @> '{"waveform": false}'::jsonb
 //	    OR assets_status @> '{"file_hash": false}'::jsonb
 //	    OR assets_status @> '{"seek": false}'::jsonb
 //	    OR assets_status @> '{"faststart": false}'::jsonb
+//	    OR assets_status @> '{"captions_clean": false}'::jsonb
 //	)
 //	AND (
 //	    -- No errors yet, or backoff period has elapsed.
@@ -580,7 +690,8 @@ func (q *Queries) ListVideosForAssetCatchup(ctx context.Context, limit int32) ([
 const listVideosMissingVideoPath = `-- name: ListVideosMissingVideoPath :many
 SELECT id::text AS id
 FROM videos
-WHERE video_path IS NULL OR btrim(video_path) = ''
+WHERE (video_path IS NULL OR btrim(video_path) = '')
+  AND media <> 'metadata'
 ORDER BY updated_at ASC
 LIMIT $1
 `
@@ -590,7 +701,8 @@ LIMIT $1
 //
 //	SELECT id::text AS id
 //	FROM videos
-//	WHERE video_path IS NULL OR btrim(video_path) = ''
+//	WHERE (video_path IS NULL OR btrim(video_path) = '')
+//	  AND media <> 'metadata'
 //	ORDER BY updated_at ASC
 //	LIMIT $1
 func (q *Queries) ListVideosMissingVideoPath(ctx context.Context, limit int32) ([]string, error) {
@@ -708,15 +820,70 @@ func (q *Queries) ListVideosWithAssetErrors(ctx context.Context, limit int32) ([
 	return items, nil
 }
 
+const refreshVideoMetadata = `-- name: RefreshVideoMetadata :exec
+UPDATE videos SET
+    title = $1,
+    description = $2,
+    tags = $3,
+    view_count = $4,
+    like_count = $5,
+    info = $6,
+    search = video_search_vector($1, $7, $3::text[], $2),
+    metadata_refreshed_at = NOW(),
+    comments_checked_at = NOW(),
+    updated_at = NOW()
+WHERE id = $8
+`
+
+type RefreshVideoMetadataParams struct {
+	Title       string              `db:"title" json:"Title"`
+	Description string              `db:"description" json:"Description"`
+	Tags        []string            `db:"tags" json:"Tags"`
+	ViewCount   *int64              `db:"view_count" json:"ViewCount"`
+	LikeCount   *int64              `db:"like_count" json:"LikeCount"`
+	Info        videoinfo.VideoInfo `db:"info" json:"Info"`
+	Uploader    string              `db:"uploader" json:"Uploader"`
+	ID          pgtype.UUID         `db:"id" json:"ID"`
+}
+
+// RefreshVideoMetadata updates skip-download fields (title, description, tags,
+// view/like counts, info JSON, search vector) without touching media paths.
+//
+//	UPDATE videos SET
+//	    title = $1,
+//	    description = $2,
+//	    tags = $3,
+//	    view_count = $4,
+//	    like_count = $5,
+//	    info = $6,
+//	    search = video_search_vector($1, $7, $3::text[], $2),
+//	    metadata_refreshed_at = NOW(),
+//	    comments_checked_at = NOW(),
+//	    updated_at = NOW()
+//	WHERE id = $8
+func (q *Queries) RefreshVideoMetadata(ctx context.Context, arg *RefreshVideoMetadataParams) error {
+	_, err := q.db.Exec(ctx, refreshVideoMetadata,
+		arg.Title,
+		arg.Description,
+		arg.Tags,
+		arg.ViewCount,
+		arg.LikeCount,
+		arg.Info,
+		arg.Uploader,
+		arg.ID,
+	)
+	return err
+}
+
 const selectVideoBySrc = `-- name: SelectVideoBySrc :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 FROM videos
 WHERE src = $1
 `
 
 // SelectVideoBySrc returns a video by src.
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 //	FROM videos
 //	WHERE src = $1
 func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, error) {
@@ -751,6 +918,13 @@ func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, err
 		&i.Search,
 		&i.ProbeData,
 		&i.CommentsCheckedAt,
+		&i.ChannelURL,
+		&i.UploaderURL,
+		&i.ChannelRowID,
+		&i.Format,
+		&i.MetadataRefreshedAt,
+		&i.LinksHarvestedAt,
+		&i.Media,
 	)
 	return &i, err
 }

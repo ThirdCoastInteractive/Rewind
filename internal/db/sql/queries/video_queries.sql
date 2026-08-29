@@ -24,7 +24,8 @@ INSERT INTO videos (
     file_hash,
     file_size,
     probe_data,
-    search
+    search,
+    media
 )
 VALUES (
     sqlc.arg(id),
@@ -54,11 +55,13 @@ VALUES (
     sqlc.arg(file_hash),
     sqlc.arg(file_size),
     sqlc.arg(probe_data),
-    to_tsvector('simple'::regconfig,
-        coalesce(sqlc.arg(title), '') || ' ' ||
-        coalesce(sqlc.arg(description), '') || ' ' ||
-        coalesce(array_to_string(sqlc.arg(tags)::text[], ' '), '')
-    )
+    video_search_vector(
+        sqlc.arg(title),
+        sqlc.arg(uploader),
+        sqlc.arg(tags)::text[],
+        sqlc.arg(description)
+    ),
+    COALESCE(NULLIF(btrim(sqlc.arg(media)), ''), 'file')
 )
 ON CONFLICT (src)
 DO UPDATE SET
@@ -78,11 +81,15 @@ DO UPDATE SET
     like_count = EXCLUDED.like_count,
     info = EXCLUDED.info,
     comments = EXCLUDED.comments,
-    video_path = EXCLUDED.video_path,
-    thumbnail_path = EXCLUDED.thumbnail_path,
-    file_hash = EXCLUDED.file_hash,
-    file_size = EXCLUDED.file_size,
+    video_path = COALESCE(EXCLUDED.video_path, videos.video_path),
+    thumbnail_path = COALESCE(EXCLUDED.thumbnail_path, videos.thumbnail_path),
+    file_hash = COALESCE(EXCLUDED.file_hash, videos.file_hash),
+    file_size = COALESCE(EXCLUDED.file_size, videos.file_size),
     probe_data = COALESCE(EXCLUDED.probe_data, videos.probe_data),
+    media = CASE
+        WHEN videos.media = 'file' OR EXCLUDED.media = 'file' THEN 'file'
+        ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
+    END,
     search = EXCLUDED.search
 RETURNING *;
 
@@ -148,13 +155,14 @@ AND (
     -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
     lower(video_path) NOT LIKE '%.mp4'
     OR assets_status = '{}'::jsonb
-    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart'])
+    OR NOT (assets_status ?& array['thumbnail','preview','waveform','file_hash','seek','faststart','captions_clean'])
     OR assets_status @> '{"thumbnail": false}'::jsonb
     OR assets_status @> '{"preview": false}'::jsonb
     OR assets_status @> '{"waveform": false}'::jsonb
     OR assets_status @> '{"file_hash": false}'::jsonb
     OR assets_status @> '{"seek": false}'::jsonb
     OR assets_status @> '{"faststart": false}'::jsonb
+    OR assets_status @> '{"captions_clean": false}'::jsonb
 )
 AND (
     -- No errors yet, or backoff period has elapsed.
@@ -176,7 +184,8 @@ LIMIT $1;
 -- name: ListVideosMissingVideoPath :many
 SELECT id::text AS id
 FROM videos
-WHERE video_path IS NULL OR btrim(video_path) = ''
+WHERE (video_path IS NULL OR btrim(video_path) = '')
+  AND media <> 'metadata'
 ORDER BY updated_at ASC
 LIMIT $1;
 
@@ -255,5 +264,45 @@ LIMIT sqlc.arg(max_count);
 -- name: UpdateVideoAssetsStatus :exec
 UPDATE videos
 SET assets_status = COALESCE(assets_status, '{}'::jsonb) || sqlc.arg(assets_status)::asset_status_map,
+    updated_at = NOW()
+WHERE id = sqlc.arg(id);
+
+-- ClaimVideosForMetadataRefresh atomically claims up to batch_size videos whose
+-- metadata is stale (never refreshed, or older than 7 days), marking
+-- metadata_refreshed_at so other downloader replicas skip them. Followed-channel
+-- videos are claimed first. FOR UPDATE SKIP LOCKED prevents cross-replica
+-- double-claims.
+-- name: ClaimVideosForMetadataRefresh :many
+UPDATE videos SET metadata_refreshed_at = NOW()
+WHERE id IN (
+    SELECT v.id FROM videos v
+    WHERE v.src IS NOT NULL AND btrim(v.src) <> ''
+      AND (v.metadata_refreshed_at IS NULL
+           OR v.metadata_refreshed_at < NOW() - INTERVAL '7 days')
+    ORDER BY
+      CASE WHEN EXISTS (
+        SELECT 1 FROM watched_channels wc
+        WHERE wc.channel_id = v.channel_row_id AND wc.enabled
+      ) THEN 0 ELSE 1 END,
+      v.metadata_refreshed_at NULLS FIRST,
+      v.created_at DESC
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, src, archived_by, title, description, uploader, tags, channel_row_id, duration_seconds;
+
+-- RefreshVideoMetadata updates skip-download fields (title, description, tags,
+-- view/like counts, info JSON, search vector) without touching media paths.
+-- name: RefreshVideoMetadata :exec
+UPDATE videos SET
+    title = sqlc.arg(title),
+    description = sqlc.arg(description),
+    tags = sqlc.arg(tags),
+    view_count = sqlc.narg(view_count),
+    like_count = sqlc.narg(like_count),
+    info = sqlc.arg(info),
+    search = video_search_vector(sqlc.arg(title), sqlc.arg(uploader), sqlc.arg(tags)::text[], sqlc.arg(description)),
+    metadata_refreshed_at = NOW(),
+    comments_checked_at = NOW(),
     updated_at = NOW()
 WHERE id = sqlc.arg(id);

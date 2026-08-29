@@ -29,6 +29,41 @@ func (q *Queries) CountVideoComments(ctx context.Context, videoID pgtype.UUID) (
 	return count, err
 }
 
+const listDistinctCommentAuthorURLs = `-- name: ListDistinctCommentAuthorURLs :many
+SELECT DISTINCT author_url::text AS author_url
+FROM video_comments
+WHERE video_id = $1
+  AND author_url IS NOT NULL
+  AND btrim(author_url) <> ''
+`
+
+// ListDistinctCommentAuthorURLs returns unique comment author profile URLs for a video.
+//
+//	SELECT DISTINCT author_url::text AS author_url
+//	FROM video_comments
+//	WHERE video_id = $1
+//	  AND author_url IS NOT NULL
+//	  AND btrim(author_url) <> ''
+func (q *Queries) ListDistinctCommentAuthorURLs(ctx context.Context, videoID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDistinctCommentAuthorURLs, videoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var author_url string
+		if err := rows.Scan(&author_url); err != nil {
+			return nil, err
+		}
+		items = append(items, author_url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVideoCommentReplies = `-- name: ListVideoCommentReplies :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
        c.published_at, c.like_count, c.text, c.created_at,
@@ -253,7 +288,11 @@ SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author
                  WHERE rc.video_id = c.video_id AND rc.parent_id = c.comment_id), 0)::bigint AS reply_count
 FROM video_comments c
 WHERE c.video_id = $2
-  AND c.search @@ plainto_tsquery('simple', $1::text)
+  AND (
+    c.search @@ plainto_tsquery('simple', $1::text)
+    OR COALESCE(c.text, '') ILIKE '%' || $1 || '%'
+    OR COALESCE(c.author, '') ILIKE '%' || $1 || '%'
+  )
 ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
 LIMIT $4::int
 OFFSET $3::int
@@ -308,7 +347,11 @@ type SearchVideoCommentsRow struct {
 //	                 WHERE rc.video_id = c.video_id AND rc.parent_id = c.comment_id), 0)::bigint AS reply_count
 //	FROM video_comments c
 //	WHERE c.video_id = $2
-//	  AND c.search @@ plainto_tsquery('simple', $1::text)
+//	  AND (
+//	    c.search @@ plainto_tsquery('simple', $1::text)
+//	    OR COALESCE(c.text, '') ILIKE '%' || $1 || '%'
+//	    OR COALESCE(c.author, '') ILIKE '%' || $1 || '%'
+//	  )
 //	ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
 //	LIMIT $4::int
 //	OFFSET $3::int

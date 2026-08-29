@@ -23,7 +23,7 @@ func HandleSettingsCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, 
 
 		cookiesContent := strings.TrimSpace(c.FormValue("cookies_content"))
 		if cookiesContent == "" {
-			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "No cookies content provided")
+			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "No cookies content provided", "")
 		}
 
 		normalizedContent := strings.ReplaceAll(cookiesContent, "\r\n", "\n")
@@ -94,7 +94,7 @@ func HandleSettingsCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, 
 			errMsg += "Cookies must be in Netscape format with TAB-separated values (not spaces). "
 			errMsg += "Each line should have: domain[TAB]flag[TAB]path[TAB]secure[TAB]expiration[TAB]name[TAB]value. "
 			errMsg += "Use a browser extension like 'Get cookies.txt LOCALLY' or 'cookies.txt' to export in the correct format."
-			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", errMsg)
+			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", errMsg, "")
 		}
 
 		slog.Info("cookies saved successfully", "user", username, "original_lines", len(lines), "valid_cookies", validCount, "invalid_lines", invalidCount)
@@ -106,6 +106,6 @@ func HandleSettingsCookies(sm *auth.SessionManager, dbc *db.DatabaseConnection, 
 		cookiesDisplay := generateCookiesFile(encMgr, cookies)
 
 		successMsg := fmt.Sprintf("Cookies saved successfully (%d valid cookies from %d total lines)", validCount, len(lines))
-		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesDisplay, successMsg)
+		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesDisplay, successMsg, "")
 	}
 }

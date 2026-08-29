@@ -51,11 +51,16 @@ services:
     networks:
       - rewind-network
 
+  # Transcription uses whisper.cpp. Weights are downloaded into /models at
+  # runtime (never baked into the image). Pick a hardware tag:
+  #   rewind-ingest:latest      CPU (Alpine)
+  #   rewind-ingest:cuda        NVIDIA (set INGEST_RUNTIME=runtime-cuda when building)
+  #   rewind-ingest:rocm        AMD
   ingest:
     image: ghcr.io/thirdcoastinteractive/rewind-ingest:latest
     deploy:
       replicas: 3
-      # Uncomment for NVIDIA GPU acceleration (requires NVIDIA Container Toolkit):
+      # NVIDIA: use the :cuda image, NVIDIA Container Toolkit, and:
       # resources:
       #   reservations:
       #     devices:
@@ -69,10 +74,14 @@ services:
       INGEST_WORKERS: ${INGEST_WORKERS:-2}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
       WHISPER_ENABLED: ${WHISPER_ENABLED:-true}
-      WHISPER_CMD: ${WHISPER_CMD:-whisper}
+      WHISPER_CMD: ${WHISPER_CMD:-whisper-cli}
+      # large-v3 = best multilingual; large-v3-turbo = much faster; small = default
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_MODEL_DIR: /models
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      # ISO 639-1, or "auto" to let whisper.cpp detect
       WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
+      # transcribe = same language; translate = English output via -tr
       WHISPER_TASK: ${WHISPER_TASK:-transcribe}
       WHISPER_ARGS: ${WHISPER_ARGS:-}
       WHISPER_TIMEOUT_SECONDS: ${WHISPER_TIMEOUT_SECONDS:-0}
@@ -81,6 +90,7 @@ services:
     volumes:
       - ./bin/spool:/spool
       - ./bin/download:/downloads
+      - ./bin/models:/models
     depends_on:
       postgres:
         condition: service_healthy

@@ -8,46 +8,44 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"thirdcoast.systems/rewind/pkg/captions"
 )
 
 func logWhisperStartupInfo() {
-	enabled := whisperEnabled()
-
-	cmdName := strings.TrimSpace(os.Getenv("WHISPER_CMD"))
-	if cmdName == "" {
-		cmdName = "whisper"
-	}
-	cmdPath, err := exec.LookPath(cmdName)
-	if err != nil {
-		slog.Warn("whisper command not found", "cmd", cmdName, "error", err)
+	cfg := loadWhisperConfig()
+	slog.Info("whisper.cpp config",
+		"enabled", cfg.Enabled,
+		"cmd", cfg.Cmd,
+		"model", cfg.Model,
+		"model_dir", cfg.ModelDir,
+		"language", cfg.Language,
+		"task", cfg.Task,
+		"device", cfg.Device,
+	)
+	if !cfg.Enabled {
 		return
 	}
-
-	model := strings.TrimSpace(os.Getenv("WHISPER_MODEL"))
-	if model == "" {
-		model = "small"
+	if _, err := exec.LookPath(cfg.Cmd); err != nil {
+		slog.Warn("whisper-cli not found on PATH", "cmd", cfg.Cmd, "error", err)
 	}
-	device := strings.TrimSpace(os.Getenv("WHISPER_DEVICE"))
-	if device == "" {
-		device = "cpu"
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if path, err := ensureWhisperModel(ctx, cfg); err != nil {
+		slog.Warn("whisper model not ready (will retry on first caption job)", "error", err)
+	} else {
+		slog.Info("whisper model ready", "path", path)
 	}
-	lang := strings.TrimSpace(os.Getenv("WHISPER_LANGUAGE"))
-	task := strings.TrimSpace(os.Getenv("WHISPER_TASK"))
-	if task == "" {
-		task = "transcribe"
+	if strings.EqualFold(cfg.Device, "cuda") || strings.EqualFold(cfg.Device, "rocm") {
+		logGPUDevices(cfg.Device)
 	}
+}
 
-	slog.Info("whisper config", "enabled", enabled, "cmd", cmdPath, "model", model, "device", device, "language", lang, "task", task)
-
-	if !enabled || !strings.EqualFold(device, "cuda") {
-		return
-	}
-
+func logGPUDevices(device string) {
 	hasDevice := false
-	for _, p := range []string{"/dev/nvidia0", "/dev/nvidiactl", "/dev/nvidia-uvm"} {
+	for _, p := range []string{"/dev/nvidia0", "/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/kfd", "/dev/dri"} {
 		if _, err := os.Stat(p); err == nil {
 			hasDevice = true
 			break
@@ -56,7 +54,6 @@ func logWhisperStartupInfo() {
 	if !hasDevice {
 		slog.Warn("gpu device nodes not found", "device", device)
 	}
-
 	if smiPath, err := exec.LookPath("nvidia-smi"); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -67,8 +64,6 @@ func logWhisperStartupInfo() {
 		} else {
 			slog.Info("nvidia-smi", "output", strings.TrimSpace(string(output)))
 		}
-	} else {
-		slog.Warn("nvidia-smi not found")
 	}
 }
 
@@ -97,23 +92,19 @@ func findCanonicalCaptionFilePath(dir string, videoID string) (string, string, b
 		}
 	}
 	matches, _ := filepath.Glob(filepath.Join(dir, videoID+".captions.*.vtt"))
-	if len(matches) == 0 {
-		return "", "", false
-	}
-	lang := "und"
-	base := strings.ToLower(filepath.Base(matches[0]))
-	parts := strings.Split(base, ".")
-	if len(parts) >= 3 {
-		cand := parts[len(parts)-2]
-		if cand != "" && cand != "vtt" {
-			lang = cand
+	for _, p := range matches {
+		base := strings.ToLower(filepath.Base(p))
+		if strings.HasSuffix(base, ".src.vtt") {
+			continue
 		}
+		return p, captions.LangFromFilename(p), true
 	}
-	return matches[0], lang, true
+	return "", "", false
 }
 
 func generateCaptionsWithWhisper(ctx context.Context, videoPath string, videoID string, outputDir string) (string, string, error) {
-	if !whisperEnabled() {
+	cfg := loadWhisperConfig()
+	if !cfg.Enabled {
 		return "", "", fmt.Errorf("whisper disabled")
 	}
 	videoPath = strings.TrimSpace(videoPath)
@@ -123,88 +114,59 @@ func generateCaptionsWithWhisper(ctx context.Context, videoPath string, videoID 
 		return "", "", fmt.Errorf("whisper: missing inputs")
 	}
 
-	cmdName := strings.TrimSpace(os.Getenv("WHISPER_CMD"))
-	if cmdName == "" {
-		cmdName = "whisper"
-	}
-	cmdPath, err := exec.LookPath(cmdName)
+	cmdPath, err := exec.LookPath(cfg.Cmd)
 	if err != nil {
-		return "", "", fmt.Errorf("whisper: command not found: %w", err)
+		return "", "", fmt.Errorf("whisper-cli not found (%s): %w", cfg.Cmd, err)
+	}
+	modelPath, err := ensureWhisperModel(ctx, cfg)
+	if err != nil {
+		return "", "", err
 	}
 
-	model := strings.TrimSpace(os.Getenv("WHISPER_MODEL"))
-	if model == "" {
-		model = "small"
-	}
-	device := strings.TrimSpace(os.Getenv("WHISPER_DEVICE"))
-	if device == "" {
-		device = "cpu"
-	}
-	lang := strings.TrimSpace(os.Getenv("WHISPER_LANGUAGE"))
 	langTag := "und"
-	useLang := false
-	if lang != "" && !strings.EqualFold(lang, "auto") {
-		useLang = true
-		langTag = lang
-	}
-
-	task := strings.TrimSpace(os.Getenv("WHISPER_TASK"))
-	if task == "" {
-		task = "transcribe"
-	}
-
-	args := []string{
-		videoPath,
-		"--model", model,
-		"--output_format", "vtt",
-		"--output_dir", outputDir,
-		"--device", device,
-		"--task", task,
-	}
-	if useLang {
-		args = append(args, "--language", lang)
-	}
-	if extra := strings.TrimSpace(os.Getenv("WHISPER_ARGS")); extra != "" {
-		args = append(args, strings.Fields(extra)...)
+	if cfg.Translate {
+		langTag = "en"
+	} else if cfg.Language != "" && !strings.EqualFold(cfg.Language, "auto") {
+		langTag = cfg.Language
 	}
 
 	ctxToUse := ctx
-	if timeout := strings.TrimSpace(os.Getenv("WHISPER_TIMEOUT_SECONDS")); timeout != "" {
-		if n, err := strconv.Atoi(timeout); err == nil && n > 0 {
-			var cancel context.CancelFunc
-			ctxToUse, cancel = context.WithTimeout(ctx, time.Duration(n)*time.Second)
-			defer cancel()
-		}
+	if cfg.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctxToUse, cancel = context.WithTimeout(ctx, cfg.Timeout)
+		defer cancel()
 	}
 
+	wavPath := filepath.Join(outputDir, videoID+".whisper.wav")
+	defer os.Remove(wavPath)
+	if err := extractWav16k(ctxToUse, videoPath, wavPath); err != nil {
+		return "", "", err
+	}
+
+	outPrefix := filepath.Join(outputDir, videoID+".whisper")
+	args := whisperCLIArgs(modelPath, wavPath, outPrefix, cfg)
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctxToUse, cmdPath, args...)
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
-		return "", "", fmt.Errorf("whisper failed: %w (output=%s)", err, strings.TrimSpace(buf.String()))
+		return "", "", fmt.Errorf("whisper.cpp failed: %w (output=%s)", err, strings.TrimSpace(buf.String()))
 	}
 
-	base := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	cand := filepath.Join(outputDir, base+".vtt")
+	cand := outPrefix + ".vtt"
 	if _, err := os.Stat(cand); err != nil {
-		glob := filepath.Join(outputDir, base+"*.vtt")
-		matches, _ := filepath.Glob(glob)
+		matches, _ := filepath.Glob(outPrefix + "*.vtt")
 		if len(matches) == 0 {
-			return "", "", fmt.Errorf("whisper output not found in %s", outputDir)
+			return "", "", fmt.Errorf("whisper.cpp output not found in %s", outputDir)
 		}
 		cand = matches[0]
 	}
 
 	dest := filepath.Join(outputDir, videoID+".captions."+langTag+".vtt")
-	if _, err := os.Stat(dest); err == nil {
-		return dest, langTag, nil
-	}
 	if filepath.Clean(cand) != filepath.Clean(dest) {
 		if err := moveOrCopyFile(cand, dest); err != nil {
 			return "", "", fmt.Errorf("whisper move: %w", err)
 		}
 	}
-
 	return dest, langTag, nil
 }

@@ -115,6 +115,7 @@ func HandleVideoDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		}
 
 		streamHeights, streamQualities := readStreamsManifest(videoRow.VideoPath)
+		videoPath := common.DerefString(videoRow.VideoPath)
 
 		video := templates.VideoDetail{
 			ID:                videoData.VideoID.String(),
@@ -128,7 +129,9 @@ func HandleVideoDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 			SavedPosition:     savedPosition,
 			FileSize:          videoRow.FileSize,
 			ActiveRegenScopes: activeRegenScopes,
-			VideoPath:         common.DerefString(videoRow.VideoPath),
+			VideoPath:         videoPath,
+			Media:             videoRow.Media,
+			HasMedia:          strings.TrimSpace(videoPath) != "",
 			StreamHeights:     streamHeights,
 			StreamQualities:   streamQualities,
 		}

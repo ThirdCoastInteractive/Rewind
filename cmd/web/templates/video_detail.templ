@@ -22,6 +22,8 @@ type VideoDetail struct {
 	SpoolDir      string
 	VideoPath     string // Absolute path to the main video file on disk
 	ThumbnailPath string
+	Media         string // "file" or "metadata"
+	HasMedia      bool   // true when VideoPath is set
 	CreatedAt     string
 	SavedPosition float64 // Last playback position in seconds
 	FileSize      *int64  // File size in bytes from DB
@@ -108,26 +110,43 @@ templ videoDetailNav(video VideoDetail) {
 
 // videoPlayer renders the video element and player controls.
 templ videoPlayer(video VideoDetail) {
-	<div
-		class="custom-video-player border-2 border-white/10 mb-4"
-		data-video-player
-		data-video-id={ video.ID }
-		data-saved-position={ fmt.Sprintf("%.3f", video.SavedPosition) }
-		if len(video.StreamQualities) > 0 {
-			data-qualities={ streamQualitiesJSON(video) }
-		}
-	>
-		<video
-			id="videoPlayer"
-			preload="metadata"
-			playsinline
+	if !video.HasMedia || strings.TrimSpace(video.VideoPath) == "" {
+		<div class="border-2 border-white/10 mb-4 p-4">
+			<p class="font-mono text-sm text-white mb-3">Metadata only — descriptions indexed, media not archived</p>
+			if strings.TrimSpace(video.Src) != "" {
+				<form method="POST" action="/archive" class="flex flex-wrap gap-2 items-center">
+					<input type="hidden" name="url" value={ video.Src }/>
+					<button type="submit" class="btn-primary btn-sm">
+						<i class="fa-sharp fa-solid fa-download mr-1" aria-hidden="true"></i>
+						Download media
+					</button>
+				</form>
+			} else {
+				<p class="font-mono text-xs text-white/60">Archive the media from <a href="/upload" class="text-white hover:underline">Upload</a>.</p>
+			}
+		</div>
+	} else {
+		<div
+			class="custom-video-player border-2 border-white/10 mb-4"
+			data-video-player
+			data-video-id={ video.ID }
+			data-saved-position={ fmt.Sprintf("%.3f", video.SavedPosition) }
+			if len(video.StreamQualities) > 0 {
+				data-qualities={ streamQualitiesJSON(video) }
+			}
 		>
-			<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
-			<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>
-			Your browser does not support the video tag.
-		</video>
-		@components.VideoPlayerControls()
-	</div>
+			<video
+				id="videoPlayer"
+				preload="metadata"
+				playsinline
+			>
+				<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
+				<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>
+				Your browser does not support the video tag.
+			</video>
+			@components.VideoPlayerControls()
+		</div>
+	}
 }
 
 // videoTranscriptAndClips renders transcript, clips, markers, and comments as
@@ -168,27 +187,27 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 				<div data-show="$videoPanelTab == 'clips'">
 					<div class="flex flex-wrap gap-2 mb-3">
 						<div class="text-xs text-white/40 self-center font-mono mr-2">Shift+I / O / C</div>
-					<button type="button" data-clip-set-in class="ghost-btn-sm">
-						SET IN
-					</button>
-					<button type="button" data-clip-set-out class="ghost-btn-sm">
-						SET OUT
-					</button>
-					<button type="button" data-clip-create class="btn-primary btn-sm">
-						CREATE CLIP
-					</button>
-					<div class="text-xs text-white/40 self-center font-mono" data-clip-range></div>
-				</div>
-				@components.ClipListContainer(clips)
-				<div class="hidden" data-signals="{_createClipStart: 0, _createClipEnd: 0}">
-					<input type="hidden" data-bind="_createClipStart" data-clip-create-start/>
-					<input type="hidden" data-bind="_createClipEnd" data-clip-create-end/>
-					<button
-						type="button"
-						data-clip-create-submit
-						data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID) }
-					></button>
-				</div>
+						<button type="button" data-clip-set-in class="ghost-btn-sm">
+							SET IN
+						</button>
+						<button type="button" data-clip-set-out class="ghost-btn-sm">
+							SET OUT
+						</button>
+						<button type="button" data-clip-create class="btn-primary btn-sm">
+							CREATE CLIP
+						</button>
+						<div class="text-xs text-white/40 self-center font-mono" data-clip-range></div>
+					</div>
+					@components.ClipListContainer(clips)
+					<div class="hidden" data-signals="{_createClipStart: 0, _createClipEnd: 0}">
+						<input type="hidden" data-bind="_createClipStart" data-clip-create-start/>
+						<input type="hidden" data-bind="_createClipEnd" data-clip-create-end/>
+						<button
+							type="button"
+							data-clip-create-submit
+							data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID) }
+						></button>
+					</div>
 				</div>
 				<div data-show="$videoPanelTab == 'markers'">
 					<div class="space-y-2" data-markers-list data-init={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", video.ID) }>
@@ -198,7 +217,7 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 				<div
 					data-show="$videoPanelTab == 'comments'"
 					data-comments-list
-					data-signals-ifmissing="{_commentSearch: '', _commentPage: 0}"
+					data-signals="{commentSearch: '', commentPage: 0}"
 					data-init={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", video.ID) }
 				>
 					<div class="text-white/40 font-mono text-xs">Loading comments…</div>
@@ -250,8 +269,10 @@ templ videoActionButtons(video VideoDetail) {
 			class="flex flex-wrap gap-2"
 			data-signals={ regenSignals(video) }
 		>
-			@components.LinkButton("/api/videos/"+video.ID+"/download", "primary", "sm", "download", false) {
-				DOWNLOAD VIDEO
+			if video.HasMedia {
+				@components.LinkButton("/api/videos/"+video.ID+"/download", "primary", "sm", "download", false) {
+					DOWNLOAD VIDEO
+				}
 			}
 			<button
 				type="button"

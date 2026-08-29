@@ -41,27 +41,34 @@ ORIGINAL_BRANCH=$(git symbolic-ref --short HEAD)
 echo "==> Fetching latest from origin..."
 git fetch origin
 
-# Get the tree (snapshot) of master
+# Get the tree (snapshot) of master, then drop private agent/docs paths.
 echo "==> Reading master tree..."
 MASTER_TREE=$(git rev-parse master^{tree})
+TMPINDEX="$(mktemp)"
+export GIT_INDEX_FILE="$TMPINDEX"
+git read-tree "$MASTER_TREE"
+bash scripts/check-release.sh --strip-index
+RELEASE_TREE=$(git write-tree)
+rm -f "$TMPINDEX"
+unset GIT_INDEX_FILE
 
 # Check if main exists locally, create or update
 if git show-ref --verify --quiet refs/heads/main; then
   echo "==> Updating existing main branch..."
-  # Get current main commit to check if tree changed
   MAIN_TREE=$(git rev-parse main^{tree})
-  if [ "$MASTER_TREE" = "$MAIN_TREE" ]; then
-    echo "Nothing to release — main already matches master content."
+  if [ "$RELEASE_TREE" = "$MAIN_TREE" ]; then
+    echo "Nothing to release — main already matches stripped master content."
     exit 0
   fi
-  # Create a new commit on main with master's tree
   PARENT=$(git rev-parse main)
-  COMMIT=$(git commit-tree "$MASTER_TREE" -p "$PARENT" -m "$RELEASE_MSG")
+  COMMIT=$(git commit-tree "$RELEASE_TREE" -p "$PARENT" -m "$RELEASE_MSG")
 else
   echo "==> Creating new main branch..."
-  # First release — orphan commit
-  COMMIT=$(git commit-tree "$MASTER_TREE" -m "$RELEASE_MSG")
+  COMMIT=$(git commit-tree "$RELEASE_TREE" -m "$RELEASE_MSG")
 fi
+
+echo "==> Checking public commit..."
+bash scripts/check-release.sh --commit "$COMMIT"
 
 # Point main at the new commit
 git update-ref refs/heads/main "$COMMIT"

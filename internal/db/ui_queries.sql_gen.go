@@ -13,14 +13,14 @@ import (
 )
 
 const getDownloadJobByID = `-- name: GetDownloadJobByID :one
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 FROM download_jobs
 WHERE id = $1
 `
 
 // GetDownloadJobByID returns a download job by ID
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	FROM download_jobs
 //	WHERE id = $1
 func (q *Queries) GetDownloadJobByID(ctx context.Context, id pgtype.UUID) (*DownloadJob, error) {
@@ -48,6 +48,7 @@ func (q *Queries) GetDownloadJobByID(ctx context.Context, id pgtype.UUID) (*Down
 		&i.ParentJobID,
 		&i.BatchLabel,
 		&i.BatchTotal,
+		&i.WatchID,
 	)
 	return &i, err
 }
@@ -91,14 +92,14 @@ func (q *Queries) GetHomeStats(ctx context.Context) (*GetHomeStatsRow, error) {
 }
 
 const getVideoByID = `-- name: GetVideoByID :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 FROM videos
 WHERE id = $1
 `
 
 // GetVideoByID returns a video by ID
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 //	FROM videos
 //	WHERE id = $1
 func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, error) {
@@ -133,6 +134,13 @@ func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, err
 		&i.Search,
 		&i.ProbeData,
 		&i.CommentsCheckedAt,
+		&i.ChannelURL,
+		&i.UploaderURL,
+		&i.ChannelRowID,
+		&i.Format,
+		&i.MetadataRefreshedAt,
+		&i.LinksHarvestedAt,
+		&i.Media,
 	)
 	return &i, err
 }
@@ -208,7 +216,7 @@ func (q *Queries) ListDistinctUploaders(ctx context.Context) ([]string, error) {
 }
 
 const listDownloadJobsByUser = `-- name: ListDownloadJobsByUser :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 FROM download_jobs
 WHERE archived_by = $1
   AND archived = FALSE
@@ -223,7 +231,7 @@ type ListDownloadJobsByUserParams struct {
 
 // ListDownloadJobsByUser returns all download jobs for a user
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	FROM download_jobs
 //	WHERE archived_by = $1
 //	  AND archived = FALSE
@@ -260,6 +268,7 @@ func (q *Queries) ListDownloadJobsByUser(ctx context.Context, arg *ListDownloadJ
 			&i.ParentJobID,
 			&i.BatchLabel,
 			&i.BatchTotal,
+			&i.WatchID,
 		); err != nil {
 			return nil, err
 		}
@@ -272,7 +281,7 @@ func (q *Queries) ListDownloadJobsByUser(ctx context.Context, arg *ListDownloadJ
 }
 
 const listDownloadJobsByVideoID = `-- name: ListDownloadJobsByVideoID :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 FROM download_jobs
 WHERE video_id = $1
    OR url = $2
@@ -287,7 +296,7 @@ type ListDownloadJobsByVideoIDParams struct {
 // ListDownloadJobsByVideoID returns all download jobs for a video.
 // Matches by video_id FK or by URL matching the video's src column.
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	FROM download_jobs
 //	WHERE video_id = $1
 //	   OR url = $2
@@ -323,6 +332,7 @@ func (q *Queries) ListDownloadJobsByVideoID(ctx context.Context, arg *ListDownlo
 			&i.ParentJobID,
 			&i.BatchLabel,
 			&i.BatchTotal,
+			&i.WatchID,
 		); err != nil {
 			return nil, err
 		}
@@ -454,7 +464,7 @@ func (q *Queries) ListRecentClips(ctx context.Context) ([]*ListRecentClipsRow, e
 }
 
 const listRecentDownloadJobs = `-- name: ListRecentDownloadJobs :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 FROM download_jobs
 WHERE archived = FALSE
 ORDER BY created_at DESC
@@ -463,7 +473,7 @@ LIMIT 100
 
 // ListRecentDownloadJobs returns recent download jobs for all users
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	FROM download_jobs
 //	WHERE archived = FALSE
 //	ORDER BY created_at DESC
@@ -499,6 +509,7 @@ func (q *Queries) ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, e
 			&i.ParentJobID,
 			&i.BatchLabel,
 			&i.BatchTotal,
+			&i.WatchID,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +522,7 @@ func (q *Queries) ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, e
 }
 
 const listRecentVideos = `-- name: ListRecentVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 FROM videos
 ORDER BY created_at DESC
 LIMIT 15
@@ -519,7 +530,7 @@ LIMIT 15
 
 // ListRecentVideos returns recent videos (by archive date)
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 //	FROM videos
 //	ORDER BY created_at DESC
 //	LIMIT 15
@@ -561,6 +572,13 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 			&i.Search,
 			&i.ProbeData,
 			&i.CommentsCheckedAt,
+			&i.ChannelURL,
+			&i.UploaderURL,
+			&i.ChannelRowID,
+			&i.Format,
+			&i.MetadataRefreshedAt,
+			&i.LinksHarvestedAt,
+			&i.Media,
 		); err != nil {
 			return nil, err
 		}
@@ -573,7 +591,7 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 }
 
 const listRecentlyPublishedVideos = `-- name: ListRecentlyPublishedVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 FROM videos
 WHERE upload_date IS NOT NULL
 ORDER BY upload_date DESC
@@ -582,7 +600,7 @@ LIMIT 15
 
 // ListRecentlyPublishedVideos returns videos sorted by original publish date
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
 //	FROM videos
 //	WHERE upload_date IS NOT NULL
 //	ORDER BY upload_date DESC
@@ -625,6 +643,13 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 			&i.Search,
 			&i.ProbeData,
 			&i.CommentsCheckedAt,
+			&i.ChannelURL,
+			&i.UploaderURL,
+			&i.ChannelRowID,
+			&i.Format,
+			&i.MetadataRefreshedAt,
+			&i.LinksHarvestedAt,
+			&i.Media,
 		); err != nil {
 			return nil, err
 		}
@@ -637,8 +662,49 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 }
 
 const listVideosPaginated = `-- name: ListVideosPaginated :many
+WITH params AS (
+    SELECT
+        NULLIF(btrim(COALESCE($14::text, '')), '') AS tsq,
+        NULLIF(btrim(COALESCE($15::text, '')), '') AS raw
+),
+hits AS (
+    SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
+    UNION ALL
+    SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
+    UNION ALL
+    SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+    FROM video_comments vc
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
+    GROUP BY vc.video_id
+    UNION ALL
+    SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+    FROM video_transcripts vt
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
+    GROUP BY vt.video_id
+    UNION ALL
+    SELECT v.id, 0.05::real
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.raw IS NOT NULL AND (
+        strpos(lower(v.title), lower(p.raw)) > 0
+        OR strpos(lower(v.uploader), lower(p.raw)) > 0
+    )
+),
+ranked AS (
+    SELECT video_id, sum(rank) AS rank
+    FROM hits
+    GROUP BY video_id
+)
 SELECT 
-    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at,
+    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media,
     COUNT(*) OVER() AS total_count,
     COALESCE((SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id), 0) AS clip_count,
     COALESCE((SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id), 0) AS marker_count,
@@ -647,70 +713,72 @@ SELECT
     COALESCE(u.user_name, 'unknown') AS archived_by_username
 FROM videos v
 LEFT JOIN users u ON v.archived_by = u.id
+LEFT JOIN ranked r ON r.video_id = v.id
+CROSS JOIN params p
 WHERE
-    -- Full-text search (optional)
-    ($1::text IS NULL OR v.search @@ plainto_tsquery('simple', $1))
-    -- Uploader filter (optional)
-    AND ($2::text IS NULL OR v.uploader = $2)
+    -- Full-text / substring search (optional).
+    (p.raw IS NULL OR r.video_id IS NOT NULL)
+    -- Uploader filter: substring, case-insensitive (optional)
+    AND ($1::text IS NULL OR strpos(lower(v.uploader), lower($1)) > 0)
     -- Channel filter (optional)
-    AND ($3::text IS NULL OR v.channel_id = $3)
+    AND ($2::text IS NULL OR v.channel_id = $2)
     -- Duration filter: short=<5min, medium=5-30min, long=>30min
     AND (
-        $4::text IS NULL
-        OR ($4 = 'short' AND v.duration_seconds < 300)
-        OR ($4 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
-        OR ($4 = 'long' AND v.duration_seconds >= 1800)
+        $3::text IS NULL
+        OR ($3 = 'short' AND v.duration_seconds < 300)
+        OR ($3 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
+        OR ($3 = 'long' AND v.duration_seconds >= 1800)
     )
     -- Scraped tags filter (any tag matches)
-    AND ($5::text[] IS NULL OR v.tags && $5::text[])
+    AND ($4::text[] IS NULL OR v.tags && $4::text[])
     -- User tag filter (video has any of the selected tag ids)
-    AND ($6::uuid[] IS NULL OR EXISTS (
+    AND ($5::uuid[] IS NULL OR EXISTS (
         SELECT 1 FROM video_tags vt
-        WHERE vt.video_id = v.id AND vt.tag_id = ANY($6::uuid[])
+        WHERE vt.video_id = v.id AND vt.tag_id = ANY($5::uuid[])
     ))
     -- Date range (archived or published based on date_type)
     AND (
-        $7::date IS NULL 
-        OR ($8::text = 'published' AND v.upload_date >= $7)
-        OR ($8::text IS DISTINCT FROM 'published' AND v.created_at::date >= $7)
+        $6::date IS NULL 
+        OR ($7::text = 'published' AND v.upload_date >= $6)
+        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date >= $6)
     )
     AND (
-        $9::date IS NULL
-        OR ($8::text = 'published' AND v.upload_date <= $9)
-        OR ($8::text IS DISTINCT FROM 'published' AND v.created_at::date <= $9)
+        $8::date IS NULL
+        OR ($7::text = 'published' AND v.upload_date <= $8)
+        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date <= $8)
     )
     -- Has clips filter
-    AND ($10::boolean IS NULL OR $10 = FALSE 
+    AND ($9::boolean IS NULL OR $9 = FALSE 
          OR EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id))
     -- Has markers filter
-    AND ($11::boolean IS NULL OR $11 = FALSE
+    AND ($10::boolean IS NULL OR $10 = FALSE
          OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 ORDER BY
+    CASE WHEN $11 = 'relevance' THEN r.rank END DESC NULLS LAST,
     -- Date sorts (archived)
-    CASE WHEN $12 = 'newest' THEN v.created_at END DESC NULLS LAST,
-    CASE WHEN $12 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+    CASE WHEN $11 = 'newest' THEN v.created_at END DESC NULLS LAST,
+    CASE WHEN $11 = 'oldest' THEN v.created_at END ASC NULLS LAST,
     -- Date sorts (published)
-    CASE WHEN $12 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-    CASE WHEN $12 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+    CASE WHEN $11 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+    CASE WHEN $11 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
     -- Title sorts
-    CASE WHEN $12 = 'alpha' THEN v.title END ASC NULLS LAST,
-    CASE WHEN $12 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+    CASE WHEN $11 = 'alpha' THEN v.title END ASC NULLS LAST,
+    CASE WHEN $11 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
     -- Duration sorts
-    CASE WHEN $12 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-    CASE WHEN $12 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+    CASE WHEN $11 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+    CASE WHEN $11 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
     -- Activity sorts
-    CASE WHEN $12 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $12 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $12 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $12 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $11 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $11 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $11 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $11 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
     -- Default fallback
     v.created_at DESC
-LIMIT $14
-OFFSET $13
+LIMIT $13
+OFFSET $12
 `
 
 type ListVideosPaginatedParams struct {
-	Query          *string       `db:"query" json:"Query"`
 	Uploader       *string       `db:"uploader" json:"Uploader"`
 	ChannelID      *string       `db:"channel_id" json:"ChannelID"`
 	DurationFilter *string       `db:"duration_filter" json:"DurationFilter"`
@@ -724,50 +792,100 @@ type ListVideosPaginatedParams struct {
 	SortOrder      interface{}   `db:"sort_order" json:"SortOrder"`
 	PageOffset     int32         `db:"page_offset" json:"PageOffset"`
 	PageLimit      int32         `db:"page_limit" json:"PageLimit"`
+	Tsquery        *string       `db:"tsquery" json:"Tsquery"`
+	Query          *string       `db:"query" json:"Query"`
 }
 
 type ListVideosPaginatedRow struct {
-	ID                 pgtype.UUID          `db:"id" json:"ID"`
-	CreatedAt          pgtype.Timestamptz   `db:"created_at" json:"CreatedAt"`
-	UpdatedAt          pgtype.Timestamptz   `db:"updated_at" json:"UpdatedAt"`
-	Src                string               `db:"src" json:"Src"`
-	ArchivedBy         pgtype.UUID          `db:"archived_by" json:"ArchivedBy"`
-	Title              string               `db:"title" json:"Title"`
-	Info               videoinfo.VideoInfo  `db:"info" json:"Info"`
-	Comments           []byte               `db:"comments" json:"Comments"`
-	VideoPath          *string              `db:"video_path" json:"VideoPath"`
-	ThumbnailPath      *string              `db:"thumbnail_path" json:"ThumbnailPath"`
-	Description        string               `db:"description" json:"Description"`
-	Tags               []string             `db:"tags" json:"Tags"`
-	Uploader           string               `db:"uploader" json:"Uploader"`
-	UploaderID         *string              `db:"uploader_id" json:"UploaderID"`
-	ChannelID          *string              `db:"channel_id" json:"ChannelID"`
-	UploadDate         pgtype.Date          `db:"upload_date" json:"UploadDate"`
-	DurationSeconds    *int32               `db:"duration_seconds" json:"DurationSeconds"`
-	ViewCount          *int64               `db:"view_count" json:"ViewCount"`
-	LikeCount          *int64               `db:"like_count" json:"LikeCount"`
-	ThumbGradientStart *string              `db:"thumb_gradient_start" json:"ThumbGradientStart"`
-	ThumbGradientEnd   *string              `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
-	ThumbGradientAngle *int32               `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
-	FileHash           *string              `db:"file_hash" json:"FileHash"`
-	FileSize           *int64               `db:"file_size" json:"FileSize"`
-	AssetsStatus       AssetMap             `db:"assets_status" json:"AssetsStatus"`
-	Search             string               `db:"search" json:"Search"`
-	ProbeData          *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
-	CommentsCheckedAt  pgtype.Timestamptz   `db:"comments_checked_at" json:"CommentsCheckedAt"`
-	TotalCount         int64                `db:"total_count" json:"TotalCount"`
-	ClipCount          interface{}          `db:"clip_count" json:"ClipCount"`
-	MarkerCount        interface{}          `db:"marker_count" json:"MarkerCount"`
-	LastClipAt         interface{}          `db:"last_clip_at" json:"LastClipAt"`
-	LastMarkerAt       interface{}          `db:"last_marker_at" json:"LastMarkerAt"`
-	ArchivedByUsername string               `db:"archived_by_username" json:"ArchivedByUsername"`
+	ID                  pgtype.UUID          `db:"id" json:"ID"`
+	CreatedAt           pgtype.Timestamptz   `db:"created_at" json:"CreatedAt"`
+	UpdatedAt           pgtype.Timestamptz   `db:"updated_at" json:"UpdatedAt"`
+	Src                 string               `db:"src" json:"Src"`
+	ArchivedBy          pgtype.UUID          `db:"archived_by" json:"ArchivedBy"`
+	Title               string               `db:"title" json:"Title"`
+	Info                videoinfo.VideoInfo  `db:"info" json:"Info"`
+	Comments            []byte               `db:"comments" json:"Comments"`
+	VideoPath           *string              `db:"video_path" json:"VideoPath"`
+	ThumbnailPath       *string              `db:"thumbnail_path" json:"ThumbnailPath"`
+	Description         string               `db:"description" json:"Description"`
+	Tags                []string             `db:"tags" json:"Tags"`
+	Uploader            string               `db:"uploader" json:"Uploader"`
+	UploaderID          *string              `db:"uploader_id" json:"UploaderID"`
+	ChannelID           *string              `db:"channel_id" json:"ChannelID"`
+	UploadDate          pgtype.Date          `db:"upload_date" json:"UploadDate"`
+	DurationSeconds     *int32               `db:"duration_seconds" json:"DurationSeconds"`
+	ViewCount           *int64               `db:"view_count" json:"ViewCount"`
+	LikeCount           *int64               `db:"like_count" json:"LikeCount"`
+	ThumbGradientStart  *string              `db:"thumb_gradient_start" json:"ThumbGradientStart"`
+	ThumbGradientEnd    *string              `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
+	ThumbGradientAngle  *int32               `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
+	FileHash            *string              `db:"file_hash" json:"FileHash"`
+	FileSize            *int64               `db:"file_size" json:"FileSize"`
+	AssetsStatus        AssetMap             `db:"assets_status" json:"AssetsStatus"`
+	Search              string               `db:"search" json:"Search"`
+	ProbeData           *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
+	CommentsCheckedAt   pgtype.Timestamptz   `db:"comments_checked_at" json:"CommentsCheckedAt"`
+	ChannelURL          *string              `db:"channel_url" json:"ChannelUrl"`
+	UploaderURL         *string              `db:"uploader_url" json:"UploaderUrl"`
+	ChannelRowID        pgtype.UUID          `db:"channel_row_id" json:"ChannelRowID"`
+	Format              string               `db:"format" json:"Format"`
+	MetadataRefreshedAt pgtype.Timestamptz   `db:"metadata_refreshed_at" json:"MetadataRefreshedAt"`
+	LinksHarvestedAt    pgtype.Timestamptz   `db:"links_harvested_at" json:"LinksHarvestedAt"`
+	Media               string               `db:"media" json:"Media"`
+	TotalCount          int64                `db:"total_count" json:"TotalCount"`
+	ClipCount           interface{}          `db:"clip_count" json:"ClipCount"`
+	MarkerCount         interface{}          `db:"marker_count" json:"MarkerCount"`
+	LastClipAt          interface{}          `db:"last_clip_at" json:"LastClipAt"`
+	LastMarkerAt        interface{}          `db:"last_marker_at" json:"LastMarkerAt"`
+	ArchivedByUsername  string               `db:"archived_by_username" json:"ArchivedByUsername"`
 }
 
 // ListVideosPaginated returns videos with filters, sorting, and pagination.
 // Returns total_count via window function for pagination UI.
 //
+//	WITH params AS (
+//	    SELECT
+//	        NULLIF(btrim(COALESCE($14::text, '')), '') AS tsq,
+//	        NULLIF(btrim(COALESCE($15::text, '')), '') AS raw
+//	),
+//	hits AS (
+//	    SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+//	    FROM videos v
+//	    CROSS JOIN params p
+//	    WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
+//	    UNION ALL
+//	    SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
+//	    FROM videos v
+//	    CROSS JOIN params p
+//	    WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
+//	    UNION ALL
+//	    SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+//	    FROM video_comments vc
+//	    CROSS JOIN params p
+//	    WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
+//	    GROUP BY vc.video_id
+//	    UNION ALL
+//	    SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+//	    FROM video_transcripts vt
+//	    CROSS JOIN params p
+//	    WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
+//	    GROUP BY vt.video_id
+//	    UNION ALL
+//	    SELECT v.id, 0.05::real
+//	    FROM videos v
+//	    CROSS JOIN params p
+//	    WHERE p.raw IS NOT NULL AND (
+//	        strpos(lower(v.title), lower(p.raw)) > 0
+//	        OR strpos(lower(v.uploader), lower(p.raw)) > 0
+//	    )
+//	),
+//	ranked AS (
+//	    SELECT video_id, sum(rank) AS rank
+//	    FROM hits
+//	    GROUP BY video_id
+//	)
 //	SELECT
-//	    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at,
+//	    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media,
 //	    COUNT(*) OVER() AS total_count,
 //	    COALESCE((SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id), 0) AS clip_count,
 //	    COALESCE((SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id), 0) AS marker_count,
@@ -776,69 +894,71 @@ type ListVideosPaginatedRow struct {
 //	    COALESCE(u.user_name, 'unknown') AS archived_by_username
 //	FROM videos v
 //	LEFT JOIN users u ON v.archived_by = u.id
+//	LEFT JOIN ranked r ON r.video_id = v.id
+//	CROSS JOIN params p
 //	WHERE
-//	    -- Full-text search (optional)
-//	    ($1::text IS NULL OR v.search @@ plainto_tsquery('simple', $1))
-//	    -- Uploader filter (optional)
-//	    AND ($2::text IS NULL OR v.uploader = $2)
+//	    -- Full-text / substring search (optional).
+//	    (p.raw IS NULL OR r.video_id IS NOT NULL)
+//	    -- Uploader filter: substring, case-insensitive (optional)
+//	    AND ($1::text IS NULL OR strpos(lower(v.uploader), lower($1)) > 0)
 //	    -- Channel filter (optional)
-//	    AND ($3::text IS NULL OR v.channel_id = $3)
+//	    AND ($2::text IS NULL OR v.channel_id = $2)
 //	    -- Duration filter: short=<5min, medium=5-30min, long=>30min
 //	    AND (
-//	        $4::text IS NULL
-//	        OR ($4 = 'short' AND v.duration_seconds < 300)
-//	        OR ($4 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
-//	        OR ($4 = 'long' AND v.duration_seconds >= 1800)
+//	        $3::text IS NULL
+//	        OR ($3 = 'short' AND v.duration_seconds < 300)
+//	        OR ($3 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
+//	        OR ($3 = 'long' AND v.duration_seconds >= 1800)
 //	    )
 //	    -- Scraped tags filter (any tag matches)
-//	    AND ($5::text[] IS NULL OR v.tags && $5::text[])
+//	    AND ($4::text[] IS NULL OR v.tags && $4::text[])
 //	    -- User tag filter (video has any of the selected tag ids)
-//	    AND ($6::uuid[] IS NULL OR EXISTS (
+//	    AND ($5::uuid[] IS NULL OR EXISTS (
 //	        SELECT 1 FROM video_tags vt
-//	        WHERE vt.video_id = v.id AND vt.tag_id = ANY($6::uuid[])
+//	        WHERE vt.video_id = v.id AND vt.tag_id = ANY($5::uuid[])
 //	    ))
 //	    -- Date range (archived or published based on date_type)
 //	    AND (
-//	        $7::date IS NULL
-//	        OR ($8::text = 'published' AND v.upload_date >= $7)
-//	        OR ($8::text IS DISTINCT FROM 'published' AND v.created_at::date >= $7)
+//	        $6::date IS NULL
+//	        OR ($7::text = 'published' AND v.upload_date >= $6)
+//	        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date >= $6)
 //	    )
 //	    AND (
-//	        $9::date IS NULL
-//	        OR ($8::text = 'published' AND v.upload_date <= $9)
-//	        OR ($8::text IS DISTINCT FROM 'published' AND v.created_at::date <= $9)
+//	        $8::date IS NULL
+//	        OR ($7::text = 'published' AND v.upload_date <= $8)
+//	        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date <= $8)
 //	    )
 //	    -- Has clips filter
-//	    AND ($10::boolean IS NULL OR $10 = FALSE
+//	    AND ($9::boolean IS NULL OR $9 = FALSE
 //	         OR EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id))
 //	    -- Has markers filter
-//	    AND ($11::boolean IS NULL OR $11 = FALSE
+//	    AND ($10::boolean IS NULL OR $10 = FALSE
 //	         OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 //	ORDER BY
+//	    CASE WHEN $11 = 'relevance' THEN r.rank END DESC NULLS LAST,
 //	    -- Date sorts (archived)
-//	    CASE WHEN $12 = 'newest' THEN v.created_at END DESC NULLS LAST,
-//	    CASE WHEN $12 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+//	    CASE WHEN $11 = 'newest' THEN v.created_at END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'oldest' THEN v.created_at END ASC NULLS LAST,
 //	    -- Date sorts (published)
-//	    CASE WHEN $12 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-//	    CASE WHEN $12 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+//	    CASE WHEN $11 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
 //	    -- Title sorts
-//	    CASE WHEN $12 = 'alpha' THEN v.title END ASC NULLS LAST,
-//	    CASE WHEN $12 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'alpha' THEN v.title END ASC NULLS LAST,
+//	    CASE WHEN $11 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
 //	    -- Duration sorts
-//	    CASE WHEN $12 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-//	    CASE WHEN $12 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+//	    CASE WHEN $11 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
 //	    -- Activity sorts
-//	    CASE WHEN $12 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $12 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $12 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $12 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $11 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
 //	    -- Default fallback
 //	    v.created_at DESC
-//	LIMIT $14
-//	OFFSET $13
+//	LIMIT $13
+//	OFFSET $12
 func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPaginatedParams) ([]*ListVideosPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listVideosPaginated,
-		arg.Query,
 		arg.Uploader,
 		arg.ChannelID,
 		arg.DurationFilter,
@@ -852,6 +972,8 @@ func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPagina
 		arg.SortOrder,
 		arg.PageOffset,
 		arg.PageLimit,
+		arg.Tsquery,
+		arg.Query,
 	)
 	if err != nil {
 		return nil, err
@@ -889,6 +1011,13 @@ func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPagina
 			&i.Search,
 			&i.ProbeData,
 			&i.CommentsCheckedAt,
+			&i.ChannelURL,
+			&i.UploaderURL,
+			&i.ChannelRowID,
+			&i.Format,
+			&i.MetadataRefreshedAt,
+			&i.LinksHarvestedAt,
+			&i.Media,
 			&i.TotalCount,
 			&i.ClipCount,
 			&i.MarkerCount,

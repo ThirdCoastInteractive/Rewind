@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"thirdcoast.systems/rewind/pkg/captions"
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
 )
 
@@ -132,15 +133,7 @@ func destFilenameForIngestAsset(videoID string, srcFilename string) string {
 
 	// Captions/subtitles
 	if strings.HasSuffix(lower, ".vtt") {
-		lang := "und"
-		// Common yt-dlp naming: <base>.<lang>.vtt
-		parts := strings.Split(lower, ".")
-		if len(parts) >= 2 {
-			cand := parts[len(parts)-2]
-			if cand != "" && cand != "vtt" {
-				lang = cand
-			}
-		}
+		lang := captions.LangFromFilename(srcFilename)
 		return videoID + ".captions." + lang + ".vtt"
 	}
 
@@ -270,14 +263,10 @@ func migrateVideoDirAssets(ctx context.Context, videoID string, videoPath string
 		if strings.HasPrefix(lower, strings.ToLower(videoID)+".captions.") {
 			continue
 		}
-		lang := "und"
-		parts := strings.Split(lower, ".")
-		if len(parts) >= 2 {
-			cand := parts[len(parts)-2]
-			if cand != "" && cand != "vtt" {
-				lang = cand
-			}
+		if strings.HasSuffix(lower, ".src.vtt") {
+			continue
 		}
+		lang := captions.LangFromFilename(p)
 		desired := filepath.Join(dir, videoID+".captions."+lang+".vtt")
 		if _, err := os.Stat(desired); err == nil {
 			continue

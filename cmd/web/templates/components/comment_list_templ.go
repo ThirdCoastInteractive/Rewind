@@ -82,14 +82,14 @@ func CommentSection(data CommentListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " COMMENTS</div><div class=\"w-64\"><input type=\"text\" class=\"w-full px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" placeholder=\"Search comments...\" data-bind=\"_commentSearch\" data-on:input__debounce.300ms=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " COMMENTS</div><div class=\"w-64\"><input type=\"text\" class=\"w-full px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" placeholder=\"Search comments...\" data-bind=\"commentSearch\" data-on:input__debounce.300ms=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$_commentPage = 0; @get('/api/videos/%s/comments/render?mode=search')", data.VideoID))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$commentPage = 0; @get('/api/videos/%s/comments/render?mode=search')", data.VideoID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/comment_list.templ`, Line: 55, Col: 135}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/comment_list.templ`, Line: 55, Col: 134}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -207,9 +207,9 @@ func CommentLoadMore(data CommentListData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$_commentPage = %d; @get('/api/videos/%s/comments/render?mode=page')", data.Page+1, data.VideoID))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$commentPage = %d; @get('/api/videos/%s/comments/render?mode=page')", data.Page+1, data.VideoID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/comment_list.templ`, Line: 95, Col: 129}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/comment_list.templ`, Line: 95, Col: 128}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {

@@ -214,6 +214,7 @@ func (p *VideosListParams) Validate() {
 		"duration": true, "duration-desc": true,
 		"most-clips": true, "most-markers": true,
 		"recently-clipped": true, "recently-marked": true,
+		"relevance": true,
 	}
 	if !validSorts[p.Sort] {
 		p.Sort = "newest"

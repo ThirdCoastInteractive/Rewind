@@ -8,13 +8,13 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
-templ Settings(cookiesValue string, message string, isLoggedIn bool, username string, adminSettings *db.InstanceSetting) {
+templ Settings(cookiesValue string, message string, isLoggedIn bool, username string, adminSettings *db.InstanceSetting, mcpToken string, tokens []*db.ListAPITokensByUserRow) {
 	@Layout("Settings", username) {
-		@SettingsContent(cookiesValue, message, adminSettings)
+		@SettingsContent(cookiesValue, message, adminSettings, mcpToken, tokens)
 	}
 }
 
-templ SettingsContent(cookiesValue string, message string, adminSettings *db.InstanceSetting) {
+templ SettingsContent(cookiesValue string, message string, adminSettings *db.InstanceSetting, mcpToken string, tokens []*db.ListAPITokensByUserRow) {
 	@Container("") {
 		<h1 class="page-heading mb-4">SETTINGS</h1>
 		@components.Card(false) {
@@ -87,6 +87,78 @@ templ SettingsContent(cookiesValue string, message string, adminSettings *db.Ins
 						}
 					</div>
 				</form>
+			}
+		}
+		@components.Card(false) {
+			@components.CardHeader("MCP", "Connect your own agent (Claude Desktop, Cursor, ChatGPT) to search this archive. Tokens are shown once.")
+			@components.CardBody(true) {
+				<p class="text-white/60 text-xs mb-3 font-mono">
+					Endpoint: <code class="text-white">POST /mcp</code> with <code class="text-white">Authorization: Bearer rw_…</code>
+				</p>
+				if mcpToken != "" {
+					<div class="bg-black border-2 border-white/40 p-3 mb-3">
+						<p class="text-xs text-white font-mono mb-1 uppercase tracking-wider">Copy this token now — it will not be shown again</p>
+						<code class="text-xs text-white font-mono break-all">{ mcpToken }</code>
+					</div>
+				}
+				<form method="POST" action="/settings/tokens" class="flex flex-wrap gap-2 items-end">
+					<div class="flex-1 min-w-40">
+						<label class="form-label mb-1" for="token_name">Label</label>
+						<input
+							id="token_name"
+							name="name"
+							type="text"
+							placeholder="Claude Desktop"
+							class="w-full bg-black border-2 border-white/20 px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-white"
+						/>
+					</div>
+					@components.FormButton("primary", "sm", "", true) {
+						CREATE TOKEN
+					}
+				</form>
+				if len(tokens) > 0 {
+					<div class="mt-4 border-2 border-white/10 divide-y-2 divide-white/10">
+						for _, tok := range tokens {
+							if tok != nil {
+								<div class="p-2 flex items-center justify-between gap-3">
+									<div class="min-w-0">
+										<div class="flex items-center gap-2 flex-wrap">
+											<span class={ "font-mono text-xs", templ.KV("text-white/40 line-through", tok.RevokedAt.Valid), templ.KV("text-white", !tok.RevokedAt.Valid) }>
+												if strings.TrimSpace(tok.Name) != "" {
+													{ tok.Name }
+												} else {
+													untitled
+												}
+											</span>
+											if tok.RevokedAt.Valid {
+												<span class="badge">revoked</span>
+											}
+										</div>
+										<div class="font-mono text-[10px] text-white/40 mt-0.5">
+											created { humanize.Time(tok.CreatedAt.Time) }
+											if tok.LastUsedAt.Valid {
+												· last used { humanize.Time(tok.LastUsedAt.Time) }
+											} else {
+												· never used
+											}
+										</div>
+									</div>
+									if !tok.RevokedAt.Valid {
+										<form method="POST" action={ templ.SafeURL("/settings/tokens/" + tok.ID.String() + "/revoke") }>
+											<button
+												type="submit"
+												class="ghost-btn-sm text-red-400/70 border-red-500/40 hover:border-red-400 hover:text-red-300"
+												onclick="return confirm('Revoke this token? Connected agents will stop working.')"
+											>
+												Revoke
+											</button>
+										</form>
+									}
+								</div>
+							}
+						}
+					</div>
+				}
 			}
 		}
 		@components.Card(false) {
@@ -185,7 +257,7 @@ templ SettingsContent(cookiesValue string, message string, adminSettings *db.Ins
 			}}
 			<div class="mt-4">
 				<h2 class={ "sub-heading" + " mb-2" }>ADMIN SETTINGS</h2>
-				@AdminSettingsForm(adminSettings.RegistrationEnabled, limitStr, adminSettings.AdminEmails)
+				@AdminSettingsForm(adminSettings.RegistrationEnabled, limitStr, adminSettings.AdminEmails, adminSettings.MaxDownloadHeight)
 			</div>
 		}
 		<script>

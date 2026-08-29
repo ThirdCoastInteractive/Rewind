@@ -20,6 +20,30 @@ Browse your archive with search, filters, and sorting. Thumbnails and metadata m
 
 ![Video archive scrolled](screenshots/readme/videos-scrolled.png)
 
+### Channels
+
+Every uploader in the archive, with follow and description-index actions.
+
+![Channels](screenshots/readme/channels.png)
+
+### Creators
+
+Group a person's channels across platforms. Confirm suggested alt/main links, or create a creator yourself.
+
+![Creators](screenshots/readme/creators.png)
+
+### Network
+
+A live graph of outlinks, mentions, and comments between archived channels. Same-creator channels cluster together.
+
+![Network graph](screenshots/readme/network.png)
+
+### Follows
+
+Watch a channel for new uploads on a schedule.
+
+![Follows](screenshots/readme/follows.png)
+
 ### Video Detail
 
 Watch videos with a synced, searchable transcript. Click any line to jump to that moment. Search the transcript to find specific dialogue and create clips from the results.
@@ -44,7 +68,7 @@ Stack color and spatial filters on your clips before export. Choose format, qual
 
 ### Settings & Keybindings
 
-Configure cookies for age-restricted downloads, interface preferences, and rebind every keyboard shortcut.
+Configure cookies for age-restricted downloads, interface preferences, MCP API tokens, and rebind every keyboard shortcut.
 
 ![Settings](screenshots/readme/settings.png)
 
@@ -80,6 +104,10 @@ Monitor download progress, retries, and errors from a single dashboard.
 - **Crop presets** - create crop regions for different aspect ratios (16:9, 9:16, 1:1, etc.) and export multiple variants per clip
 - **SponsorBlock** - auto-skip sponsor segments on YouTube videos with on-screen notifications
 - **Markers & comments** - add timestamped markers with colors, and view and search imported YouTube comments with clickable timestamps
+- **Channels & creators** - first-class channel records, grouped into people; alt/main channels can be linked automatically or confirmed from suggestions
+- **Follows** - watch a channel for new uploads on a schedule
+- **Network graph** - directed map of outlinks, mentions, and comments between archived channels
+- **MCP** - mint an API token in Settings and point an agent at `/mcp` to search the library and transcripts
 - **Remote playback** - control video playback on another device with a scene layout editor (great for OBS and streaming)
 - **Admin dashboard** - storage metrics, video-per-day charts, user management, and export queue monitoring
 - **Customizable keybindings** - rebind every keyboard shortcut, including hardware keys (F14-F24)

@@ -12,6 +12,101 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/language"
 )
 
+const getVideoTranscript = `-- name: GetVideoTranscript :one
+SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues FROM video_transcripts
+WHERE video_id = $1
+ORDER BY CASE WHEN lang::text = 'en' THEN 0 ELSE 1 END, lang
+LIMIT 1
+`
+
+// GetVideoTranscript returns one transcript for a video (any language).
+//
+//	SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues FROM video_transcripts
+//	WHERE video_id = $1
+//	ORDER BY CASE WHEN lang::text = 'en' THEN 0 ELSE 1 END, lang
+//	LIMIT 1
+func (q *Queries) GetVideoTranscript(ctx context.Context, videoID pgtype.UUID) (*VideoTranscript, error) {
+	row := q.db.QueryRow(ctx, getVideoTranscript, videoID)
+	var i VideoTranscript
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VideoID,
+		&i.Lang,
+		&i.Format,
+		&i.Text,
+		&i.Raw,
+		&i.Search,
+		&i.Cues,
+	)
+	return &i, err
+}
+
+const searchTranscripts = `-- name: SearchTranscripts :many
+SELECT vt.video_id, v.title, v.uploader, vt.lang, vt.text, vt.cues,
+       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank
+FROM video_transcripts vt
+JOIN videos v ON v.id = vt.video_id
+WHERE $1::text <> ''
+  AND vt.search @@ to_tsquery('simple', $1)
+ORDER BY rank DESC
+LIMIT $2
+`
+
+type SearchTranscriptsParams struct {
+	Tsquery   string `db:"tsquery" json:"Tsquery"`
+	PageLimit int32  `db:"page_limit" json:"PageLimit"`
+}
+
+type SearchTranscriptsRow struct {
+	VideoID  pgtype.UUID  `db:"video_id" json:"VideoID"`
+	Title    string       `db:"title" json:"Title"`
+	Uploader string       `db:"uploader" json:"Uploader"`
+	Lang     language.Tag `db:"lang" json:"Lang"`
+	Text     string       `db:"text" json:"Text"`
+	Cues     []byte       `db:"cues" json:"Cues"`
+	Rank     float32      `db:"rank" json:"Rank"`
+}
+
+// SearchTranscripts finds videos whose cleaned transcript matches tsquery.
+//
+//	SELECT vt.video_id, v.title, v.uploader, vt.lang, vt.text, vt.cues,
+//	       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank
+//	FROM video_transcripts vt
+//	JOIN videos v ON v.id = vt.video_id
+//	WHERE $1::text <> ''
+//	  AND vt.search @@ to_tsquery('simple', $1)
+//	ORDER BY rank DESC
+//	LIMIT $2
+func (q *Queries) SearchTranscripts(ctx context.Context, arg *SearchTranscriptsParams) ([]*SearchTranscriptsRow, error) {
+	rows, err := q.db.Query(ctx, searchTranscripts, arg.Tsquery, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*SearchTranscriptsRow
+	for rows.Next() {
+		var i SearchTranscriptsRow
+		if err := rows.Scan(
+			&i.VideoID,
+			&i.Title,
+			&i.Uploader,
+			&i.Lang,
+			&i.Text,
+			&i.Cues,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertVideoTranscript = `-- name: UpsertVideoTranscript :exec
 INSERT INTO video_transcripts (
     video_id,
@@ -20,6 +115,7 @@ INSERT INTO video_transcripts (
     text,
     search,
     raw,
+    cues,
     updated_at
 )
 VALUES (
@@ -29,6 +125,7 @@ VALUES (
     $4,
     to_tsvector('simple'::regconfig, coalesce($4, '')),
     $5,
+    COALESCE($6::jsonb, '[]'::jsonb),
     NOW()
 )
 ON CONFLICT (video_id, lang)
@@ -37,6 +134,7 @@ DO UPDATE SET
     text = EXCLUDED.text,
     search = EXCLUDED.search,
     raw = EXCLUDED.raw,
+    cues = EXCLUDED.cues,
     updated_at = NOW()
 `
 
@@ -46,6 +144,7 @@ type UpsertVideoTranscriptParams struct {
 	Format  string       `db:"format" json:"Format"`
 	Text    string       `db:"text" json:"Text"`
 	Raw     string       `db:"raw" json:"Raw"`
+	Cues    []byte       `db:"cues" json:"Cues"`
 }
 
 // UpsertVideoTranscript stores (or updates) a transcript for a video+lang.
@@ -57,6 +156,7 @@ type UpsertVideoTranscriptParams struct {
 //	    text,
 //	    search,
 //	    raw,
+//	    cues,
 //	    updated_at
 //	)
 //	VALUES (
@@ -66,6 +166,7 @@ type UpsertVideoTranscriptParams struct {
 //	    $4,
 //	    to_tsvector('simple'::regconfig, coalesce($4, '')),
 //	    $5,
+//	    COALESCE($6::jsonb, '[]'::jsonb),
 //	    NOW()
 //	)
 //	ON CONFLICT (video_id, lang)
@@ -74,6 +175,7 @@ type UpsertVideoTranscriptParams struct {
 //	    text = EXCLUDED.text,
 //	    search = EXCLUDED.search,
 //	    raw = EXCLUDED.raw,
+//	    cues = EXCLUDED.cues,
 //	    updated_at = NOW()
 func (q *Queries) UpsertVideoTranscript(ctx context.Context, arg *UpsertVideoTranscriptParams) error {
 	_, err := q.db.Exec(ctx, upsertVideoTranscript,
@@ -82,6 +184,7 @@ func (q *Queries) UpsertVideoTranscript(ctx context.Context, arg *UpsertVideoTra
 		arg.Format,
 		arg.Text,
 		arg.Raw,
+		arg.Cues,
 	)
 	return err
 }

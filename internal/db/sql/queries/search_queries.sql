@@ -1,7 +1,7 @@
 -- SearchVideos searches title/description/tags + comments + transcript.
 -- name: SearchVideos :many
 WITH q AS (
-  SELECT plainto_tsquery('simple', sqlc.arg(query)) AS tsq
+  SELECT to_tsquery('simple', sqlc.arg(tsquery)) AS tsq
 ),
 video_hits AS (
   SELECT v.id AS video_id, ts_rank_cd(v.search, q.tsq) AS rank

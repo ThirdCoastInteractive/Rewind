@@ -109,7 +109,11 @@ WITH cte AS (
     SELECT id
     FROM download_jobs
     WHERE status = 'queued'
-    ORDER BY created_at
+    ORDER BY (CASE
+        WHEN kind IN ('playlist', 'metadata-catalog') THEN 0
+        WHEN kind = 'metadata' THEN 2
+        ELSE 1
+      END), created_at
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
@@ -119,16 +123,23 @@ SET status = 'processing',
     started_at = COALESCE(started_at, NOW()),
     updated_at = NOW()
 WHERE id IN (SELECT id FROM cte)
-RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 `
 
-// DequeueDownloadJob claims one queued download job.
+// DequeueDownloadJob claims one queued download job. Playlist/channel-scan
+// jobs are claimed before video downloads: they are quick flat enumerations
+// whose expansion feeds the queue, and letting them ride FIFO behind a large
+// download backlog would delay watch scans (and playlist expansion) by hours.
 //
 //	WITH cte AS (
 //	    SELECT id
 //	    FROM download_jobs
 //	    WHERE status = 'queued'
-//	    ORDER BY created_at
+//	    ORDER BY (CASE
+//	        WHEN kind IN ('playlist', 'metadata-catalog') THEN 0
+//	        WHEN kind = 'metadata' THEN 2
+//	        ELSE 1
+//	      END), created_at
 //	    LIMIT 1
 //	    FOR UPDATE SKIP LOCKED
 //	)
@@ -138,7 +149,7 @@ RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_e
 //	    started_at = COALESCE(started_at, NOW()),
 //	    updated_at = NOW()
 //	WHERE id IN (SELECT id FROM cte)
-//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 func (q *Queries) DequeueDownloadJob(ctx context.Context) (*DownloadJob, error) {
 	row := q.db.QueryRow(ctx, dequeueDownloadJob)
 	var i DownloadJob
@@ -164,6 +175,7 @@ func (q *Queries) DequeueDownloadJob(ctx context.Context) (*DownloadJob, error) 
 		&i.ParentJobID,
 		&i.BatchLabel,
 		&i.BatchTotal,
+		&i.WatchID,
 	)
 	return &i, err
 }
@@ -204,7 +216,8 @@ RETURNING
     dj.info_json_path AS info_json_path,
     dj.video_id AS video_id,
     ij.asset_scope AS asset_scope,
-    dj.extra_args AS extra_args
+    dj.extra_args AS extra_args,
+    dj.kind AS kind
 `
 
 type DequeueIngestJobRow struct {
@@ -218,6 +231,7 @@ type DequeueIngestJobRow struct {
 	VideoID       pgtype.UUID `db:"video_id" json:"VideoID"`
 	AssetScope    *string     `db:"asset_scope" json:"AssetScope"`
 	ExtraArgs     []string    `db:"extra_args" json:"ExtraArgs"`
+	Kind          string      `db:"kind" json:"Kind"`
 }
 
 // DequeueIngestJob claims one queued ingest job and returns needed info.
@@ -259,7 +273,8 @@ type DequeueIngestJobRow struct {
 //	    dj.info_json_path AS info_json_path,
 //	    dj.video_id AS video_id,
 //	    ij.asset_scope AS asset_scope,
-//	    dj.extra_args AS extra_args
+//	    dj.extra_args AS extra_args,
+//	    dj.kind AS kind
 func (q *Queries) DequeueIngestJob(ctx context.Context) (*DequeueIngestJobRow, error) {
 	row := q.db.QueryRow(ctx, dequeueIngestJob)
 	var i DequeueIngestJobRow
@@ -274,6 +289,7 @@ func (q *Queries) DequeueIngestJob(ctx context.Context) (*DequeueIngestJobRow, e
 		&i.VideoID,
 		&i.AssetScope,
 		&i.ExtraArgs,
+		&i.Kind,
 	)
 	return &i, err
 }
@@ -295,7 +311,7 @@ WITH new_download_job AS (
         v.id
     FROM videos v
     WHERE v.id = $1
-    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 ),
 new_ingest_job AS (
     INSERT INTO ingest_jobs (
@@ -347,7 +363,7 @@ type EnqueueAssetRegenerationJobRow struct {
 //	        v.id
 //	    FROM videos v
 //	    WHERE v.id = $1
-//	    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	),
 //	new_ingest_job AS (
 //	    INSERT INTO ingest_jobs (
@@ -401,6 +417,31 @@ func (q *Queries) EnqueueChildDownloadJobs(ctx context.Context, arg *EnqueueChil
 	return result.RowsAffected(), nil
 }
 
+const enqueueChildMetadataJobs = `-- name: EnqueueChildMetadataJobs :execrows
+INSERT INTO download_jobs (url, archived_by, status, kind, parent_job_id)
+SELECT u, $1, 'queued', 'metadata', $2
+FROM unnest($3::text[]) AS u
+`
+
+type EnqueueChildMetadataJobsParams struct {
+	ArchivedBy  pgtype.UUID `db:"archived_by" json:"ArchivedBy"`
+	ParentJobID pgtype.UUID `db:"parent_job_id" json:"ParentJobID"`
+	Urls        []string    `db:"urls" json:"Urls"`
+}
+
+// EnqueueChildMetadataJobs bulk-inserts skip-download metadata jobs for catalog expansion.
+//
+//	INSERT INTO download_jobs (url, archived_by, status, kind, parent_job_id)
+//	SELECT u, $1, 'queued', 'metadata', $2
+//	FROM unnest($3::text[]) AS u
+func (q *Queries) EnqueueChildMetadataJobs(ctx context.Context, arg *EnqueueChildMetadataJobsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, enqueueChildMetadataJobs, arg.ArchivedBy, arg.ParentJobID, arg.Urls)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const enqueueDownloadJob = `-- name: EnqueueDownloadJob :one
 INSERT INTO download_jobs (
     url,
@@ -416,7 +457,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 `
 
 type EnqueueDownloadJobParams struct {
@@ -442,7 +483,7 @@ type EnqueueDownloadJobParams struct {
 //	    $3,
 //	    $4
 //	)
-//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 func (q *Queries) EnqueueDownloadJob(ctx context.Context, arg *EnqueueDownloadJobParams) (*DownloadJob, error) {
 	row := q.db.QueryRow(ctx, enqueueDownloadJob,
 		arg.URL,
@@ -473,6 +514,7 @@ func (q *Queries) EnqueueDownloadJob(ctx context.Context, arg *EnqueueDownloadJo
 		&i.ParentJobID,
 		&i.BatchLabel,
 		&i.BatchTotal,
+		&i.WatchID,
 	)
 	return &i, err
 }
@@ -518,6 +560,72 @@ func (q *Queries) EnqueueIngestJob(ctx context.Context, downloadJobID pgtype.UUI
 	return &i, err
 }
 
+const enqueueMetadataCatalogJob = `-- name: EnqueueMetadataCatalogJob :one
+INSERT INTO download_jobs (
+    url,
+    archived_by,
+    status,
+    kind
+)
+VALUES (
+    $1,
+    $2,
+    'queued',
+    'metadata-catalog'
+)
+RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+`
+
+type EnqueueMetadataCatalogJobParams struct {
+	URL        string      `db:"url" json:"Url"`
+	ArchivedBy pgtype.UUID `db:"archived_by" json:"ArchivedBy"`
+}
+
+// EnqueueMetadataCatalogJob inserts a parent job that fans out metadata-only children.
+//
+//	INSERT INTO download_jobs (
+//	    url,
+//	    archived_by,
+//	    status,
+//	    kind
+//	)
+//	VALUES (
+//	    $1,
+//	    $2,
+//	    'queued',
+//	    'metadata-catalog'
+//	)
+//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+func (q *Queries) EnqueueMetadataCatalogJob(ctx context.Context, arg *EnqueueMetadataCatalogJobParams) (*DownloadJob, error) {
+	row := q.db.QueryRow(ctx, enqueueMetadataCatalogJob, arg.URL, arg.ArchivedBy)
+	var i DownloadJob
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.URL,
+		&i.ArchivedBy,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.SpoolDir,
+		&i.InfoJsonPath,
+		&i.VideoID,
+		&i.Refresh,
+		&i.ProcessPid,
+		&i.Archived,
+		&i.ExtraArgs,
+		&i.Kind,
+		&i.ParentJobID,
+		&i.BatchLabel,
+		&i.BatchTotal,
+		&i.WatchID,
+	)
+	return &i, err
+}
+
 const enqueuePlaylistJob = `-- name: EnqueuePlaylistJob :one
 INSERT INTO download_jobs (
     url,
@@ -531,7 +639,7 @@ VALUES (
     'queued',
     'playlist'
 )
-RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 `
 
 type EnqueuePlaylistJobParams struct {
@@ -554,7 +662,7 @@ type EnqueuePlaylistJobParams struct {
 //	    'queued',
 //	    'playlist'
 //	)
-//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 func (q *Queries) EnqueuePlaylistJob(ctx context.Context, arg *EnqueuePlaylistJobParams) (*DownloadJob, error) {
 	row := q.db.QueryRow(ctx, enqueuePlaylistJob, arg.URL, arg.ArchivedBy)
 	var i DownloadJob
@@ -580,6 +688,7 @@ func (q *Queries) EnqueuePlaylistJob(ctx context.Context, arg *EnqueuePlaylistJo
 		&i.ParentJobID,
 		&i.BatchLabel,
 		&i.BatchTotal,
+		&i.WatchID,
 	)
 	return &i, err
 }
@@ -604,7 +713,7 @@ WITH new_download_job AS (
         $4,
         NOW()
     )
-    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 ),
 new_ingest_job AS (
     INSERT INTO ingest_jobs (
@@ -655,7 +764,7 @@ type EnqueueUploadIngestJobRow struct {
 //	        $4,
 //	        NOW()
 //	    )
-//	    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total
+//	    RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
 //	),
 //	new_ingest_job AS (
 //	    INSERT INTO ingest_jobs (

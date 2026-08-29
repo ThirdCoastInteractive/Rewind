@@ -4,6 +4,7 @@ package video_api
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
@@ -41,9 +42,12 @@ func HandleCaptions(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 		}
 		glob := filepath.Join(dir, videoID+".captions.*.vtt")
 		matches, _ := filepath.Glob(glob)
-		if len(matches) == 0 {
-			return c.String(404, "captions not available")
+		for _, p := range matches {
+			if strings.HasSuffix(strings.ToLower(p), ".src.vtt") {
+				continue
+			}
+			return fs.ServeDiskFileWithCache(c, p, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
 		}
-		return fs.ServeDiskFileWithCache(c, matches[0], "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+		return c.String(404, "captions not available")
 	}
 }

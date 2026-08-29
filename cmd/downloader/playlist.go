@@ -29,7 +29,13 @@ const maxPlaylistEntries = 5000
 // existing videos — the same UUID ingest will derive — so already-archived
 // videos are never re-fetched. (Even if a check races, ingest's UPSERT on the
 // deterministic id prevents duplicate rows.)
-func processPlaylistJob(ctx context.Context, q *db.Queries, client *ytdlp.Client, job *db.DownloadJob) error {
+func processPlaylistJob(ctx context.Context, dbc *db.DatabaseConnection, q *db.Queries, client *ytdlp.Client, job *db.DownloadJob) error {
+	// Scan jobs created by channel watching carry a watch_id and get
+	// seen-ledger-aware expansion instead of plain archived-video dedup.
+	if job.WatchID.Valid {
+		return processWatchScanJob(ctx, dbc, q, client, job)
+	}
+
 	jobID := uuidString(job.ID)
 	slog.Info("Expanding playlist/channel", "job_id", jobID, "url", job.URL)
 
@@ -45,42 +51,19 @@ func processPlaylistJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 	// resolves the domain for each downloaded child, or dedup silently misses).
 	_, canonicalDomain, _ := videoid.NormalizeSourceURL(job.URL)
 
-	// Map deterministic-UUID -> child download URL, de-duplicating within the
-	// playlist itself.
-	urlByID := make(map[string]string, len(entries))
-	candidates := make([]pgtype.UUID, 0, len(entries))
-	for _, e := range entries {
-		id := strings.TrimSpace(e.ID)
-		if id == "" {
-			continue
-		}
-		childURL := childDownloadURL(canonicalDomain, e)
-		if childURL == "" {
-			continue
-		}
-		pgu := pgtype.UUID{Bytes: [16]byte(videoid.VideoUUID(canonicalDomain, id)), Valid: true}
-		key := uuidString(pgu)
-		if _, dup := urlByID[key]; dup {
-			continue
-		}
-		urlByID[key] = childURL
-		candidates = append(candidates, pgu)
-	}
+	candidates := collectPlaylistCandidates(canonicalDomain, entries)
 
 	// Drop entries whose video is already archived.
-	if len(candidates) > 0 {
-		existing, err := q.FilterExistingVideoIDs(ctx, candidates)
-		if err != nil {
-			return fmt.Errorf("filter existing videos: %w", err)
-		}
-		for _, pgu := range existing {
-			delete(urlByID, uuidString(pgu))
-		}
+	existing, err := filterExistingSet(ctx, q, candidateUUIDs(candidates))
+	if err != nil {
+		return fmt.Errorf("filter existing videos: %w", err)
 	}
 
-	urls := make([]string, 0, len(urlByID))
-	for _, u := range urlByID {
-		urls = append(urls, u)
+	urls := make([]string, 0, len(candidates))
+	for _, cand := range candidates {
+		if !existing[uuidString(cand.UUID)] {
+			urls = append(urls, cand.URL)
+		}
 	}
 
 	slog.Info("Playlist expanded",
@@ -106,6 +89,66 @@ func processPlaylistJob(ctx context.Context, q *db.Queries, client *ytdlp.Client
 		BatchTotal: &total,
 		BatchLabel: nil,
 	})
+}
+
+// playlistCandidate is one enumerated entry paired with its deterministic
+// video UUID and the URL a child download job should use.
+type playlistCandidate struct {
+	UUID  pgtype.UUID
+	URL   string
+	Entry ytdlp.FlatEntry
+}
+
+// collectPlaylistCandidates maps flat entries to download candidates,
+// de-duplicating within the listing itself. Entries without a usable id or
+// URL are dropped.
+func collectPlaylistCandidates(canonicalDomain string, entries []ytdlp.FlatEntry) []playlistCandidate {
+	seen := make(map[string]bool, len(entries))
+	out := make([]playlistCandidate, 0, len(entries))
+	for _, e := range entries {
+		id := strings.TrimSpace(e.ID)
+		if id == "" {
+			continue
+		}
+		childURL := childDownloadURL(canonicalDomain, e)
+		if childURL == "" {
+			continue
+		}
+		pgu := pgtype.UUID{Bytes: [16]byte(videoid.VideoUUID(canonicalDomain, id)), Valid: true}
+		key := uuidString(pgu)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, playlistCandidate{UUID: pgu, URL: childURL, Entry: e})
+	}
+	return out
+}
+
+// candidateUUIDs extracts the deterministic UUIDs from candidates.
+func candidateUUIDs(cands []playlistCandidate) []pgtype.UUID {
+	ids := make([]pgtype.UUID, 0, len(cands))
+	for _, c := range cands {
+		ids = append(ids, c.UUID)
+	}
+	return ids
+}
+
+// filterExistingSet returns the subset of ids that already exist as archived
+// videos, as a set keyed by UUID string. Empty input skips the query.
+func filterExistingSet(ctx context.Context, q *db.Queries, ids []pgtype.UUID) (map[string]bool, error) {
+	set := make(map[string]bool)
+	if len(ids) == 0 {
+		return set, nil
+	}
+	existing, err := q.FilterExistingVideoIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, pgu := range existing {
+		set[uuidString(pgu)] = true
+	}
+	return set, nil
 }
 
 // childDownloadURL picks the best URL to enqueue for a flat-playlist entry.

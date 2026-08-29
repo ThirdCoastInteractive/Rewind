@@ -318,6 +318,43 @@ func AllUserRoleValues() []UserRole {
 	}
 }
 
+type APIToken struct {
+	ID         pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	LastUsedAt pgtype.Timestamptz `db:"last_used_at" json:"LastUsedAt"`
+	UserID     pgtype.UUID        `db:"user_id" json:"UserID"`
+	Name       string             `db:"name" json:"Name"`
+	TokenHash  string             `db:"token_hash" json:"TokenHash"`
+	Scopes     []string           `db:"scopes" json:"Scopes"`
+	RevokedAt  pgtype.Timestamptz `db:"revoked_at" json:"RevokedAt"`
+}
+
+type Channel struct {
+	ID           pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Platform     string             `db:"platform" json:"Platform"`
+	IdentityKey  string             `db:"identity_key" json:"IdentityKey"`
+	ChannelID    string             `db:"channel_id" json:"ChannelID"`
+	Uploader     string             `db:"uploader" json:"Uploader"`
+	CanonicalURL string             `db:"canonical_url" json:"CanonicalUrl"`
+	CreatorID    pgtype.UUID        `db:"creator_id" json:"CreatorID"`
+	Search       string             `db:"search" json:"Search"`
+}
+
+type ChannelEdge struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	FromChannelID pgtype.UUID        `db:"from_channel_id" json:"FromChannelID"`
+	ToChannelID   pgtype.UUID        `db:"to_channel_id" json:"ToChannelID"`
+	ToURL         string             `db:"to_url" json:"ToUrl"`
+	Kind          string             `db:"kind" json:"Kind"`
+	Evidence      string             `db:"evidence" json:"Evidence"`
+	VideoID       pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Weight        int32              `db:"weight" json:"Weight"`
+}
+
 type Clip struct {
 	ID          pgtype.UUID        `db:"id" json:"ID"`
 	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
@@ -412,6 +449,33 @@ type Cookie struct {
 	UpdatedAt  pgtype.Timestamptz     `db:"updated_at" json:"UpdatedAt"`
 }
 
+type Creator struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Name      string             `db:"name" json:"Name"`
+	Notes     string             `db:"notes" json:"Notes"`
+	Search    string             `db:"search" json:"Search"`
+}
+
+type CreatorSuggestion struct {
+	ID           pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Kind         string             `db:"kind" json:"Kind"`
+	CreatorID    pgtype.UUID        `db:"creator_id" json:"CreatorID"`
+	ProposedName string             `db:"proposed_name" json:"ProposedName"`
+	Reason       string             `db:"reason" json:"Reason"`
+	Evidence     string             `db:"evidence" json:"Evidence"`
+	Status       string             `db:"status" json:"Status"`
+	ChannelKey   string             `db:"channel_key" json:"ChannelKey"`
+}
+
+type CreatorSuggestionMember struct {
+	SuggestionID pgtype.UUID `db:"suggestion_id" json:"SuggestionID"`
+	ChannelID    pgtype.UUID `db:"channel_id" json:"ChannelID"`
+}
+
 type DownloadJob struct {
 	ID           pgtype.UUID        `db:"id" json:"ID"`
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
@@ -434,6 +498,7 @@ type DownloadJob struct {
 	ParentJobID  pgtype.UUID        `db:"parent_job_id" json:"ParentJobID"`
 	BatchLabel   *string            `db:"batch_label" json:"BatchLabel"`
 	BatchTotal   *int32             `db:"batch_total" json:"BatchTotal"`
+	WatchID      pgtype.UUID        `db:"watch_id" json:"WatchID"`
 }
 
 type ExtensionToken struct {
@@ -465,6 +530,7 @@ type InstanceSetting struct {
 	ClipExportStorageLimitBytes int64              `db:"clip_export_storage_limit_bytes" json:"ClipExportStorageLimitBytes"`
 	AdminEmails                 []string           `db:"admin_emails" json:"AdminEmails"`
 	UpdatedAt                   pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	MaxDownloadHeight           int32              `db:"max_download_height" json:"MaxDownloadHeight"`
 }
 
 type Marker struct {
@@ -478,6 +544,8 @@ type Marker struct {
 	Duration    *float64           `db:"duration" json:"Duration"`
 	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 	CreatedBy   pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	Source      string             `db:"source" json:"Source"`
+	SourceRef   string             `db:"source_ref" json:"SourceRef"`
 }
 
 type PlaybackPosition struct {
@@ -576,34 +644,41 @@ type UserKeybinding struct {
 }
 
 type Video struct {
-	ID                 pgtype.UUID          `db:"id" json:"ID"`
-	CreatedAt          pgtype.Timestamptz   `db:"created_at" json:"CreatedAt"`
-	UpdatedAt          pgtype.Timestamptz   `db:"updated_at" json:"UpdatedAt"`
-	Src                string               `db:"src" json:"Src"`
-	ArchivedBy         pgtype.UUID          `db:"archived_by" json:"ArchivedBy"`
-	Title              string               `db:"title" json:"Title"`
-	Info               videoinfo.VideoInfo  `db:"info" json:"Info"`
-	Comments           []byte               `db:"comments" json:"Comments"`
-	VideoPath          *string              `db:"video_path" json:"VideoPath"`
-	ThumbnailPath      *string              `db:"thumbnail_path" json:"ThumbnailPath"`
-	Description        string               `db:"description" json:"Description"`
-	Tags               []string             `db:"tags" json:"Tags"`
-	Uploader           string               `db:"uploader" json:"Uploader"`
-	UploaderID         *string              `db:"uploader_id" json:"UploaderID"`
-	ChannelID          *string              `db:"channel_id" json:"ChannelID"`
-	UploadDate         pgtype.Date          `db:"upload_date" json:"UploadDate"`
-	DurationSeconds    *int32               `db:"duration_seconds" json:"DurationSeconds"`
-	ViewCount          *int64               `db:"view_count" json:"ViewCount"`
-	LikeCount          *int64               `db:"like_count" json:"LikeCount"`
-	ThumbGradientStart *string              `db:"thumb_gradient_start" json:"ThumbGradientStart"`
-	ThumbGradientEnd   *string              `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
-	ThumbGradientAngle *int32               `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
-	FileHash           *string              `db:"file_hash" json:"FileHash"`
-	FileSize           *int64               `db:"file_size" json:"FileSize"`
-	AssetsStatus       AssetMap             `db:"assets_status" json:"AssetsStatus"`
-	Search             string               `db:"search" json:"Search"`
-	ProbeData          *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
-	CommentsCheckedAt  pgtype.Timestamptz   `db:"comments_checked_at" json:"CommentsCheckedAt"`
+	ID                  pgtype.UUID          `db:"id" json:"ID"`
+	CreatedAt           pgtype.Timestamptz   `db:"created_at" json:"CreatedAt"`
+	UpdatedAt           pgtype.Timestamptz   `db:"updated_at" json:"UpdatedAt"`
+	Src                 string               `db:"src" json:"Src"`
+	ArchivedBy          pgtype.UUID          `db:"archived_by" json:"ArchivedBy"`
+	Title               string               `db:"title" json:"Title"`
+	Info                videoinfo.VideoInfo  `db:"info" json:"Info"`
+	Comments            []byte               `db:"comments" json:"Comments"`
+	VideoPath           *string              `db:"video_path" json:"VideoPath"`
+	ThumbnailPath       *string              `db:"thumbnail_path" json:"ThumbnailPath"`
+	Description         string               `db:"description" json:"Description"`
+	Tags                []string             `db:"tags" json:"Tags"`
+	Uploader            string               `db:"uploader" json:"Uploader"`
+	UploaderID          *string              `db:"uploader_id" json:"UploaderID"`
+	ChannelID           *string              `db:"channel_id" json:"ChannelID"`
+	UploadDate          pgtype.Date          `db:"upload_date" json:"UploadDate"`
+	DurationSeconds     *int32               `db:"duration_seconds" json:"DurationSeconds"`
+	ViewCount           *int64               `db:"view_count" json:"ViewCount"`
+	LikeCount           *int64               `db:"like_count" json:"LikeCount"`
+	ThumbGradientStart  *string              `db:"thumb_gradient_start" json:"ThumbGradientStart"`
+	ThumbGradientEnd    *string              `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
+	ThumbGradientAngle  *int32               `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
+	FileHash            *string              `db:"file_hash" json:"FileHash"`
+	FileSize            *int64               `db:"file_size" json:"FileSize"`
+	AssetsStatus        AssetMap             `db:"assets_status" json:"AssetsStatus"`
+	Search              string               `db:"search" json:"Search"`
+	ProbeData           *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
+	CommentsCheckedAt   pgtype.Timestamptz   `db:"comments_checked_at" json:"CommentsCheckedAt"`
+	ChannelURL          *string              `db:"channel_url" json:"ChannelUrl"`
+	UploaderURL         *string              `db:"uploader_url" json:"UploaderUrl"`
+	ChannelRowID        pgtype.UUID          `db:"channel_row_id" json:"ChannelRowID"`
+	Format              string               `db:"format" json:"Format"`
+	MetadataRefreshedAt pgtype.Timestamptz   `db:"metadata_refreshed_at" json:"MetadataRefreshedAt"`
+	LinksHarvestedAt    pgtype.Timestamptz   `db:"links_harvested_at" json:"LinksHarvestedAt"`
+	Media               string               `db:"media" json:"Media"`
 }
 
 type VideoComment struct {
@@ -655,6 +730,36 @@ type VideoTranscript struct {
 	Text      string             `db:"text" json:"Text"`
 	Raw       string             `db:"raw" json:"Raw"`
 	Search    string             `db:"search" json:"Search"`
+	Cues      []byte             `db:"cues" json:"Cues"`
+}
+
+type WatchedChannel struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	CreatedBy      pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	URL            string             `db:"url" json:"Url"`
+	Label          string             `db:"label" json:"Label"`
+	CronSchedule   string             `db:"cron_schedule" json:"CronSchedule"`
+	Enabled        bool               `db:"enabled" json:"Enabled"`
+	Backfill       bool               `db:"backfill" json:"Backfill"`
+	FirstScanDone  bool               `db:"first_scan_done" json:"FirstScanDone"`
+	NextScanAt     pgtype.Timestamptz `db:"next_scan_at" json:"NextScanAt"`
+	LastScanAt     pgtype.Timestamptz `db:"last_scan_at" json:"LastScanAt"`
+	LastScanStatus *string            `db:"last_scan_status" json:"LastScanStatus"`
+	LastScanError  *string            `db:"last_scan_error" json:"LastScanError"`
+	LastScanFound  int32              `db:"last_scan_found" json:"LastScanFound"`
+	ChannelID      pgtype.UUID        `db:"channel_id" json:"ChannelID"`
+}
+
+type WatchedChannelVideo struct {
+	WatchID     pgtype.UUID        `db:"watch_id" json:"WatchID"`
+	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
+	EntryID     string             `db:"entry_id" json:"EntryID"`
+	URL         string             `db:"url" json:"Url"`
+	Title       string             `db:"title" json:"Title"`
+	FirstSeenAt pgtype.Timestamptz `db:"first_seen_at" json:"FirstSeenAt"`
+	Enqueued    bool               `db:"enqueued" json:"Enqueued"`
 }
 
 type YtdlpLog struct {

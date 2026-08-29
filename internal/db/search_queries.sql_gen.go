@@ -11,7 +11,7 @@ import (
 
 const searchVideos = `-- name: SearchVideos :many
 WITH q AS (
-  SELECT plainto_tsquery('simple', $3) AS tsq
+  SELECT to_tsquery('simple', $3) AS tsq
 ),
 video_hits AS (
   SELECT v.id AS video_id, ts_rank_cd(v.search, q.tsq) AS rank
@@ -44,7 +44,7 @@ ranked AS (
   FROM hits
   GROUP BY video_id
 )
-SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at
+SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media
 FROM ranked r
 JOIN videos v ON v.id = r.video_id
 ORDER BY r.rank DESC, v.created_at DESC
@@ -55,13 +55,13 @@ OFFSET $1
 type SearchVideosParams struct {
 	PageOffset int32  `db:"page_offset" json:"PageOffset"`
 	PageLimit  int32  `db:"page_limit" json:"PageLimit"`
-	Query      string `db:"query" json:"Query"`
+	Tsquery    string `db:"tsquery" json:"Tsquery"`
 }
 
 // SearchVideos searches title/description/tags + comments + transcript.
 //
 //	WITH q AS (
-//	  SELECT plainto_tsquery('simple', $3) AS tsq
+//	  SELECT to_tsquery('simple', $3) AS tsq
 //	),
 //	video_hits AS (
 //	  SELECT v.id AS video_id, ts_rank_cd(v.search, q.tsq) AS rank
@@ -94,14 +94,14 @@ type SearchVideosParams struct {
 //	  FROM hits
 //	  GROUP BY video_id
 //	)
-//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at
+//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media
 //	FROM ranked r
 //	JOIN videos v ON v.id = r.video_id
 //	ORDER BY r.rank DESC, v.created_at DESC
 //	LIMIT $2
 //	OFFSET $1
 func (q *Queries) SearchVideos(ctx context.Context, arg *SearchVideosParams) ([]*Video, error) {
-	rows, err := q.db.Query(ctx, searchVideos, arg.PageOffset, arg.PageLimit, arg.Query)
+	rows, err := q.db.Query(ctx, searchVideos, arg.PageOffset, arg.PageLimit, arg.Tsquery)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +138,13 @@ func (q *Queries) SearchVideos(ctx context.Context, arg *SearchVideosParams) ([]
 			&i.Search,
 			&i.ProbeData,
 			&i.CommentsCheckedAt,
+			&i.ChannelURL,
+			&i.UploaderURL,
+			&i.ChannelRowID,
+			&i.Format,
+			&i.MetadataRefreshedAt,
+			&i.LinksHarvestedAt,
+			&i.Media,
 		); err != nil {
 			return nil, err
 		}

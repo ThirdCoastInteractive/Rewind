@@ -10,6 +10,8 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"thirdcoast.systems/rewind/internal/automarkers"
+	"thirdcoast.systems/rewind/internal/channellinks"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -63,5 +65,17 @@ func IngestFromInfoJSON(ctx context.Context, q *db.Queries, videoID pgtype.UUID,
 	}
 
 	slog.Info("comments ingested successfully", "video_id", videoID, "total", len(arr))
+
+	if video, err := q.GetVideoByID(ctx, videoID); err == nil && video != nil {
+		automarkers.IngestFromInfoJSON(ctx, q, video, rawInfoJSON)
+		if envelope.Comments != nil {
+			automarkers.IngestCommentJSON(ctx, q, video, envelope.Comments)
+		}
+		if video.ChannelRowID.Valid {
+			if err := channellinks.HarvestComments(ctx, q, video.ChannelRowID, video.ID); err != nil {
+				slog.Warn("harvest comment channel links failed", "video_id", videoID, "error", err)
+			}
+		}
+	}
 	return nil
 }

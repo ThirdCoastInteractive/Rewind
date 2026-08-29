@@ -1,0 +1,492 @@
+package templates
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"thirdcoast.systems/rewind/internal/analyze"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+templ Creators(list []*db.ListCreatorsRow, suggestions []*db.ListPendingCreatorSuggestionsRow, username string) {
+	@Layout("Creators", username) {
+		@Container("") {
+			<div class="mb-4 flex items-end justify-between gap-3 flex-wrap">
+				<div>
+					<h1 class="page-heading text-xl tracking-tight mb-0.5">Creators</h1>
+					<p class="text-xs font-mono text-white/60">People behind one or more archived channels</p>
+				</div>
+				<a href="/creators/new" class="btn-primary btn-sm">
+					<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
+					New creator
+				</a>
+			</div>
+			if len(suggestions) > 0 {
+				<div class="mb-6">
+					<h2 class="sub-heading mb-2">Suggested groupings</h2>
+					<p class="font-mono text-xs text-white/40 mb-3">Nominations from channel outlinks. Accept to apply, or dismiss.</p>
+					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+						for _, sug := range suggestions {
+							if sug != nil {
+								@creatorSuggestionRow(sug)
+							}
+						}
+					</div>
+				</div>
+			}
+			if len(list) == 0 {
+				<div class="border-2 border-white/10 p-6 text-center">
+					<i class="fa-sharp fa-solid fa-user text-3xl text-white/20 mb-2" aria-hidden="true"></i>
+					<p class="font-mono text-sm text-white/50">No creators</p>
+					<p class="font-mono text-xs text-white/30 mt-1">Name a person, then search and link their archived channels</p>
+				</div>
+			} else {
+				<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+					for _, cr := range list {
+						if cr != nil {
+							<a href={ templ.SafeURL("/creators/" + cr.ID.String()) } class="p-3 flex items-center justify-between gap-3 hover:bg-white/5 block">
+								<div class="min-w-0">
+									<div class="font-mono text-sm text-white truncate">{ cr.Name }</div>
+									if strings.TrimSpace(cr.Notes) != "" {
+										<div class="font-mono text-xs text-white/40 mt-0.5 truncate">{ cr.Notes }</div>
+									}
+								</div>
+								<div class="font-mono text-xs text-white/50 shrink-0">{ format.Itoa64(cr.ChannelCount) } channels</div>
+							</a>
+						}
+					}
+				</div>
+			}
+		}
+	}
+}
+
+templ creatorSuggestionRow(sug *db.ListPendingCreatorSuggestionsRow) {
+	<div class="p-3 flex items-start justify-between gap-3 flex-wrap">
+		<div class="min-w-0">
+			<div class="flex items-center gap-2 flex-wrap">
+				<span class="badge">{ suggestionKindLabel(sug.Kind) }</span>
+				<span class="font-mono text-sm text-white">{ sug.ProposedName }</span>
+			</div>
+			if strings.TrimSpace(sug.ChannelNames) != "" {
+				<div class="font-mono text-xs text-white/50 mt-1">{ sug.ChannelNames }</div>
+			}
+			if strings.TrimSpace(sug.Reason) != "" {
+				<div class="font-mono text-xs text-white/40 mt-1">{ sug.Reason }</div>
+			}
+		</div>
+		<div class="flex items-center gap-2 shrink-0">
+			<form method="POST" action={ templ.SafeURL("/creators/suggestions/" + sug.ID.String() + "/accept") }>
+				<button type="submit" class="btn-primary btn-sm">Accept</button>
+			</form>
+			<form method="POST" action={ templ.SafeURL("/creators/suggestions/" + sug.ID.String() + "/dismiss") }>
+				<button type="submit" class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white">Dismiss</button>
+			</form>
+		</div>
+	</div>
+}
+
+templ CreatorWizard(username string) {
+	@Layout("New creator", username) {
+		@Container("") {
+			<div class="mb-4">
+				<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/creators" class="hover:text-white/70">Creators</a> /</p>
+				<h1 class="page-heading text-xl tracking-tight mb-1">New creator</h1>
+				<p class="font-mono text-xs text-white/50">Name the person, then pick the archived channels that belong to them.</p>
+			</div>
+			<form
+				method="POST"
+				action="/creators"
+				class="space-y-4"
+				data-signals={ pickerSignalsJSON("") }
+			>
+				<div class="border-2 border-white/10 p-4">
+					<div class="flex items-baseline gap-2 mb-3">
+						<span class="font-mono text-xs text-white/30 tabular-nums">01</span>
+						<h2 class="sub-heading mb-0">Who is this person?</h2>
+					</div>
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+						<div class="md:col-span-1">
+							<label class="form-label mb-1" for="creator-name">Name</label>
+							<input
+								id="creator-name"
+								type="text"
+								name="name"
+								required
+								autocomplete="off"
+								placeholder="Display name"
+								class="form-input"
+								data-bind="name"
+								data-on:input__debounce.400ms="@get('/api/creators/channel-search')"
+							/>
+						</div>
+						<div class="md:col-span-2">
+							<label class="form-label mb-1" for="creator-notes">Notes</label>
+							<input
+								id="creator-notes"
+								type="text"
+								name="notes"
+								placeholder="Optional — aliases, context"
+								class="form-input"
+							/>
+						</div>
+					</div>
+				</div>
+				<div class="border-2 border-white/10 p-4">
+					<div class="flex items-baseline gap-2 mb-1">
+						<span class="font-mono text-xs text-white/30 tabular-nums">02</span>
+						<h2 class="sub-heading mb-0">Link their channels</h2>
+					</div>
+					<p class="font-mono text-xs text-white/40 mb-3">Optional. Typing a name suggests matches — you can also search by handle, URL, or platform.</p>
+					@ChannelPicker("/api/creators/channel-search")
+				</div>
+				<div class="flex items-center justify-between gap-3 flex-wrap">
+					<a href="/creators" class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white">Cancel</a>
+					<button type="submit" class="btn-primary btn-sm">
+						<span data-text="$selected.length > 0 ? ('Create with ' + $selected.length + ' channel' + ($selected.length === 1 ? '' : 's')) : 'Create without channels'">Create without channels</span>
+					</button>
+				</div>
+			</form>
+		}
+	}
+}
+
+templ CreatorView(creator *db.Creator, channels []*db.Channel, edges []*db.ListChannelEdgesForCreatorRow, report analyze.Report, username string) {
+	@Layout(creator.Name, username) {
+		@Container("") {
+			<div class="mb-4">
+				<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/creators" class="hover:text-white/70">Creators</a> /</p>
+				<div class="flex items-center gap-3 flex-wrap">
+					<h1 class="page-heading text-xl tracking-tight mb-0">{ creator.Name }</h1>
+					@creatorStatusBadge(report.Status)
+				</div>
+				if strings.TrimSpace(creator.Notes) != "" {
+					<p class="font-mono text-xs text-white/50 mt-1">{ creator.Notes }</p>
+				}
+			</div>
+			<div class="mb-6">
+				<h2 class="sub-heading mb-2">Autopsy</h2>
+				<p class="font-mono text-xs text-white/40 mb-3">View counts refresh on a schedule; signals improve as metadata updates.</p>
+				if len(report.Signals) == 0 {
+					<p class="font-mono text-xs text-white/40">No signals yet.</p>
+				} else {
+					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+						for _, sig := range report.Signals {
+							@creatorSignalRow(sig)
+						}
+					</div>
+				}
+			</div>
+			<div class="mb-6">
+				<h2 class="sub-heading mb-2">Network</h2>
+				<p class="font-mono text-xs text-white/40 mb-3">Mentions and outlinks from these channels’ titles, descriptions, and comments.</p>
+				if len(edges) == 0 {
+					<p class="font-mono text-xs text-white/40">No harvested connections yet. Linking a channel here groups identity — the graph fills as ingest scans archived videos.</p>
+				} else {
+					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+						for _, e := range edges {
+							if e != nil {
+								@creatorNetworkRow(e)
+							}
+						}
+					</div>
+				}
+			</div>
+			<div class="mb-6">
+				<h2 class="sub-heading mb-2">Channels</h2>
+				if len(channels) == 0 {
+					<p class="font-mono text-xs text-white/40 mb-3">None linked yet. Search below — matches for this name are suggested automatically.</p>
+				} else {
+					<div class="border-2 border-white/10 divide-y-2 divide-white/10 mb-4">
+						for _, ch := range channels {
+							if ch != nil {
+								<div class="p-3 flex items-center justify-between gap-3">
+									<div class="min-w-0">
+										<div class="flex items-center gap-2 flex-wrap">
+											<span class="badge">{ ch.Platform }</span>
+											if ch.Uploader != "" {
+												<a href={ templ.SafeURL(channelViewURL(ch.Uploader)) } class="font-mono text-sm text-white hover:underline truncate">{ ch.Uploader }</a>
+											} else {
+												<span class="font-mono text-sm text-white/70 truncate">{ ch.IdentityKey }</span>
+											}
+										</div>
+										if ch.CanonicalURL != "" {
+											<div class="font-mono text-xs text-white/40 mt-1 truncate">{ ch.CanonicalURL }</div>
+										}
+									</div>
+									<form method="POST" action={ templ.SafeURL("/creators/" + creator.ID.String() + "/unlink") } class="shrink-0">
+										<input type="hidden" name="channel_id" value={ ch.ID.String() }/>
+										<button
+											type="submit"
+											class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white"
+											onclick="return confirm('Unlink this channel from this creator?')"
+										>
+											Unlink
+										</button>
+									</form>
+								</div>
+							}
+						}
+					</div>
+				}
+				<form
+					method="POST"
+					action={ templ.SafeURL("/creators/" + creator.ID.String() + "/link") }
+					class="border-2 border-white/10 p-4"
+					data-signals={ pickerSignalsJSON(creator.Name) }
+					data-init={ "@get('/api/creators/" + creator.ID.String() + "/channel-search')" }
+				>
+					<h3 class="sub-heading mb-1">Link more channels</h3>
+					<p class="font-mono text-xs text-white/40 mb-3">Search unassigned channels. Suggested matches for this name load first — click to add, then confirm.</p>
+					@ChannelPicker("/api/creators/" + creator.ID.String() + "/channel-search")
+					<div class="mt-3 flex justify-end">
+						<button
+							type="submit"
+							class="btn-primary btn-sm disabled:opacity-30 disabled:pointer-events-none"
+							data-attr:disabled="$selected.length === 0"
+						>
+							<span data-text="$selected.length > 0 ? ('Link ' + $selected.length + ' channel' + ($selected.length === 1 ? '' : 's')) : 'Select channels to link'">Select channels to link</span>
+						</button>
+					</div>
+				</form>
+			</div>
+		}
+	}
+}
+
+templ ChannelPicker(searchURL string) {
+	<script>
+		window.toggleCreatorChannel = function(id, label, platform) {
+			const api = window.__dsAPI;
+			if (!api || !id) return;
+			const cur = Array.isArray(api.getPath('selected')) ? api.getPath('selected').slice() : [];
+			const idx = cur.findIndex(function(s) { return s && s.id === id; });
+			if (idx >= 0) {
+				cur.splice(idx, 1);
+			} else {
+				cur.push({ id: id, label: label || id, platform: platform || '' });
+			}
+			api.mergePatch({
+				selected: cur,
+				channelIds: cur.map(function(s) { return s.id; }).join(',')
+			});
+		};
+		window.renderCreatorChips = function(selected) {
+			const el = document.getElementById('creator-selected-chips');
+			if (!el) return;
+			const list = Array.isArray(selected) ? selected : [];
+			if (list.length === 0) {
+				el.innerHTML = '';
+				return;
+			}
+			const esc = function(s) {
+				return String(s || '').replace(/[&<>"']/g, function(c) {
+					return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+				});
+			};
+			el.innerHTML = list.map(function(s) {
+				const id = String(s.id || '').replace(/[^a-fA-F0-9-]/g, '');
+				const label = (s.platform ? s.platform + ' · ' : '') + (s.label || id);
+				return '<button type="button" class="inline-flex items-center gap-1.5 border-2 border-white/40 bg-white/10 px-2 py-1 font-mono text-xs text-white hover:border-white" data-channel-id="' + id + '">' +
+					esc(label) +
+					'<span class="text-white/50" aria-hidden="true">×</span></button>';
+			}).join('');
+			el.querySelectorAll('[data-channel-id]').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					window.toggleCreatorChannel(btn.getAttribute('data-channel-id'));
+				});
+			});
+		};
+	</script>
+	<input type="hidden" name="channel_ids" data-attr:value="$channelIds"/>
+	<div id="creator-selected-chips" class="flex flex-wrap gap-2 empty:hidden mb-3" data-effect="window.renderCreatorChips($selected)"></div>
+	<div class="relative mb-3">
+		<label class="form-label mb-1" for="creator-channel-q">Search channels</label>
+		<input
+			id="creator-channel-q"
+			type="search"
+			autocomplete="off"
+			placeholder="Name, handle, URL, or platform…"
+			class="form-input pr-8"
+			data-bind="channelQ"
+			data-indicator:channelSearching
+			data-on:input__debounce.300ms={ "@get('" + searchURL + "')" }
+			data-on:keydown.enter.prevent={ "@get('" + searchURL + "')" }
+		/>
+		<span class="absolute right-3 top-8 text-white/40 pointer-events-none" data-show="$channelSearching">
+			<i class="fa-sharp fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+		</span>
+	</div>
+	<div id="creator-channel-results">
+		<div class="border-2 border-white/10 p-4">
+			<p class="font-mono text-xs text-white/40">Type to search unassigned channels</p>
+		</div>
+	</div>
+}
+
+templ ChannelSearchResults(hits []*db.SearchUnassignedChannelsRow, query string, suggested bool) {
+	<div id="creator-channel-results">
+		if len(hits) == 0 {
+			<div class="border-2 border-white/10 p-4">
+				if strings.TrimSpace(query) == "" {
+					<p class="font-mono text-xs text-white/40">Type a name, handle, or URL to find unassigned channels.</p>
+				} else if suggested {
+					<p class="font-mono text-xs text-white/40">No unassigned channels look like “{ query }”. Search by handle or URL.</p>
+				} else {
+					<p class="font-mono text-xs text-white/40">No unassigned channels match “{ query }”.</p>
+				}
+			</div>
+		} else {
+			<div class="border-2 border-white/10">
+				<div class="px-3 py-2 border-b-2 border-white/10 font-mono text-xs text-white/40">
+					if suggested {
+						Suggested matches for “{ query }”
+					} else {
+						Unassigned channels matching “{ query }”
+					}
+				</div>
+				<div class="divide-y-2 divide-white/10 max-h-80 overflow-y-auto">
+					for _, ch := range hits {
+						if ch != nil {
+							@channelPickerRow(ch)
+						}
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ channelPickerRow(ch *db.SearchUnassignedChannelsRow) {
+	<button
+		type="button"
+		id={ "ch-pick-" + ch.ID.String() }
+		class="w-full text-left p-3 hover:bg-white/5 flex items-center justify-between gap-3"
+		data-class={ fmt.Sprintf("{'bg-white/10': $selected.some(s => s.id === %s)}", jsString(ch.ID.String())) }
+		data-on:click={ fmt.Sprintf("window.toggleCreatorChannel(%s, %s, %s)", jsString(ch.ID.String()), jsString(channelHitLabel(ch)), jsString(ch.Platform)) }
+	>
+		<div class="min-w-0">
+			<div class="flex items-center gap-2 flex-wrap">
+				if ch.Platform != "" {
+					<span class="badge">{ ch.Platform }</span>
+				}
+				<span class="font-mono text-sm text-white truncate">{ channelHitLabel(ch) }</span>
+			</div>
+			if ch.CanonicalURL != "" {
+				<div class="font-mono text-xs text-white/40 mt-1 truncate">{ ch.CanonicalURL }</div>
+			}
+		</div>
+		<div class="flex items-center gap-2 shrink-0">
+			<span class="font-mono text-xs text-white/40">{ format.Itoa64(ch.VideoCount) } videos</span>
+			<span
+				class="font-mono text-xs text-white/30"
+				data-show={ fmt.Sprintf("$selected.some(s => s.id === %s)", jsString(ch.ID.String())) }
+			>added</span>
+		</div>
+	</button>
+}
+
+templ creatorNetworkRow(e *db.ListChannelEdgesForCreatorRow) {
+	<div class="p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-start font-mono text-sm">
+		<div class="sm:col-span-3 min-w-0">
+			@networkChannelLink(e.FromUploader, e.FromPlatform)
+		</div>
+		<div class="sm:col-span-2">
+			<span class="badge">{ e.Kind }</span>
+		</div>
+		<div class="sm:col-span-3 min-w-0">
+			if e.ToUploader != "" {
+				@networkChannelLink(e.ToUploader, e.ToPlatform)
+			} else if e.ToURL != "" {
+				<div class="min-w-0">
+					<span class="text-white/70 truncate block">{ e.ToURL }</span>
+					if e.ToPlatform != "" {
+						<div class="text-xs text-white/30">{ e.ToPlatform }</div>
+					}
+				</div>
+			} else {
+				<span class="text-white/50">unknown</span>
+			}
+		</div>
+		<div class="sm:col-span-1 text-white/60">{ format.Itoa64(int64(e.Weight)) }</div>
+		<div class="sm:col-span-3 min-w-0 text-xs text-white/50">{ evidenceSnippet(e.Evidence, 80) }</div>
+	</div>
+}
+
+templ creatorStatusBadge(status string) {
+	switch status {
+		case "dying":
+			<span class="badge bg-white text-black border-white">dying</span>
+		case "drifting":
+			<span class="badge border-white/60 text-white">drifting</span>
+		default:
+			<span class="badge">fine</span>
+	}
+}
+
+templ creatorSignalRow(sig analyze.Signal) {
+	<div class="p-3">
+		<div class="flex items-start gap-2">
+			<span class="badge shrink-0">{ sig.Level }</span>
+			if sig.Format != "" {
+				<span class="font-mono text-xs text-white/40 uppercase tracking-wider shrink-0">{ sig.Format }</span>
+			}
+			<p class="font-mono text-sm text-white/80">{ sig.Text }</p>
+		</div>
+	</div>
+}
+
+func suggestionKindLabel(kind string) string {
+	switch kind {
+	case "add":
+		return "add to creator"
+	case "new":
+		return "new creator"
+	default:
+		return kind
+	}
+}
+
+func pickerSignalsJSON(nameHint string) string {
+	b, err := json.Marshal(map[string]any{
+		"channelQ":   "",
+		"name":       nameHint,
+		"selected":   []any{},
+		"channelIds": "",
+	})
+	if err != nil {
+		return `{"channelQ":"","name":"","selected":[],"channelIds":""}`
+	}
+	return string(b)
+}
+
+func jsString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
+}
+
+func channelHitLabel(ch *db.SearchUnassignedChannelsRow) string {
+	if ch == nil {
+		return ""
+	}
+	name := strings.TrimSpace(ch.Uploader)
+	if name == "" {
+		name = ch.IdentityKey
+	}
+	return name
+}
+
+func evidenceSnippet(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if max <= 0 || utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:max]) + "…"
+}

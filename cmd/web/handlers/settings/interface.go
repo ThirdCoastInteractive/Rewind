@@ -33,6 +33,6 @@ func HandleSettingsInterface(sm *auth.SessionManager, dbc *db.DatabaseConnection
 		}
 		cookiesValue := generateCookiesFile(encMgr, cookies)
 
-		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesValue, "Interface preferences saved")
+		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesValue, "Interface preferences saved", "")
 	}
 }

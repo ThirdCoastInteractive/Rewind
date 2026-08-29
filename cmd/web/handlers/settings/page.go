@@ -32,6 +32,6 @@ func HandleSettingsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection, enc
 			msg = okMsg
 		}
 
-		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesValue, msg)
+		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesValue, msg, "")
 	}
 }

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
@@ -20,7 +21,6 @@ LABEL org.opencontainers.image.source="https://github.com/ThirdCoastInteractive/
 LABEL org.opencontainers.image.description="Rewind web server"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install ca-certificates for HTTPS requests and ffmpeg for clip exports
 RUN apk --no-cache add ca-certificates ffmpeg
 
 # Create non-root user

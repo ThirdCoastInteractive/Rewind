@@ -20,10 +20,10 @@ func HandleSettingsDeleteCookies(sm *auth.SessionManager, dbc *db.DatabaseConnec
 
 		if err := dbc.Queries(c.Request().Context()).DeleteUserCookies(c.Request().Context(), userUUID); err != nil {
 			slog.Error("failed to clear cookies", "error", err)
-			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "Failed to delete cookies")
+			return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "Failed to delete cookies", "")
 		}
 
-		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "Cookies cleared successfully")
+		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, "", "Cookies cleared successfully", "")
 	}
 }
 

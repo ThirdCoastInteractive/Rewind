@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"thirdcoast.systems/rewind/pkg/useragent"
 )
 
 // streamWriter wraps an io.Writer and calls a callback for each line.
@@ -105,6 +107,10 @@ type Client struct {
 	// ExtraArgs are always appended before per-call args.
 	ExtraArgs []string
 
+	// MaxHeight caps the vertical resolution of downloaded video, in pixels
+	// (e.g. 1080). Zero means no cap: download the best available rendition.
+	MaxHeight int
+
 	// LastPID is the process ID of the most recently executed command.
 	// Only populated after exec() is called.
 	LastPID int
@@ -130,13 +136,19 @@ func (c *Client) exec(ctx context.Context, args ...string) (stdout []byte, stder
 	// Reset per-exec state.
 	c.LastPID = 0
 
-	fullArgs := make([]string, 0, len(c.ExtraArgs)+len(args)+2)
+	fullArgs := make([]string, 0, len(c.ExtraArgs)+len(args)+7)
 	fullArgs = append(fullArgs, c.ExtraArgs...)
 	if c.LogCallback != nil {
 		// Force newline progress output so logs are readable.
 		// This is a no-op for commands that don't emit progress.
 		fullArgs = append(fullArgs, "--newline")
 	}
+
+	// Impersonate a real Chrome browser: --impersonate matches Chrome's TLS/HTTP2
+	// fingerprint (via curl_cffi, bundled in the yt-dlp_linux binary), and the
+	// User-Agent header keeps yt-dlp consistent with the rest of the app. Together
+	// they get past bot walls that a UA header alone won't.
+	fullArgs = append(fullArgs, "--impersonate", "chrome", "--user-agent", useragent.Get())
 
 	// Create temporary cookies file if content is provided
 	var cookiesFile string
@@ -146,7 +158,7 @@ func (c *Client) exec(ctx context.Context, args ...string) (stdout []byte, stder
 			slog.Error("CRITICAL: failed to create temp cookies file", "error", err)
 			return nil, nil, fmt.Errorf("failed to create temp cookies file: %w", err)
 		}
-		fullArgs = append(fullArgs, "--cookies", cookiesFile, "--user-agent", os.Getenv("USER_AGENT"))
+		fullArgs = append(fullArgs, "--cookies", cookiesFile)
 		slog.Info("ytdlp: Using cookies file", "path", cookiesFile, "size_bytes", len(c.Cookies))
 	}
 
@@ -224,6 +236,16 @@ type Info struct {
 	Duration     float64           `json:"duration"`
 	Entries      []json.RawMessage `json:"entries,omitempty"`
 	Raw          json.RawMessage   `json:"-"`
+}
+
+// RateLimitArgs spaces out yt-dlp HTTP requests so a metadata crawl of a
+// large channel is less likely to trip extractor rate limits.
+func RateLimitArgs() []string {
+	return []string{
+		"--sleep-requests", "1.5",
+		"--sleep-interval", "2",
+		"--max-sleep-interval", "8",
+	}
 }
 
 // GetInfo runs yt-dlp in "metadata only" mode and parses its JSON output.

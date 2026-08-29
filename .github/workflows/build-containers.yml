@@ -8,7 +8,16 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  preflight:
+    if: github.repository == 'ThirdCoastInteractive/Rewind'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public release commit
+        run: bash scripts/check-release.sh --commit HEAD
+
   build:
+    needs: preflight
     if: github.repository == 'ThirdCoastInteractive/Rewind'
     runs-on: ubuntu-latest
     permissions:

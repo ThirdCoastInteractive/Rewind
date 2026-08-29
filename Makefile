@@ -2,21 +2,31 @@
 
 BINDIR ?= bin/local
 
-.PHONY: help up down logs status clean generate sqlc templ assets build test lint lint-template-go-files lint-uuid-parse e2e release
+# Shared ffmpeg runtime images so encoder/downloader rebuilds skip apt/apk.
+# Ingest compiles whisper.cpp inside ingest.Dockerfile (no Python weights).
+RUNTIME_FFMPEG_DEBIAN ?= rewind-runtime-ffmpeg-debian:local
+RUNTIME_FFMPEG_ALPINE ?= rewind-runtime-ffmpeg-alpine:local
+
+.PHONY: help up up-fast up-web up-workers runtime-bases runtime-bases-force down logs status clean generate sqlc templ assets build test lint lint-template-go-files lint-uuid-parse lint-release e2e release
 
 help:
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "  up          Build and start all services"
-	@echo "  down        Stop all services"
-	@echo "  logs        Tail logs from all services"
-	@echo "  status      Show service status"
-	@echo "  clean       Stop services and remove volumes"
-	@echo "  generate    Run sqlc + templ + assets"
-	@echo "  build       Build all Go binaries"
-	@echo "  test        Run Go tests"
-	@echo "  e2e         Run Playwright E2E tests"
-	@echo "  lint        Run code-pattern guardrails"
+	@echo "  up                 Ensure runtime bases, rebuild services, start stack"
+	@echo "  up-fast            Start stack WITHOUT rebuilding anything (fastest)"
+	@echo "  up-web             Rebuild + restart only web (day-to-day UI work)"
+	@echo "  up-workers         Rebuild + restart downloader/ingest/encoder"
+	@echo "  runtime-bases      Build shared ffmpeg bases if missing (slow, rare)"
+	@echo "  runtime-bases-force  Rebuild bases from scratch (no cache)"
+	@echo "  down               Stop all services"
+	@echo "  logs               Tail logs from all services"
+	@echo "  status             Show service status"
+	@echo "  clean              Stop services and remove volumes"
+	@echo "  generate           Run sqlc + templ + assets"
+	@echo "  build              Build all Go binaries"
+	@echo "  test               Run Go tests"
+	@echo "  e2e                Run Playwright E2E tests"
+	@echo "  lint               Run code-pattern guardrails"
 	@echo ""
 	@echo "Performance testing:"
 	@echo "  perf            Run all sitespeed.io page tests"
@@ -33,8 +43,38 @@ setup:
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	pnpm install
 
-up:
+# Build shared ffmpeg bases only when missing. Ingest's whisper.cpp compile is
+# cached as Docker layers inside ingest.Dockerfile — first ingest build is the
+# slow one, then Go-only rebuilds stay fast. GGML weights live in ./bin/models.
+runtime-bases:
+	@if ! docker image inspect $(RUNTIME_FFMPEG_DEBIAN) >/dev/null 2>&1; then \
+		echo "==> building $(RUNTIME_FFMPEG_DEBIAN) (ffmpeg via apt, one-time)"; \
+		docker build -t $(RUNTIME_FFMPEG_DEBIAN) -f docker/runtime-ffmpeg-debian.Dockerfile docker/; \
+	else echo "ok  $(RUNTIME_FFMPEG_DEBIAN)"; fi
+	@if ! docker image inspect $(RUNTIME_FFMPEG_ALPINE) >/dev/null 2>&1; then \
+		echo "==> building $(RUNTIME_FFMPEG_ALPINE) (ffmpeg via apk, one-time)"; \
+		docker build -t $(RUNTIME_FFMPEG_ALPINE) -f docker/runtime-ffmpeg-alpine.Dockerfile docker/; \
+	else echo "ok  $(RUNTIME_FFMPEG_ALPINE)"; fi
+
+runtime-bases-force:
+	docker build --no-cache -t $(RUNTIME_FFMPEG_DEBIAN) -f docker/runtime-ffmpeg-debian.Dockerfile docker/
+	docker build --no-cache -t $(RUNTIME_FFMPEG_ALPINE) -f docker/runtime-ffmpeg-alpine.Dockerfile docker/
+
+# Full stack: bases if needed, then compose --build (Go layers only on day-to-day edits).
+up: runtime-bases
 	docker compose up -d --build --remove-orphans
+
+# No image builds — just start whatever is already built.
+up-fast:
+	docker compose up -d --remove-orphans
+
+# UI iteration path: only rebuild web.
+up-web: runtime-bases
+	docker compose up -d --build --no-deps web
+
+# Worker iteration: skip web/sfu.
+up-workers: runtime-bases
+	docker compose up -d --build --no-deps downloader ingest encoder
 
 down:
 	docker compose down
@@ -64,6 +104,7 @@ assets:
 
 build: generate
 	go build -o $(BINDIR)/web ./cmd/web
+	go build -o $(BINDIR)/sfu ./cmd/sfu
 	go build -o $(BINDIR)/downloader ./cmd/downloader
 	go build -o $(BINDIR)/ingest ./cmd/ingest
 	go build -o $(BINDIR)/encoder ./cmd/encoder
@@ -76,13 +117,18 @@ e2e:
 	pnpm exec playwright test
 
 release:
-	@echo "Squashing master → public/main (CLAUDE.md excluded)..."
+	@echo "Squashing master → public/main (private paths excluded, ThirdCoast identity)..."
 	git fetch public
 	git checkout -b release-squash public/main
 	git merge --squash origin/master
-	git restore --staged CLAUDE.md
-	git restore CLAUDE.md
-	@read -p "Commit message (e.g. 'release: HLS player + faststart'): " msg && git commit -m "$$msg"
+	bash scripts/check-release.sh --strip-index
+	git restore --worktree -- AGENTS.md CLAUDE.md .grok .claude 2>/dev/null || true
+	bash scripts/check-release.sh
+	@read -p "Commit message (e.g. 'release: HLS player + faststart'): " msg && \
+		GIT_AUTHOR_NAME=ThirdCoast GIT_AUTHOR_EMAIL=git@thirdcoast.tv \
+		GIT_COMMITTER_NAME=ThirdCoast GIT_COMMITTER_EMAIL=git@thirdcoast.tv \
+		git commit -m "$$msg"
+	bash scripts/check-release.sh --commit HEAD
 	git push public HEAD:main
 	git checkout master
 	git branch -D release-squash
@@ -90,7 +136,10 @@ release:
 
 # Lint / code-pattern guardrails — run these in CI to prevent regression.
 
-lint: lint-template-go-files lint-uuid-parse
+lint: lint-template-go-files lint-uuid-parse lint-release
+
+lint-release:
+	bash scripts/check-release.sh
 
 lint-template-go-files:
 	@echo "Checking for hand-written .go files in templates..."

@@ -1,10 +1,25 @@
 package templates
 
 import (
+	"strconv"
 	"strings"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
+
+// downloadQualityOptions lists the selectable caps for the max-download-resolution
+// dropdown. Value "0" means no cap (best available); others are vertical pixels.
+func downloadQualityOptions() []components.SelectOption {
+	return []components.SelectOption{
+		{Value: "0", Label: "Unlimited (best available)"},
+		{Value: "2160", Label: "4K — 2160p"},
+		{Value: "1440", Label: "2K — 1440p"},
+		{Value: "1080", Label: "Full HD — 1080p"},
+		{Value: "720", Label: "HD — 720p"},
+		{Value: "480", Label: "SD — 480p"},
+		{Value: "360", Label: "360p"},
+	}
+}
 
 type AdminUserRow struct {
 	ID       string
@@ -163,28 +178,41 @@ func adminJobStatusDot(status string) string {
 	}
 }
 
-templ AdminSettings(username string, registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, alertType string, alertMsg string) {
+templ AdminSettings(username string, registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32, alertType string, alertMsg string) {
 	@Layout("Admin Settings", username) {
-		@AdminSettingsContent(registrationEnabled, clipExportStorageLimit, adminEmails, alertType, alertMsg)
+		@AdminSettingsContent(registrationEnabled, clipExportStorageLimit, adminEmails, maxDownloadHeight, alertType, alertMsg)
 	}
 }
 
-templ AdminSettingsContent(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, alertType string, alertMsg string) {
+templ AdminSettingsContent(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32, alertType string, alertMsg string) {
 	@Container("") {
 		@components.AdminPageHeader("ADMIN SETTINGS", "/admin")
 		if alertMsg != "" {
 			@Alert(alertType, alertMsg)
 		}
-		@AdminSettingsForm(registrationEnabled, clipExportStorageLimit, adminEmails)
+		@AdminSettingsForm(registrationEnabled, clipExportStorageLimit, adminEmails, maxDownloadHeight)
 	}
 }
 
-templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string) {
+templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32) {
 	<form method="POST" action="/admin/settings" class="space-y-4">
 		@components.Card(false) {
 			@components.CardHeader("REGISTRATION", "When disabled, new users cannot register.")
 			@components.CardBody(true) {
 				@components.Checkbox("Registration enabled", "registration_enabled", registrationEnabled)
+			}
+		}
+		@components.Card(false) {
+			@components.CardHeader("DOWNLOAD QUALITY", "Caps the resolution of newly downloaded videos to save bandwidth and disk. Applies to all sources and future downloads; existing videos are unaffected.")
+			@components.CardBody(true) {
+				<div>
+					<label class="form-label mb-1" for="max_download_height">MAX RESOLUTION</label>
+					@components.Select("", "max_download_height", downloadQualityOptions(), strconv.Itoa(int(maxDownloadHeight)), templ.Attributes{})
+					<p class="mt-1 text-xs text-white/40 font-mono">Downloads the highest quality at or below the limit. If every rendition is larger than the limit, the smallest one is used.</p>
+				</div>
+				@components.FormButton("primary", "md", "", false) {
+					SAVE
+				}
 			}
 		}
 		@components.Card(false) {

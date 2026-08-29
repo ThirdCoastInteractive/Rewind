@@ -174,7 +174,8 @@ async function run() {
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: process.env.CHROME_PATH || undefined,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
   });
 
   const page = await browser.newPage();
@@ -183,12 +184,59 @@ async function run() {
   try {
     logStep('Login + warm-up');
     await login(page);
-    await warmUp(page);
+    if (!process.env.ONLY_NEW) {
+      await warmUp(page);
+    }
 
     // ------------------------------------------------------------------ HOME
     logStep('Home');
-    await go(page, '/', '#jobForm');
+    await go(page, '/', 'form[action="/archive"]');
     await capture(page, 'home');
+
+    if (process.env.ONLY_NEW) {
+      logStep('Channels');
+      await go(page, '/channels', '#channels-list', 15000);
+      await pause(800);
+      await capture(page, 'channels');
+
+      logStep('Creators');
+      await go(page, '/creators', 'h1');
+      await pause(400);
+      await capture(page, 'creators');
+
+      logStep('Follows');
+      await go(page, '/follows');
+      await pause(500);
+      await capture(page, 'follows');
+
+      logStep('Network graph');
+      await go(page, '/network', '#network-graph svg circle', 20000);
+      await pause(2800);
+      await capture(page, 'network');
+
+      logStep('Settings (MCP)');
+      await go(page, '/settings', 'form');
+      await page.evaluate(() => {
+        const el = Array.from(document.querySelectorAll('h2, h3, p, span, div')).find((n) =>
+          /^\s*MCP\s*$/.test((n.textContent || '').trim())
+        );
+        el?.scrollIntoView({ block: 'center' });
+      });
+      await pause(200);
+      await capture(page, 'settings');
+
+      const newImages = ['home.png', 'channels.png', 'creators.png', 'follows.png', 'network.png', 'settings.png'];
+      const manifest = {
+        baseUrl: BASE_URL,
+        capturedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - globalStart,
+        images: newImages,
+      };
+      writeFileSync(join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
+      const totalSec = ((Date.now() - globalStart) / 1000).toFixed(1);
+      console.log(`\n✅ ${newImages.length} screenshots in ${totalSec}s → ${OUTPUT_DIR}`);
+      return;
+    }
 
     // ------------------------------------------------------------------ JOBS
     logStep('Jobs dashboard');
@@ -334,9 +382,36 @@ async function run() {
     }
     await capture(page, 'cut-editor-filters');
 
+    // ------------------------------------------------------------------ CHANNELS / CREATORS / FOLLOWS / NETWORK
+    logStep('Channels');
+    await go(page, '/channels', '#channels-list', 15000);
+    await pause(800);
+    await capture(page, 'channels');
+
+    logStep('Creators');
+    await go(page, '/creators', 'h1');
+    await pause(400);
+    await capture(page, 'creators');
+
+    logStep('Follows');
+    await go(page, '/follows');
+    await pause(500);
+    await capture(page, 'follows');
+
+    logStep('Network graph');
+    await go(page, '/network', '#network-graph svg circle', 20000);
+    await pause(2800);
+    await capture(page, 'network');
+
     // ------------------------------------------------------------------ SETTINGS
     logStep('Settings');
     await go(page, '/settings', 'form');
+    await page.evaluate(() => {
+      const headings = Array.from(document.querySelectorAll('h2, .card-header, [class*="CardHeader"]'));
+      const mcp = headings.find((el) => (el.textContent || '').includes('MCP'));
+      mcp?.scrollIntoView({ block: 'center' });
+    });
+    await pause(200);
     await capture(page, 'settings');
 
     // Keybindings
@@ -367,6 +442,10 @@ async function run() {
         'job-detail.png',
         'videos.png',
         'videos-scrolled.png',
+        'channels.png',
+        'creators.png',
+        'follows.png',
+        'network.png',
         'video-detail.png',
         'video-detail-search.png',
         'cut-editor.png',

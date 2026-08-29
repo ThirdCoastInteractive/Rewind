@@ -22,9 +22,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"thirdcoast.systems/rewind/internal/application"
+	"thirdcoast.systems/rewind/internal/automarkers"
 	"thirdcoast.systems/rewind/internal/config"
+	"thirdcoast.systems/rewind/internal/creatorlink"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/videoid"
+	"thirdcoast.systems/rewind/pkg/captions"
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
 	"thirdcoast.systems/rewind/pkg/videoinfo"
 )
@@ -114,6 +117,33 @@ func main() {
 		defer ticker.Stop()
 		for {
 			runAssetCatchupUnit(ctx, dbc)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	// Backfill channel outlinks from already-archived titles, descriptions, and comments.
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			runLinkHarvestUnit(ctx, dbc)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			creatorlink.Apply(ctx, dbc.Queries(ctx))
 			select {
 			case <-ctx.Done():
 				return
@@ -417,7 +447,12 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) {
 			}
 
 			// Captions: find existing or generate via Whisper
-			if _, _, ok := findCanonicalCaptionFilePath(filepath.Dir(videoPath), videoID); !ok && whisperEnabled() {
+			if capPath, lang, ok := findCanonicalCaptionFilePath(filepath.Dir(videoPath), videoID); ok {
+				if iErr := ingestTranscriptFile(ctx, q, idUUID, lang, capPath); iErr != nil {
+					slog.Warn("asset catchup transcript ingest failed", "video_id", videoID, "error", iErr)
+					assetErrors["captions"] = iErr.Error()
+				}
+			} else if whisperEnabled() {
 				if p, l, wErr := generateCaptionsWithWhisper(ctx, videoPath, videoID, filepath.Dir(videoPath)); wErr != nil {
 					slog.Warn("asset catchup whisper failed", "video_id", videoID, "error", wErr)
 					assetErrors["captions"] = wErr.Error()
@@ -653,8 +688,15 @@ func verifyAllAssetStatus(videoPath, videoID string, fileHash *string) map[strin
 	status["waveform"] = verifyWaveformAssets(videoPath)
 
 	// Captions
-	_, _, capOK := findCanonicalCaptionFilePath(dir, videoID)
+	capPath, _, capOK := findCanonicalCaptionFilePath(dir, videoID)
 	status["captions"] = capOK
+	if !capOK {
+		status["captions_clean"] = true
+	} else if raw, err := os.ReadFile(capPath); err == nil {
+		status["captions_clean"] = !captions.LooksDirty(raw)
+	} else {
+		status["captions_clean"] = false
+	}
 
 	// Faststart: MP4 moov atom at front for instant browser seek.
 	// Non-MP4 formats (WebM, MKV) don't use this structure, mark as N/A (true).
@@ -951,6 +993,18 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 	return q.MarkIngestJobSucceeded(ctx, job.IngestJobID)
 }
 
+// ingestMediaKind is "metadata" only for skip-download jobs that still have no
+// video file. Any real path (or a later full download of the same src) is "file".
+func ingestMediaKind(jobKind string, videoPath *string) string {
+	if videoPath != nil && strings.TrimSpace(*videoPath) != "" {
+		return "file"
+	}
+	if strings.TrimSpace(jobKind) == "metadata" {
+		return "metadata"
+	}
+	return "file"
+}
+
 func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJobRow) error {
 	// This handles normal ingest from a download job with info.json
 	if job.InfoJsonPath == nil || strings.TrimSpace(*job.InfoJsonPath) == "" {
@@ -1131,10 +1185,13 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 		FileHash:           nil,
 		FileSize:           nil,
 		ProbeData:          nil,
+		Media:              ingestMediaKind(job.Kind, preservedVideoPath),
 	})
 	if err != nil {
 		return fmt.Errorf("insert video: %w", err)
 	}
+	attachChannel(ctx, q, video, src, infoVI)
+	automarkers.IngestFromInfoJSON(ctx, q, video, b)
 
 	// Transcript ingest (best-effort). Intended for search.
 	if job.SpoolDir != nil && strings.TrimSpace(*job.SpoolDir) != "" {
@@ -1189,6 +1246,13 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 		if err != nil {
 			slog.Error("failed to move video to permanent storage", "video_id", video.ID, "error", err)
 		}
+	}
+
+	// Metadata-only jobs must never write a video_path (thumbnails/info.json are fine).
+	if strings.TrimSpace(job.Kind) == "metadata" {
+		videoPath = preservedVideoPath
+		fileHash = nil
+		fileSize = nil
 	}
 
 	// Preserve existing permanent paths if the spool dir didn't contain a new video/thumbnail,
@@ -1289,13 +1353,20 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 			FileHash:           fileHash,
 			FileSize:           fileSize,
 			ProbeData:          probeInfo,
+			Media:              ingestMediaKind(job.Kind, videoPath),
 		})
 		if err != nil {
 			slog.Error("failed to update video with permanent paths", "video_id", video.ID, "error", err)
+		} else {
+			attachChannel(ctx, q, video, src, infoVI)
 		}
 
 		if err := updateVideoAssetsStatus(ctx, q, video.ID.String(), verifyAllAssetStatus(*videoPath, video.ID.String(), fileHash)); err != nil {
 			slog.Warn("failed to update assets_status after ingest", "video_id", video.ID, "error", err)
+		}
+	} else if thumbPath != nil && strings.TrimSpace(*thumbPath) != "" {
+		if err := q.UpdateVideoThumbnailPath(ctx, &db.UpdateVideoThumbnailPathParams{ID: video.ID, ThumbnailPath: thumbPath}); err != nil {
+			slog.Warn("failed to update thumbnail path", "video_id", video.ID, "error", err)
 		}
 	}
 

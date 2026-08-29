@@ -200,7 +200,9 @@ SELECT * FROM (
            ''::text AS file_path
     FROM videos v
     WHERE (sqlc.arg(source_filter)::text = '' OR sqlc.arg(source_filter)::text = 'all' OR sqlc.arg(source_filter)::text = 'video')
-      AND (sqlc.arg(query)::text = '' OR v.search @@ websearch_to_tsquery('english', sqlc.arg(query)))
+      AND (sqlc.arg(query)::text = '' OR v.search @@ websearch_to_tsquery('simple', sqlc.arg(query))
+           OR strpos(lower(v.title), lower(sqlc.arg(query))) > 0
+           OR strpos(lower(v.uploader), lower(sqlc.arg(query))) > 0)
 
     UNION ALL
 

@@ -19,6 +19,18 @@ func IsUndefinedColumnErr(err error) bool {
 	return false
 }
 
+// IsUniqueViolationErr reports whether err is a Postgres unique-constraint violation.
+func IsUniqueViolationErr(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// IsForeignKeyViolationErr reports whether err is a Postgres foreign-key violation.
+func IsForeignKeyViolationErr(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
 // NilTimePtr converts a nullable pgtype.Timestamptz to a *time.Time, returning nil when invalid.
 func NilTimePtr(t pgtype.Timestamptz) *time.Time {
 	if !t.Valid {

@@ -1,0 +1,225 @@
+package templates
+
+import (
+	"encoding/json"
+	"net/url"
+	"strings"
+
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+templ Network(edges []*db.ListChannelEdgesRow, username string) {
+	@LayoutFullscreen("Network", username) {
+		<div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-black">
+			if len(edges) == 0 {
+				<div class="flex-1 flex flex-col items-center justify-center text-center px-6">
+					<i class="fa-sharp fa-solid fa-diagram-project text-3xl text-white/20 mb-2" aria-hidden="true"></i>
+					<p class="font-mono text-sm text-white/50">No connections yet</p>
+					<p class="font-mono text-xs text-white/30 mt-1">Ingest backfills existing videos. Unresolved URLs still show; they attach once that channel is archived.</p>
+				</div>
+			} else {
+				<div class="shrink-0 border-b-2 border-white/10 px-3 py-1.5 flex items-center gap-3 flex-wrap">
+					<h1 class="font-mono text-sm uppercase tracking-wider text-white/80">Network</h1>
+					<span class="font-mono text-xs text-white/30">{ format.Itoa(len(edges)) } edges</span>
+					<input
+						id="network-filter"
+						type="search"
+						placeholder="Filter channels…"
+						class="w-52 bg-black border-2 border-white/20 text-white font-mono text-xs px-2 py-1 focus:border-white/60 focus:outline-none"
+					/>
+					<label class="flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer">
+						<input type="checkbox" data-network-kind="outlink" checked class="accent-white"/>
+						outlink
+					</label>
+					<label class="flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer">
+						<input type="checkbox" data-network-kind="mention" checked class="accent-white"/>
+						mention
+					</label>
+					<label class="flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer">
+						<input type="checkbox" data-network-kind="commented" checked class="accent-white"/>
+						commented
+					</label>
+					<span class="font-mono text-[10px] text-white/30 ml-auto hidden md:inline">Dashed ring = same creator · filled = archived</span>
+				</div>
+				<div class="flex-1 min-h-0 relative isolate">
+					<div id="network-graph" class="absolute inset-0 z-0 bg-black"></div>
+					<aside
+						id="network-inspector-panel"
+						class="hidden absolute top-2 right-2 bottom-2 w-80 max-w-[calc(100%-1rem)] border-2 border-white/40 bg-black z-50 isolate flex flex-col overflow-hidden pointer-events-auto"
+					>
+						<div class="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-white/10">
+							<span class="font-mono text-xs uppercase tracking-wider text-white/50">Inspector</span>
+							<button type="button" id="network-inspector-close" class="font-mono text-xs text-white/40 hover:text-white px-1" title="Close">
+								<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+							</button>
+						</div>
+						<div id="network-inspector" class="p-3 overflow-y-auto flex-1 min-h-0"></div>
+					</aside>
+				</div>
+				<div id="network-graph-data" class="hidden" data-graph={ networkGraphJSON(edges) }></div>
+				<script src={ versionedAsset(ctx, "/static/dist/network-page.js") }></script>
+			}
+		</div>
+	}
+}
+
+templ networkChannelLink(uploader, platform string) {
+	<div class="min-w-0">
+		if uploader != "" {
+			<a href={ templ.SafeURL(channelViewURL(uploader)) } class="text-white hover:underline truncate block">{ uploader }</a>
+		} else {
+			<span class="text-white/50">unknown</span>
+		}
+		if platform != "" {
+			<div class="text-xs text-white/30">{ platform }</div>
+		}
+	</div>
+}
+
+type networkGraph struct {
+	Nodes []networkNode `json:"nodes"`
+	Links []networkLink `json:"links"`
+}
+
+type networkNode struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Platform    string `json:"platform"`
+	Archived    bool   `json:"archived"`
+	Href        string `json:"href,omitempty"`
+	CreatorID   string `json:"creatorId,omitempty"`
+	CreatorName string `json:"creatorName,omitempty"`
+}
+
+type networkLink struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	Kind     string `json:"kind"`
+	Weight   int32  `json:"weight"`
+	Evidence string `json:"evidence"`
+}
+
+func networkGraphJSON(edges []*db.ListChannelEdgesRow) string {
+	nodes := map[string]networkNode{}
+	var links []networkLink
+	add := func(id, label, platform, creatorID, creatorName string, archived bool) {
+		if id == "" {
+			return
+		}
+		if _, ok := nodes[id]; ok {
+			n := nodes[id]
+			if archived {
+				n.Archived = true
+				if strings.TrimSpace(label) != "" {
+					n.Label = label
+				}
+				if platform != "" {
+					n.Platform = platform
+				}
+				if n.Href == "" && label != "" {
+					n.Href = "/channels/view?name=" + url.QueryEscape(label)
+				}
+			}
+			if n.CreatorID == "" && creatorID != "" {
+				n.CreatorID = creatorID
+				n.CreatorName = creatorName
+			}
+			nodes[id] = n
+			return
+		}
+		n := networkNode{ID: id, Label: label, Platform: platform, Archived: archived, CreatorID: creatorID, CreatorName: creatorName}
+		if n.Label == "" {
+			n.Label = id
+		}
+		if archived && label != "" {
+			n.Href = "/channels/view?name=" + url.QueryEscape(label)
+		}
+		nodes[id] = n
+	}
+	for _, e := range edges {
+		if e == nil {
+			continue
+		}
+		fromID := e.FromChannelID.String()
+		fromLabel := strings.TrimSpace(e.FromUploader)
+		if fromLabel == "" {
+			fromLabel = fromID
+		}
+		fromCreator := ""
+		if e.FromCreatorID.Valid {
+			fromCreator = e.FromCreatorID.String()
+		}
+		add(fromID, fromLabel, e.FromPlatform, fromCreator, e.FromCreatorName, true)
+
+		toID := ""
+		toLabel := strings.TrimSpace(e.ToUploader)
+		toPlatform := e.ToPlatform
+		archived := e.ToChannelID.Valid
+		toCreator := ""
+		if e.ToCreatorID.Valid {
+			toCreator = e.ToCreatorID.String()
+		}
+		if archived {
+			toID = e.ToChannelID.String()
+			if toLabel == "" {
+				toLabel = toID
+			}
+		} else {
+			toID = "url:" + e.ToURL
+			toLabel, toPlatform = displayExternalTarget(e.ToURL, e.FromPlatform)
+		}
+		add(toID, toLabel, toPlatform, toCreator, e.ToCreatorName, archived)
+		links = append(links, networkLink{
+			Source:   fromID,
+			Target:   toID,
+			Kind:     e.Kind,
+			Weight:   e.Weight,
+			Evidence: e.Evidence,
+		})
+	}
+	out := networkGraph{Links: links, Nodes: make([]networkNode, 0, len(nodes))}
+	for _, n := range nodes {
+		out.Nodes = append(out.Nodes, n)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return `{"nodes":[],"links":[]}`
+	}
+	return string(b)
+}
+
+func displayExternalTarget(toURL, fromPlatform string) (label, platform string) {
+	toURL = strings.TrimSpace(toURL)
+	if toURL == "" {
+		return "unknown", fromPlatform
+	}
+	lower := strings.ToLower(toURL)
+	handle := ""
+	switch {
+	case strings.Contains(lower, "youtube.com/@"):
+		i := strings.Index(lower, "youtube.com/@")
+		handle = strings.Trim(toURL[i+len("youtube.com/@"):], "/")
+	case strings.Contains(lower, "x.com/"):
+		i := strings.Index(lower, "x.com/")
+		handle = strings.Trim(toURL[i+len("x.com/"):], "/")
+		platform = "twitter"
+	case strings.Contains(lower, "twitter.com/"):
+		i := strings.Index(lower, "twitter.com/")
+		handle = strings.Trim(toURL[i+len("twitter.com/"):], "/")
+		platform = "twitter"
+	}
+	if i := strings.IndexAny(handle, "/?#"); i >= 0 {
+		handle = handle[:i]
+	}
+	if handle != "" && (platform == "twitter" || fromPlatform == "twitter" || fromPlatform == "other") {
+		if platform == "" {
+			platform = "twitter"
+		}
+		return "@" + strings.TrimPrefix(handle, "@"), platform
+	}
+	if handle != "" && strings.Contains(lower, "youtube.com/@") {
+		return "@" + strings.TrimPrefix(handle, "@"), "youtube"
+	}
+	return toURL, platform
+}

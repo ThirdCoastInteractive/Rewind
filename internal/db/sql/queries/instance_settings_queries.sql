@@ -2,6 +2,10 @@
 -- name: GetInstanceSettings :one
 SELECT * FROM instance_settings WHERE id = 1;
 
+-- GetMaxDownloadHeight returns the global download quality cap in pixels (0 = no cap)
+-- name: GetMaxDownloadHeight :one
+SELECT COALESCE(max_download_height, 0) FROM instance_settings WHERE id = 1;
+
 -- UpsertRegistrationEnabled sets registration_enabled (creates row if missing)
 -- name: UpsertRegistrationEnabled :exec
 INSERT INTO instance_settings (id, registration_enabled, admin_emails, updated_at)
@@ -25,4 +29,12 @@ INSERT INTO instance_settings (id, registration_enabled, admin_emails, updated_a
 VALUES (1, TRUE, sqlc.arg(admin_emails), NOW())
 ON CONFLICT (id) DO UPDATE
 SET admin_emails = EXCLUDED.admin_emails,
+    updated_at = NOW();
+
+-- UpsertMaxDownloadHeight sets the global download quality cap in pixels (0 = no cap)
+-- name: UpsertMaxDownloadHeight :exec
+INSERT INTO instance_settings (id, registration_enabled, admin_emails, max_download_height, updated_at)
+VALUES (1, TRUE, ARRAY[]::text[], sqlc.arg(max_download_height), NOW())
+ON CONFLICT (id) DO UPDATE
+SET max_download_height = EXCLUDED.max_download_height,
     updated_at = NOW();

@@ -3,7 +3,6 @@ package video_api
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -12,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/pkg/captions"
 )
 
 // HandleTranscriptRender returns an SSE-patched, server-rendered transcript list.
@@ -47,7 +47,14 @@ func HandleTranscriptRender(sm *auth.SessionManager) echo.HandlerFunc {
 			return nil
 		}
 
-		cues := parseVTT(string(data))
+		doc, err := captions.ParseString(string(data))
+		if err != nil {
+			return nil
+		}
+		cues := make([]components.TranscriptCue, 0, len(doc.Cues))
+		for _, cue := range doc.Cues {
+			cues = append(cues, components.TranscriptCue{Start: cue.Start, End: cue.End, Text: cue.Text})
+		}
 
 		sse := datastar.NewSSE(c.Response().Writer, c.Request())
 		sse.PatchElementTempl(components.TranscriptList(cues), datastar.WithSelectorID("transcript-list-inner"))
@@ -69,101 +76,11 @@ func findVTTFile(dir, videoID string) string {
 	}
 	glob := filepath.Join(dir, videoID+".captions.*.vtt")
 	matches, _ := filepath.Glob(glob)
-	if len(matches) > 0 {
-		return matches[0]
+	for _, p := range matches {
+		if strings.HasSuffix(strings.ToLower(p), ".src.vtt") {
+			continue
+		}
+		return p
 	}
 	return ""
-}
-
-// parseVTT parses a WebVTT file into TranscriptCue slices.
-func parseVTT(text string) []components.TranscriptCue {
-	lines := strings.Split(text, "\n")
-	var cues []components.TranscriptCue
-	i := 0
-
-	for i < len(lines) {
-		line := strings.TrimSpace(lines[i])
-		i++
-
-		if line == "" || strings.HasPrefix(line, "WEBVTT") || strings.HasPrefix(line, "NOTE") {
-			continue
-		}
-		if !strings.Contains(line, "-->") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "-->", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		startStr := strings.TrimSpace(strings.Fields(parts[0])[0])
-		endFields := strings.Fields(strings.TrimSpace(parts[1]))
-		if len(endFields) == 0 {
-			continue
-		}
-		endStr := endFields[0]
-
-		start := parseVTTTime(startStr)
-		end := parseVTTTime(endStr)
-		if start < 0 || end < 0 {
-			continue
-		}
-
-		var textLines []string
-		for i < len(lines) && strings.TrimSpace(lines[i]) != "" {
-			textLines = append(textLines, strings.TrimSpace(lines[i]))
-			i++
-		}
-		cueText := strings.Join(textLines, " ")
-		if cueText != "" {
-			cues = append(cues, components.TranscriptCue{
-				Start: start,
-				End:   end,
-				Text:  cueText,
-			})
-		}
-	}
-
-	return cues
-}
-
-// parseVTTTime parses a VTT timestamp like "00:01:23.456" or "01:23.456".
-func parseVTTTime(t string) float64 {
-	t = strings.TrimSpace(t)
-	// Handle HH:MM:SS.mmm or MM:SS.mmm
-	parts := strings.Split(t, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return -1
-	}
-
-	var hh, mm float64
-	var ssPart string
-
-	if len(parts) == 3 {
-		h, err := strconv.ParseFloat(parts[0], 64)
-		if err != nil {
-			return -1
-		}
-		hh = h
-		m, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			return -1
-		}
-		mm = m
-		ssPart = parts[2]
-	} else {
-		m, err := strconv.ParseFloat(parts[0], 64)
-		if err != nil {
-			return -1
-		}
-		mm = m
-		ssPart = parts[1]
-	}
-
-	ss, err := strconv.ParseFloat(ssPart, 64)
-	if err != nil {
-		return -1
-	}
-
-	return hh*3600 + mm*60 + ss
 }

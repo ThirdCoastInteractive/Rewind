@@ -3,6 +3,7 @@ package admin
 import (
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/dustin/go-humanize"
@@ -65,6 +66,23 @@ func HandleAdminSettings(sm *auth.SessionManager, dbc *db.DatabaseConnection, sc
 		if err := q.UpsertAdminEmails(c.Request().Context(), adminEmails); err != nil {
 			if !db.IsUndefinedColumnErr(err) {
 				slog.Error("failed to update admin_emails", "error", err)
+				return c.Redirect(302, "/settings?err="+url.QueryEscape("Failed to update settings"))
+			}
+		}
+
+		// Parse download quality cap (vertical pixels; 0/empty = unlimited)
+		maxHeight := 0
+		if maxHeightInput := strings.TrimSpace(c.FormValue("max_download_height")); maxHeightInput != "" {
+			v, err := strconv.Atoi(maxHeightInput)
+			if err != nil || v < 0 {
+				slog.Warn("invalid max download height", "input", maxHeightInput, "error", err)
+				return c.Redirect(302, "/settings?err="+url.QueryEscape("Invalid download quality selection"))
+			}
+			maxHeight = v
+		}
+		if err := q.UpsertMaxDownloadHeight(c.Request().Context(), int32(maxHeight)); err != nil {
+			if !db.IsUndefinedColumnErr(err) {
+				slog.Error("failed to update max_download_height", "error", err)
 				return c.Redirect(302, "/settings?err="+url.QueryEscape("Failed to update settings"))
 			}
 		}

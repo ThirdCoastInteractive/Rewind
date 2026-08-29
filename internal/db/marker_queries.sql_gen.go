@@ -20,7 +20,9 @@ INSERT INTO markers (
     color,
     marker_type,
     duration,
-    created_by
+    created_by,
+    source,
+    source_ref
 ) VALUES (
     $1,
     $2,
@@ -29,8 +31,10 @@ INSERT INTO markers (
     $5,
     $6,
     $7,
-    $8
-) RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by
+    $8,
+    COALESCE(NULLIF($9::text, ''), 'user'),
+    COALESCE($10::text, '')
+) RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 `
 
 type CreateMarkerParams struct {
@@ -42,6 +46,8 @@ type CreateMarkerParams struct {
 	MarkerType  MarkerType  `db:"marker_type" json:"MarkerType"`
 	Duration    *float64    `db:"duration" json:"Duration"`
 	CreatedBy   pgtype.UUID `db:"created_by" json:"CreatedBy"`
+	Source      string      `db:"source" json:"Source"`
+	SourceRef   string      `db:"source_ref" json:"SourceRef"`
 }
 
 // CreateMarker
@@ -54,7 +60,9 @@ type CreateMarkerParams struct {
 //	    color,
 //	    marker_type,
 //	    duration,
-//	    created_by
+//	    created_by,
+//	    source,
+//	    source_ref
 //	) VALUES (
 //	    $1,
 //	    $2,
@@ -63,8 +71,10 @@ type CreateMarkerParams struct {
 //	    $5,
 //	    $6,
 //	    $7,
-//	    $8
-//	) RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by
+//	    $8,
+//	    COALESCE(NULLIF($9::text, ''), 'user'),
+//	    COALESCE($10::text, '')
+//	) RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 func (q *Queries) CreateMarker(ctx context.Context, arg *CreateMarkerParams) (*Marker, error) {
 	row := q.db.QueryRow(ctx, createMarker,
 		arg.VideoID,
@@ -75,6 +85,8 @@ func (q *Queries) CreateMarker(ctx context.Context, arg *CreateMarkerParams) (*M
 		arg.MarkerType,
 		arg.Duration,
 		arg.CreatedBy,
+		arg.Source,
+		arg.SourceRef,
 	)
 	var i Marker
 	err := row.Scan(
@@ -88,6 +100,8 @@ func (q *Queries) CreateMarker(ctx context.Context, arg *CreateMarkerParams) (*M
 		&i.Duration,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
 }
@@ -121,13 +135,13 @@ func (q *Queries) DeleteMarkersByVideo(ctx context.Context, videoID pgtype.UUID)
 }
 
 const getMarker = `-- name: GetMarker :one
-SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by FROM markers
+SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
 WHERE id = $1
 `
 
 // GetMarker
 //
-//	SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by FROM markers
+//	SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
 //	WHERE id = $1
 func (q *Queries) GetMarker(ctx context.Context, id pgtype.UUID) (*Marker, error) {
 	row := q.db.QueryRow(ctx, getMarker, id)
@@ -143,19 +157,21 @@ func (q *Queries) GetMarker(ctx context.Context, id pgtype.UUID) (*Marker, error
 		&i.Duration,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
 }
 
 const listMarkersByVideo = `-- name: ListMarkersByVideo :many
-SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by FROM markers
+SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
 WHERE video_id = $1
 ORDER BY timestamp ASC
 `
 
 // ListMarkersByVideo
 //
-//	SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by FROM markers
+//	SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
 //	WHERE video_id = $1
 //	ORDER BY timestamp ASC
 func (q *Queries) ListMarkersByVideo(ctx context.Context, videoID pgtype.UUID) ([]*Marker, error) {
@@ -178,6 +194,8 @@ func (q *Queries) ListMarkersByVideo(ctx context.Context, videoID pgtype.UUID) (
 			&i.Duration,
 			&i.CreatedAt,
 			&i.CreatedBy,
+			&i.Source,
+			&i.SourceRef,
 		); err != nil {
 			return nil, err
 		}
@@ -199,7 +217,7 @@ SET
     marker_type = COALESCE($5, marker_type),
     duration = COALESCE($6, duration)
 WHERE id = $7
-RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by
+RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 `
 
 type UpdateMarkerParams struct {
@@ -223,7 +241,7 @@ type UpdateMarkerParams struct {
 //	    marker_type = COALESCE($5, marker_type),
 //	    duration = COALESCE($6, duration)
 //	WHERE id = $7
-//	RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by
+//	RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 func (q *Queries) UpdateMarker(ctx context.Context, arg *UpdateMarkerParams) (*Marker, error) {
 	row := q.db.QueryRow(ctx, updateMarker,
 		arg.Timestamp,
@@ -246,6 +264,105 @@ func (q *Queries) UpdateMarker(ctx context.Context, arg *UpdateMarkerParams) (*M
 		&i.Duration,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
+}
+
+const upsertAutoMarker = `-- name: UpsertAutoMarker :exec
+INSERT INTO markers (
+    video_id,
+    timestamp,
+    title,
+    description,
+    color,
+    marker_type,
+    duration,
+    created_by,
+    source,
+    source_ref
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10
+)
+ON CONFLICT (video_id, source, (round(timestamp::numeric, 0)), source_ref)
+WHERE source <> 'user'
+DO UPDATE SET
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    color = EXCLUDED.color,
+    marker_type = EXCLUDED.marker_type,
+    duration = EXCLUDED.duration
+`
+
+type UpsertAutoMarkerParams struct {
+	VideoID     pgtype.UUID `db:"video_id" json:"VideoID"`
+	Timestamp   float64     `db:"timestamp" json:"Timestamp"`
+	Title       string      `db:"title" json:"Title"`
+	Description string      `db:"description" json:"Description"`
+	Color       string      `db:"color" json:"Color"`
+	MarkerType  MarkerType  `db:"marker_type" json:"MarkerType"`
+	Duration    *float64    `db:"duration" json:"Duration"`
+	CreatedBy   pgtype.UUID `db:"created_by" json:"CreatedBy"`
+	Source      string      `db:"source" json:"Source"`
+	SourceRef   string      `db:"source_ref" json:"SourceRef"`
+}
+
+// UpsertAutoMarker writes a chapter/comment-sourced marker without touching
+// user-created markers. Timestamp is bucketed to whole seconds for dedup.
+//
+//	INSERT INTO markers (
+//	    video_id,
+//	    timestamp,
+//	    title,
+//	    description,
+//	    color,
+//	    marker_type,
+//	    duration,
+//	    created_by,
+//	    source,
+//	    source_ref
+//	) VALUES (
+//	    $1,
+//	    $2,
+//	    $3,
+//	    $4,
+//	    $5,
+//	    $6,
+//	    $7,
+//	    $8,
+//	    $9,
+//	    $10
+//	)
+//	ON CONFLICT (video_id, source, (round(timestamp::numeric, 0)), source_ref)
+//	WHERE source <> 'user'
+//	DO UPDATE SET
+//	    title = EXCLUDED.title,
+//	    description = EXCLUDED.description,
+//	    color = EXCLUDED.color,
+//	    marker_type = EXCLUDED.marker_type,
+//	    duration = EXCLUDED.duration
+func (q *Queries) UpsertAutoMarker(ctx context.Context, arg *UpsertAutoMarkerParams) error {
+	_, err := q.db.Exec(ctx, upsertAutoMarker,
+		arg.VideoID,
+		arg.Timestamp,
+		arg.Title,
+		arg.Description,
+		arg.Color,
+		arg.MarkerType,
+		arg.Duration,
+		arg.CreatedBy,
+		arg.Source,
+		arg.SourceRef,
+	)
+	return err
 }

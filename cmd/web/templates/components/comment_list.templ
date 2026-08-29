@@ -51,8 +51,8 @@ templ CommentSection(data CommentListData) {
 					type="text"
 					class="w-full px-3 py-1.5 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
 					placeholder="Search comments..."
-					data-bind="_commentSearch"
-					data-on:input__debounce.300ms={ fmt.Sprintf("$_commentPage = 0; @get('/api/videos/%s/comments/render?mode=search')", data.VideoID) }
+					data-bind="commentSearch"
+					data-on:input__debounce.300ms={ fmt.Sprintf("$commentPage = 0; @get('/api/videos/%s/comments/render?mode=search')", data.VideoID) }
 					data-on:keydown__stop="true"
 				/>
 			</div>
@@ -92,7 +92,7 @@ templ CommentLoadMore(data CommentListData) {
 		<button
 			type="button"
 			class="btn-ghost btn-sm"
-			data-on:click={ fmt.Sprintf("$_commentPage = %d; @get('/api/videos/%s/comments/render?mode=page')", data.Page+1, data.VideoID) }
+			data-on:click={ fmt.Sprintf("$commentPage = %d; @get('/api/videos/%s/comments/render?mode=page')", data.Page+1, data.VideoID) }
 		>
 			LOAD MORE
 		</button>

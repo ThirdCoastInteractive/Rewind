@@ -10,12 +10,12 @@ import (
 )
 
 const getInstanceSettings = `-- name: GetInstanceSettings :one
-SELECT id, registration_enabled, clip_export_storage_limit_bytes, admin_emails, updated_at FROM instance_settings WHERE id = 1
+SELECT id, registration_enabled, clip_export_storage_limit_bytes, admin_emails, updated_at, max_download_height FROM instance_settings WHERE id = 1
 `
 
 // GetInstanceSettings fetches the single instance settings row
 //
-//	SELECT id, registration_enabled, clip_export_storage_limit_bytes, admin_emails, updated_at FROM instance_settings WHERE id = 1
+//	SELECT id, registration_enabled, clip_export_storage_limit_bytes, admin_emails, updated_at, max_download_height FROM instance_settings WHERE id = 1
 func (q *Queries) GetInstanceSettings(ctx context.Context) (*InstanceSetting, error) {
 	row := q.db.QueryRow(ctx, getInstanceSettings)
 	var i InstanceSetting
@@ -25,8 +25,23 @@ func (q *Queries) GetInstanceSettings(ctx context.Context) (*InstanceSetting, er
 		&i.ClipExportStorageLimitBytes,
 		&i.AdminEmails,
 		&i.UpdatedAt,
+		&i.MaxDownloadHeight,
 	)
 	return &i, err
+}
+
+const getMaxDownloadHeight = `-- name: GetMaxDownloadHeight :one
+SELECT COALESCE(max_download_height, 0) FROM instance_settings WHERE id = 1
+`
+
+// GetMaxDownloadHeight returns the global download quality cap in pixels (0 = no cap)
+//
+//	SELECT COALESCE(max_download_height, 0) FROM instance_settings WHERE id = 1
+func (q *Queries) GetMaxDownloadHeight(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, getMaxDownloadHeight)
+	var max_download_height int32
+	err := row.Scan(&max_download_height)
+	return max_download_height, err
 }
 
 const upsertAdminEmails = `-- name: UpsertAdminEmails :exec
@@ -66,6 +81,26 @@ SET clip_export_storage_limit_bytes = EXCLUDED.clip_export_storage_limit_bytes,
 //	    updated_at = NOW()
 func (q *Queries) UpsertClipExportStorageLimit(ctx context.Context, limitBytes int64) error {
 	_, err := q.db.Exec(ctx, upsertClipExportStorageLimit, limitBytes)
+	return err
+}
+
+const upsertMaxDownloadHeight = `-- name: UpsertMaxDownloadHeight :exec
+INSERT INTO instance_settings (id, registration_enabled, admin_emails, max_download_height, updated_at)
+VALUES (1, TRUE, ARRAY[]::text[], $1, NOW())
+ON CONFLICT (id) DO UPDATE
+SET max_download_height = EXCLUDED.max_download_height,
+    updated_at = NOW()
+`
+
+// UpsertMaxDownloadHeight sets the global download quality cap in pixels (0 = no cap)
+//
+//	INSERT INTO instance_settings (id, registration_enabled, admin_emails, max_download_height, updated_at)
+//	VALUES (1, TRUE, ARRAY[]::text[], $1, NOW())
+//	ON CONFLICT (id) DO UPDATE
+//	SET max_download_height = EXCLUDED.max_download_height,
+//	    updated_at = NOW()
+func (q *Queries) UpsertMaxDownloadHeight(ctx context.Context, maxDownloadHeight int32) error {
+	_, err := q.db.Exec(ctx, upsertMaxDownloadHeight, maxDownloadHeight)
 	return err
 }
 

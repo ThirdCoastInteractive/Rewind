@@ -1,0 +1,15 @@
+WEBVTT
+
+STYLE
+::cue { color: white }
+
+NOTE this is a note
+
+00:00:01.000 --> 00:00:02.000
+Hello world
+
+NOTE
+another note
+
+00:00:02.000 --> 00:00:03.000
+Hello world

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
@@ -19,8 +20,9 @@ LABEL org.opencontainers.image.source="https://github.com/ThirdCoastInteractive/
 LABEL org.opencontainers.image.description="Rewind encoder worker"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install runtime deps: ffmpeg for encoding
-RUN apt-get update && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 

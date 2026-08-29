@@ -113,6 +113,39 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 			window.scrollTop = function() {
 				document.getElementById('videos-page')?.scrollIntoView({behavior: 'smooth'});
 			};
+			// Select every video card currently rendered on the page (current page only).
+			window.selectAllVideosOnPage = function() {
+				return Array.from(document.querySelectorAll('#videos-grid [data-video-id]'))
+					.map((el) => el.getAttribute('data-video-id'))
+					.filter(Boolean);
+			};
+			// Toggle one video id in/out of the selection array (returns a new array).
+			window.toggleVideoSelection = function(ids, id) {
+				const cur = Array.isArray(ids) ? ids : [];
+				return cur.includes(id) ? cur.filter((x) => x !== id) : cur.concat([id]);
+			};
+			// Instant intent: grey out + freeze selected cards before the server responds.
+			window.markVideosDeleting = function(ids) {
+				(Array.isArray(ids) ? ids : []).forEach((id) => {
+					const el = document.querySelector('#videos-grid [data-video-id="' + id + '"]');
+					if (!el) return;
+					el.classList.add('opacity-40', 'pointer-events-none', 'animate-pulse');
+					el.setAttribute('data-deleting', '1');
+					el.setAttribute('aria-busy', 'true');
+				});
+			};
+			// Kick off bulk delete with optimistic UI, then stream progress from the server.
+			window.beginBulkDelete = function(ids, diskToo) {
+				const list = Array.isArray(ids) ? ids.slice() : [];
+				if (!list.length) return false;
+				const disk = !!diskToo;
+				const msg = 'Delete ' + list.length + ' video(s) from the database'
+					+ (disk ? ' AND remove files from disk' : '')
+					+ '? This cannot be undone.';
+				if (!confirm(msg)) return false;
+				window.markVideosDeleting(list);
+				return true;
+			};
 		</script>
 		<div
 			id="videos-page"
@@ -125,7 +158,13 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 				tags: [],
 				tagIds: [],
 				selectedVideoIds: [],
-				_bulkTag: '',
+				bulkTag: '',
+				bulkDeleteDisk: false,
+				bulkDeleteActive: false,
+				bulkDeleteDone: 0,
+				bulkDeleteTotal: 0,
+				bulkDeleteSkipped: 0,
+				bulkDeleteStatus: '',
 				dateType: 'archived',
 				dateFrom: '',
 				dateTo: '',
@@ -143,21 +182,74 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 			</div>
 			<!-- User tag filter (loaded via SSE) -->
 			<div data-tag-filter-bar data-init="@get('/api/tags')"></div>
-			<!-- Bulk action bar (floats in when videos are selected) -->
+			<!-- Bulk action bar (floats in when videos are selected).
+			     Note: Datastar excludes underscore-prefixed signals from requests by default,
+			     so bulkTag / bulkDeleteDisk intentionally have no leading underscore. -->
 			<div
-				data-show="$selectedVideoIds.length > 0"
-				class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-black border-2 border-white/30 shadow-lg"
+				data-show="$selectedVideoIds.length > 0 && !$bulkDeleteActive"
+				style="display: none"
+				class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center gap-2 px-4 py-2 bg-black border-2 border-white/30 shadow-lg max-w-[95vw]"
 			>
 				<span class="text-xs font-mono text-white/70" data-text="$selectedVideoIds.length + ' selected'"></span>
+				<button
+					type="button"
+					class="px-2 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/20 text-white/70 hover:border-white/40"
+					data-on:click="$selectedVideoIds = window.selectAllVideosOnPage()"
+					title="Select all videos on this page"
+				>Select page</button>
 				<input
 					type="text"
 					class="px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
 					placeholder="Tag name…"
-					data-bind="_bulkTag"
+					data-bind="bulkTag"
 					data-on:keydown__stop="true"
 				/>
-				<button type="button" class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80" data-on:click="@post('/api/videos/bulk-tag')">Apply Tag</button>
-				<button type="button" class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/20 text-white/60 hover:border-white/40" data-on:click="$selectedVideoIds = []">Clear</button>
+				<button
+					type="button"
+					class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80"
+					data-on:click="@post('/api/videos/bulk-tag')"
+				>Apply Tag</button>
+				<label class="flex items-center gap-1.5 text-xs font-mono text-white/60 cursor-pointer select-none">
+					<input type="checkbox" class="w-3.5 h-3.5 accent-white" data-bind="bulkDeleteDisk"/>
+					Disk too
+				</label>
+				<button
+					type="button"
+					class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-red-500/60 text-red-400 hover:bg-red-500/20"
+					data-attr:disabled="$bulkDeleteActive"
+					data-on:click="if (!window.beginBulkDelete($selectedVideoIds, $bulkDeleteDisk)) { } else { $bulkDeleteActive = true; $bulkDeleteTotal = $selectedVideoIds.length; $bulkDeleteDone = 0; $bulkDeleteSkipped = 0; $bulkDeleteStatus = 'Starting delete…'; @post('/api/videos/bulk-delete') }"
+				>Delete</button>
+				<button
+					type="button"
+					class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/20 text-white/60 hover:border-white/40"
+					data-on:click="$selectedVideoIds = []; $bulkDeleteDisk = false; $bulkTag = ''"
+				>Clear</button>
+			</div>
+			<!-- Live bulk-delete progress (stays up while work is in flight) -->
+			<div
+				data-show="$bulkDeleteActive"
+				style="display: none"
+				class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(36rem,95vw)] px-4 py-3 bg-black border-2 border-red-500/50 shadow-lg"
+				role="status"
+				aria-live="polite"
+			>
+				<div class="flex items-center justify-between gap-3 mb-2">
+					<span class="text-xs font-mono uppercase tracking-wider text-red-400">
+						@components.Icon("trash", "mr-1")
+						Deleting
+					</span>
+					<span
+						class="text-xs font-mono text-white/70 tabular-nums"
+						data-text="$bulkDeleteDone + '/' + $bulkDeleteTotal + ($bulkDeleteSkipped ? ' · ' + $bulkDeleteSkipped + ' skipped' : '')"
+					></span>
+				</div>
+				<div class="h-1.5 w-full bg-white/10 mb-2 overflow-hidden">
+					<div
+						class="h-full bg-red-500 transition-[width] duration-200 ease-out"
+						data-style:width="($bulkDeleteTotal > 0 ? Math.round(($bulkDeleteDone / $bulkDeleteTotal) * 100) : 0) + '%'"
+					></div>
+				</div>
+				<p class="text-xs font-mono text-white/60 truncate" data-text="$bulkDeleteStatus || 'Working…'"></p>
 			</div>
 			<!-- Filter Bar -->
 			<div class="mb-6 pb-4 border-b-2 border-white/10">
@@ -165,16 +257,17 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 				<div class="flex flex-wrap items-center gap-3 mb-3">
 					<input
 						type="text"
-						placeholder="Search videos..."
+						placeholder="Search titles, uploaders, transcripts…"
 						class="flex-1 min-w-48 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
 						data-bind="q"
-						data-on:input__debounce.300ms="window.scrollTop(); $page = 1; @get('/api/videos/index')"
+						data-on:input__debounce.300ms="window.scrollTop(); $page = 1; if ($q && $sort === 'newest') { $sort = 'relevance' }; @get('/api/videos/index')"
 					/>
 					<select
 						class="bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5 focus:border-white/40 outline-none cursor-pointer"
 						data-bind="sort"
 						data-on:change="window.scrollTop(); $page = 1; @get('/api/videos/index')"
 					>
+						<option value="relevance">Relevance</option>
 						<optgroup label="Date">
 							<option value="newest">Archived: Newest</option>
 							<option value="oldest">Archived: Oldest</option>
@@ -220,7 +313,7 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 					</select>
 					<input
 						type="text"
-						placeholder="Uploader..."
+						placeholder="Uploader (partial ok)"
 						class="w-40 px-2 py-1.5 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
 						data-bind="uploader"
 						data-on:input__debounce.300ms="window.scrollTop(); $page = 1; @get('/api/videos/index')"
@@ -259,6 +352,15 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 						@components.Icon("xmark", "mr-1")
 						Clear All
 					</button>
+					<button
+						type="button"
+						class="text-xs font-mono text-white/40 hover:text-white transition-colors ml-auto"
+						data-on:click="$selectedVideoIds = window.selectAllVideosOnPage()"
+						title="Select all videos on this page for bulk tag/delete"
+					>
+						@components.Icon("square-check", "mr-1")
+						Select page
+					</button>
 				</div>
 			</div>
 			if videos == nil {
@@ -292,42 +394,63 @@ templ VideosGrid(videos []*db.ListVideosPaginatedRow) {
 }
 
 templ VideoCard(video *db.ListVideosPaginatedRow) {
-	<a
-		href={ templ.SafeURL("/videos/" + video.ID.String()) }
-		class="video-card group"
-		data-video-hover-preview
+	// Card is a div (not an <a>) so the select checkbox is a real control, not
+	// nested interactive content. Thumb + title link to the detail page.
+	<div
+		class="video-card group relative"
+		if video.Media != "metadata" {
+			data-video-hover-preview
+		}
+		data-video-id={ video.ID.String() }
 	>
 		<div
 			class="video-card-thumb"
 			style={ "background-image: " + thumbGradient(video) + ";" }
 		>
-			<img
-				class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-0"
-				src={ "/api/videos/" + video.ID.String() + "/thumbnail?w=sm" }
-				srcset={ "/api/videos/" + video.ID.String() + "/thumbnail?w=xs 320w, /api/videos/" + video.ID.String() + "/thumbnail?w=sm 640w, /api/videos/" + video.ID.String() + "/thumbnail?w=md 768w, /api/videos/" + video.ID.String() + "/thumbnail?w=lg 1024w, /api/videos/" + video.ID.String() + "/thumbnail?w=xl 1280w, /api/videos/" + video.ID.String() + "/thumbnail?w=2xl 1536w" }
-				sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
-				loading="lazy"
-				decoding="async"
-				alt={ video.Title }
-			/>
-			<video
-				class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0 group-hover:opacity-100"
-				data-preview-src={ "/api/videos/" + video.ID.String() + "/preview.mp4" }
-				muted
-				loop
-				playsinline
-				preload="none"
-			></video>
+			<a
+				href={ templ.SafeURL("/videos/" + video.ID.String()) }
+				class="absolute inset-0 block"
+				aria-label={ video.Title }
+			>
+				<img
+					class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-0"
+					src={ "/api/videos/" + video.ID.String() + "/thumbnail?w=sm" }
+					srcset={ "/api/videos/" + video.ID.String() + "/thumbnail?w=xs 320w, /api/videos/" + video.ID.String() + "/thumbnail?w=sm 640w, /api/videos/" + video.ID.String() + "/thumbnail?w=md 768w, /api/videos/" + video.ID.String() + "/thumbnail?w=lg 1024w, /api/videos/" + video.ID.String() + "/thumbnail?w=xl 1280w, /api/videos/" + video.ID.String() + "/thumbnail?w=2xl 1536w" }
+					sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
+					loading="lazy"
+					decoding="async"
+					alt=""
+				/>
+				if video.Media != "metadata" {
+					<video
+						class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0 group-hover:opacity-100"
+						data-preview-src={ "/api/videos/" + video.ID.String() + "/preview.mp4" }
+						muted
+						loop
+						playsinline
+						preload="none"
+					></video>
+				}
+			</a>
+			if video.Media == "metadata" {
+				<div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/80 text-xs font-mono uppercase tracking-wider text-white pointer-events-none">
+					meta
+				</div>
+			}
 			if video.DurationSeconds != nil {
-				<div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-xs font-mono text-white">
+				<div class="absolute bottom-1 right-1 z-10 px-1.5 py-0.5 bg-black/80 text-xs font-mono text-white pointer-events-none">
 					{ format.DurationPtr(video.DurationSeconds) }
 				</div>
 			}
+			// Checkbox: hover-only when idle; always visible once anything is selected.
+			// data-style:opacity overrides CSS so selected/active states actually show
+			// (Tailwind opacity-0 vs opacity-100 class fights are unreliable).
 			<button
 				type="button"
-				class="absolute top-1 left-1 z-10 w-5 h-5 flex items-center justify-center border-2 border-white/40 bg-black/70 text-transparent opacity-0 group-hover:opacity-100 transition-opacity ring-white"
-				data-class={ fmt.Sprintf("{'opacity-100 ring-2 text-white': $selectedVideoIds.includes('%s')}", video.ID.String()) }
-				data-on:click__stop__prevent={ fmt.Sprintf("$selectedVideoIds = $selectedVideoIds.includes('%s') ? $selectedVideoIds.filter(x => x !== '%s') : [...$selectedVideoIds, '%s']", video.ID.String(), video.ID.String(), video.ID.String()) }
+				class="absolute top-1 left-1 z-20 w-5 h-5 flex items-center justify-center border-2 border-white/40 bg-black/70 text-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+				data-class={ fmt.Sprintf("{'ring-2': $selectedVideoIds.includes('%s'), 'ring-white': $selectedVideoIds.includes('%s'), 'border-white': $selectedVideoIds.includes('%s'), 'text-white': $selectedVideoIds.includes('%s')}", video.ID.String(), video.ID.String(), video.ID.String(), video.ID.String()) }
+				data-style:opacity={ fmt.Sprintf("($selectedVideoIds.includes('%s') || $selectedVideoIds.length > 0) ? '1' : null", video.ID.String()) }
+				data-on:click__prevent__stop={ fmt.Sprintf("$selectedVideoIds = window.toggleVideoSelection($selectedVideoIds, '%s')", video.ID.String()) }
 				title="Select video"
 				aria-label="Select video"
 			>
@@ -335,12 +458,14 @@ templ VideoCard(video *db.ListVideosPaginatedRow) {
 			</button>
 		</div>
 		<div class="video-card-body">
-			<h3
-				class="video-card-title"
-				title={ video.Title }
-			>
-				{ video.Title }
-			</h3>
+			<a href={ templ.SafeURL("/videos/" + video.ID.String()) } class="block">
+				<h3
+					class="video-card-title"
+					title={ video.Title }
+				>
+					{ video.Title }
+				</h3>
+			</a>
 			if video.Uploader != "" {
 				<p class="text-xs font-mono text-white/60 mb-2 truncate" title={ video.Uploader }>
 					{ video.Uploader }
@@ -375,7 +500,7 @@ templ VideoCard(video *db.ListVideosPaginatedRow) {
 				}
 			</div>
 		</div>
-	</a>
+	</div>
 }
 
 templ VideoCardSkeleton() {

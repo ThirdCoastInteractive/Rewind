@@ -24,6 +24,47 @@ WHERE id = sqlc.arg(id);
 -- ListVideosPaginated returns videos with filters, sorting, and pagination.
 -- Returns total_count via window function for pagination UI.
 -- name: ListVideosPaginated :many
+WITH params AS (
+    SELECT
+        NULLIF(btrim(COALESCE(sqlc.narg('tsquery')::text, '')), '') AS tsq,
+        NULLIF(btrim(COALESCE(sqlc.narg('query')::text, '')), '') AS raw
+),
+hits AS (
+    SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
+    UNION ALL
+    SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
+    UNION ALL
+    SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+    FROM video_comments vc
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
+    GROUP BY vc.video_id
+    UNION ALL
+    SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+    FROM video_transcripts vt
+    CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
+    GROUP BY vt.video_id
+    UNION ALL
+    SELECT v.id, 0.05::real
+    FROM videos v
+    CROSS JOIN params p
+    WHERE p.raw IS NOT NULL AND (
+        strpos(lower(v.title), lower(p.raw)) > 0
+        OR strpos(lower(v.uploader), lower(p.raw)) > 0
+    )
+),
+ranked AS (
+    SELECT video_id, sum(rank) AS rank
+    FROM hits
+    GROUP BY video_id
+)
 SELECT 
     v.*,
     COUNT(*) OVER() AS total_count,
@@ -34,11 +75,13 @@ SELECT
     COALESCE(u.user_name, 'unknown') AS archived_by_username
 FROM videos v
 LEFT JOIN users u ON v.archived_by = u.id
+LEFT JOIN ranked r ON r.video_id = v.id
+CROSS JOIN params p
 WHERE
-    -- Full-text search (optional)
-    (sqlc.narg('query')::text IS NULL OR v.search @@ plainto_tsquery('simple', sqlc.narg('query')))
-    -- Uploader filter (optional)
-    AND (sqlc.narg('uploader')::text IS NULL OR v.uploader = sqlc.narg('uploader'))
+    -- Full-text / substring search (optional).
+    (p.raw IS NULL OR r.video_id IS NOT NULL)
+    -- Uploader filter: substring, case-insensitive (optional)
+    AND (sqlc.narg('uploader')::text IS NULL OR strpos(lower(v.uploader), lower(sqlc.narg('uploader'))) > 0)
     -- Channel filter (optional)
     AND (sqlc.narg('channel_id')::text IS NULL OR v.channel_id = sqlc.narg('channel_id'))
     -- Duration filter: short=<5min, medium=5-30min, long=>30min
@@ -73,6 +116,7 @@ WHERE
     AND (sqlc.narg('has_markers')::boolean IS NULL OR sqlc.narg('has_markers') = FALSE
          OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 ORDER BY
+    CASE WHEN sqlc.arg(sort_order) = 'relevance' THEN r.rank END DESC NULLS LAST,
     -- Date sorts (archived)
     CASE WHEN sqlc.arg(sort_order) = 'newest' THEN v.created_at END DESC NULLS LAST,
     CASE WHEN sqlc.arg(sort_order) = 'oldest' THEN v.created_at END ASC NULLS LAST,
