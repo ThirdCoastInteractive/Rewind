@@ -9,7 +9,12 @@ import (
 	"time"
 
 	"github.com/gorilla/sessions"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
+
+func pluginauth() plugin.Authn {
+	return plugin.Auth()
+}
 
 const (
 	// SessionName is the cookie name used to store the user session.
@@ -75,70 +80,77 @@ func (sm *SessionManager) SaveSession(w http.ResponseWriter, r *http.Request, us
 	return session.Save(r, w)
 }
 
-// GetSession reads the user ID and username from the session cookie.
-// Returns ErrNotAuthenticated if the session is missing or invalid.
-func (sm *SessionManager) GetSession(r *http.Request) (userID, username string, err error) {
+// ReadCookie decodes the session cookie without going through the Auth plugin.
+// LocalAuth.Current uses this so GetSession can route through plugin.Auth without recursing.
+func (sm *SessionManager) ReadCookie(r *http.Request) (userID, username string, level AccessLevel, created time.Time, err error) {
 	session, err := sm.store.Get(r, SessionName)
 	if err != nil {
 		_, cookieErr := r.Cookie(SessionName)
 		slog.Warn("failed to decode session", "error", err, "host", r.Host, "has_cookie", cookieErr == nil)
-		return "", "", err
+		return "", "", AccessUnauthenticated, time.Time{}, err
 	}
 
 	userIDVal, ok := session.Values[UserIDKey]
 	if !ok {
-		return "", "", ErrNotAuthenticated
+		return "", "", AccessUnauthenticated, time.Time{}, ErrNotAuthenticated
 	}
-
 	usernameVal, ok := session.Values[UsernameKey]
 	if !ok {
-		return "", "", ErrNotAuthenticated
+		return "", "", AccessUnauthenticated, time.Time{}, ErrNotAuthenticated
 	}
-
 	uid, ok := userIDVal.(string)
 	if !ok {
-		return "", "", ErrNotAuthenticated
+		return "", "", AccessUnauthenticated, time.Time{}, ErrNotAuthenticated
 	}
-
 	uname, ok := usernameVal.(string)
 	if !ok {
-		return "", "", ErrNotAuthenticated
+		return "", "", AccessUnauthenticated, time.Time{}, ErrNotAuthenticated
 	}
 
-	return uid, uname, nil
+	level = AccessUnauthenticated
+	if v, ok := session.Values[AccessLevelKey].(string); ok {
+		switch AccessLevel(v) {
+		case AccessUser, AccessAdmin:
+			level = AccessLevel(v)
+		}
+	}
+	if v, ok := session.Values[SessionCreatedKey].(int64); ok {
+		created = time.Unix(v, 0)
+	}
+	return uid, uname, level, created, nil
 }
 
-// GetAccessLevel reads the stored access level from the session cookie.
-// Returns AccessUnauthenticated if the session is missing or invalid.
+// GetSession returns the current user through plugin.Auth when registered,
+// otherwise the session cookie (tests that never call plugin.Use).
+func (sm *SessionManager) GetSession(r *http.Request) (userID, username string, err error) {
+	if a := pluginauth(); a != nil {
+		actor, err := a.Current(r)
+		if err != nil || actor == nil {
+			return "", "", ErrNotAuthenticated
+		}
+		return actor.UserID, actor.Name, nil
+	}
+	uid, name, _, _, err := sm.ReadCookie(r)
+	return uid, name, err
+}
+
+// GetAccessLevel reads authorization through plugin.Auth roles when registered.
 func (sm *SessionManager) GetAccessLevel(r *http.Request) AccessLevel {
-	session, err := sm.store.Get(r, SessionName)
+	if a := pluginauth(); a != nil {
+		actor, err := a.Current(r)
+		if err != nil || actor == nil {
+			return AccessUnauthenticated
+		}
+		if actor.HasRole("admin") {
+			return AccessAdmin
+		}
+		return AccessUser
+	}
+	_, _, level, _, err := sm.ReadCookie(r)
 	if err != nil {
 		return AccessUnauthenticated
 	}
-
-	val, ok := session.Values[AccessLevelKey]
-	if !ok {
-		return AccessUnauthenticated
-	}
-
-	str, ok := val.(string)
-	if !ok {
-		return AccessUnauthenticated
-	}
-
-	level := AccessLevel(str)
-	switch level {
-	case AccessUser, AccessAdmin:
-		return level
-	default:
-		return AccessUnauthenticated
-	}
-}
-
-// IsAuthenticated reports whether the request carries a valid session cookie.
-func (sm *SessionManager) IsAuthenticated(r *http.Request) bool {
-	_, _, err := sm.GetSession(r)
-	return err == nil
+	return level
 }
 
 // GetSessionCreatedAt returns the time the session was created.

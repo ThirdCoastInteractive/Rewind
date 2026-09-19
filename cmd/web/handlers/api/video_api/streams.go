@@ -18,16 +18,8 @@ import (
 // Route: GET /api/videos/:id/streams/:filename
 func HandleStreamFile(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Auth: session cookie or remote player session code
-		sessionCode := c.QueryParam("session")
-		if sessionCode != "" && len(sessionCode) == 6 {
-			if _, err := dbc.Queries(c.Request().Context()).GetPlayerSessionByCode(c.Request().Context(), sessionCode); err != nil {
-				return c.String(401, "invalid session code")
-			}
-		} else {
-			if _, _, err := sm.GetSession(c.Request()); err != nil {
-				return c.String(401, "unauthorized")
-			}
+		if _, _, err := sm.GetSession(c.Request()); err != nil {
+			return c.String(401, "unauthorized")
 		}
 
 		videoUUID, err := common.RequireUUIDParam(c, "id")

@@ -1,0 +1,78 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+templ CompilationsPage(username string, plans []*db.CompilationPlan) {
+	@Layout("Compilations", username) {
+		@Container("") {
+			<h1 class="page-heading text-xl">Compilations</h1>
+			<p class="text-white/60 mb-4">Preview ordered segments, duration, and render progress. Rendering starts only after you request it.</p>
+			if len(plans)==0 {
+				<p class="text-white/60">No plans yet. Add a moment from Visual search or save a plan over MCP.</p>
+			}
+			<ul class="flex flex-col gap-3">
+				for _,p:=range plans {
+					<li class="border border-white/20 p-3">
+						<a href={ templ.SafeURL("/compilations/" + p.ID.String()) } class="font-bold underline">{ p.Title }</a>
+						<p class="text-sm text-white/60">{ fmt.Sprintf("rev %d · %s · %.1fs · %s", p.Revision, p.Status, p.EstimatedDuration, p.LastError) }</p>
+					</li>
+				}
+			</ul>
+		}
+	}
+}
+
+templ CompilationDetailPage(username string, plan *db.CompilationPlan, segments []*db.ListCompilationPlanSegmentsRow) {
+	@Layout(plan.Title, username) {
+		@Container("") {
+			<p class="mb-4"><a href="/compilations" class="underline text-white/60">All compilations</a></p>
+			<h1 class="page-heading text-xl">{ plan.Title }</h1>
+			<div id="compilation-live" data-init={ "@get('/api/compilations/" + plan.ID.String() + "/events')" }></div>
+		}
+	}
+}
+
+templ CompilationLive(plan *db.CompilationPlan, segments []*db.ListCompilationPlanSegmentsRow, runs []*db.CompilationExecution) {
+	<div id="compilation-live">
+		<p class="text-white/60 mb-4">{ fmt.Sprintf("Revision %d · %s · %.1fs estimated", plan.Revision, plan.Status, plan.EstimatedDuration) }</p>
+		if plan.LastError != "" {
+			<p role="alert" class="text-red-300 mb-4">{ plan.LastError }</p>
+		}
+		<ol class="mb-6">
+			for _,s:=range segments {
+				<li class="border border-white/10 p-2 mb-2">
+					<a class="underline" href={ templ.SafeURL(fmt.Sprintf("/videos/%s?t=%.3f", s.VideoID.String(), s.StartTs)) }>{ s.VideoTitle }</a>
+					<span class="text-sm text-white/60">{ fmt.Sprintf(" · %.1f–%.1fs · %s", s.StartTs, s.EndTs, s.Media) }</span>
+					if s.FailureState != "" {
+						<span class="text-red-300">{ s.FailureState }</span>
+					}
+				</li>
+			}
+		</ol>
+		<form action={ "/api/compilations/" + plan.ID.String() + "/render" } method="post" class="mb-6">
+			<input type="hidden" name="revision" value={ fmt.Sprint(plan.Revision) }/>
+			<button class="btn-primary">Render this revision</button>
+		</form>
+		if len(runs) > 0 {
+			<h2 class="text-lg mb-2">Executions</h2>
+			for _,r:=range runs {
+				<article class="border border-white/20 p-3 mb-2">
+					<p>{ fmt.Sprintf("rev %d · %s", r.Revision, r.Status) }</p>
+					if r.LastError != "" {
+						<p class="text-red-300">{ r.LastError }</p>
+					}
+					if r.Status == "failed" {
+						<form action={ "/api/compilations/" + plan.ID.String() + "/render" } method="post">
+							<input type="hidden" name="revision" value={ fmt.Sprint(r.Revision) }/>
+							<input type="hidden" name="retry" value="true"/>
+							<button class="ghost-btn-sm">Retry failed downloads</button>
+						</form>
+					}
+				</article>
+			}
+		}
+	</div>
+}

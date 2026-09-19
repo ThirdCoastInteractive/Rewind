@@ -1,3 +1,4 @@
+import { listen as pageListen, pageInterval, pageTimeout, pageFrame, pageFetch, PageMutationObserver, onPageCleanup } from './lib/page-scope.js';
 /**
  * Custom Video Player with YouTube-like controls and keyboard shortcuts
  */
@@ -6,6 +7,62 @@ import { FilterPreviewEngine } from './lib/filter-preview-engine.js';
 import { AudioPreviewGraph } from './lib/audio-preview-graph.js';
 import { AudioToolsEngine } from './lib/audio-tools-engine.js';
 import { SequencePlayback } from './lib/sequence-playback.js';
+import { isSkipSegment } from './lib/sponsorblock.js';
+import { whenVisible } from './lib/page-scope.js';
+import { clampSeek, adjacentEntry, entryAtTime, tightestEntryAtTime } from './lib/playback-timeline.js';
+
+const PLAYBACK_HIGHLIGHT_CLASSES = ['bg-white/10', 'border-l-2', 'border-white/40', 'pl-2'];
+
+/** Highlight the range under playhead in a scrollable list, matching transcript cues. */
+class RangeListHighlight {
+  constructor(player, listEl, itemSelector) {
+    this.player = player;
+    this.listEl = listEl;
+    this.itemSelector = itemSelector;
+    this.items = [];
+    this.activeEl = null;
+    this.userScrolling = false;
+    this.scrollTimeout = null;
+    if (!listEl || !player?.video) return;
+    const observer = new PageMutationObserver(() => this.discover());
+    observer.observe(listEl, { childList: true, subtree: true });
+    listEl.addEventListener('scroll', () => {
+      this.userScrolling = true;
+      clearTimeout(this.scrollTimeout);
+      this.scrollTimeout = pageTimeout(() => {
+        this.userScrolling = false;
+      }, 3000);
+    }, { passive: true });
+    player.video.addEventListener('timeupdate', () => this.sync());
+    this.discover();
+  }
+
+  discover() {
+    if (!this.listEl) return;
+    this.items = [...this.listEl.querySelectorAll(this.itemSelector)].map((el) => ({
+      el,
+      start: parseFloat(el.dataset.rangeStart),
+      end: parseFloat(el.dataset.rangeEnd),
+    })).filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
+    this.activeEl = null;
+    this.sync();
+  }
+
+  sync() {
+    const t = this.player.video?.currentTime;
+    if (!Number.isFinite(t) || !this.items.length) return;
+    const nextEl = tightestEntryAtTime(this.items, t)?.el || null;
+    if (nextEl === this.activeEl) return;
+    this.activeEl?.classList.remove(...PLAYBACK_HIGHLIGHT_CLASSES);
+    this.activeEl = nextEl;
+    if (!nextEl) return;
+    nextEl.classList.add(...PLAYBACK_HIGHLIGHT_CLASSES);
+    if (this.userScrolling) return;
+    const elTop = nextEl.offsetTop - this.listEl.offsetTop;
+    const target = elTop - (this.listEl.clientHeight / 2) + (nextEl.offsetHeight / 2);
+    this.listEl.scrollTo({ top: target, behavior: 'smooth' });
+  }
+}
 
 class VideoPlayer {
   constructor(container) {
@@ -71,6 +128,10 @@ class VideoPlayer {
     this.buildControls();
     this.attachEventListeners();
     this.restoreSettings();
+    if (this.container.closest('[data-watch-page]')) {
+      this.theaterBtn?.classList.remove('hidden');
+      try { this.setTheaterMode(localStorage.getItem('videoPlayer.theaterMode') === 'true'); } catch (_) {}
+    }
     this.keyboardShortcuts = new KeyboardShortcutHandler(this);
     this.initMediaSession();
     this.initQualityPicker();
@@ -81,6 +142,8 @@ class VideoPlayer {
       this.transcriptManager = new TranscriptManager(this);
       void this.initSeekThumbnails();
       this.initPositionTracking();
+      this.contextWindowManager = new ContextWindowManager(this.videoID, this);
+      whenVisible(this.container, () => this.contextWindowManager.load());
     }
   }
 
@@ -92,6 +155,13 @@ class VideoPlayer {
     this.progressContainer = this.container.querySelector('.progress-container');
     this.progressBar = this.container.querySelector('.progress-bar');
     this.progressFill = this.container.querySelector('.progress-fill');
+    this.seekSlider = this.container.querySelector('.seek-slider');
+    this.progressBuffer = this.container.querySelector('.progress-buffer');
+    this.timelineLane = this.container.querySelector('.timeline-detail-lane');
+    this.timelineTitle = this.container.querySelector('.timeline-current-title');
+    this.timelinePrevious = this.container.querySelector('.timeline-previous');
+    this.timelineNext = this.container.querySelector('.timeline-next');
+    this.timelineEntries = [];
     
     this.seekTooltip = this.container.querySelector('.seek-tooltip');
     this.seekTooltipThumb = this.container.querySelector('.seek-tooltip-thumb');
@@ -104,6 +174,7 @@ class VideoPlayer {
     this.playbackRateSelect = this.container.querySelector('.playback-rate-select');
     this.captionBtn = this.container.querySelector('.caption-btn');
     this.fullscreenBtn = this.container.querySelector('.fullscreen-btn');
+    this.theaterBtn = this.container.querySelector('.theater-btn');
     
     // Add container classes
     this.container.classList.add('custom-video-player');
@@ -114,24 +185,51 @@ class VideoPlayer {
     this.playBtn.addEventListener('click', () => this.togglePlayPause());
     this.video.addEventListener('click', () => this.togglePlayPause());
     
-    // Progress bar
-    this.progressBar.addEventListener('click', (e) => this.seekToPosition(e));
-    this.progressBar.addEventListener('mousedown', () => {
+    // A native slider handles touch, pointer capture, and accessible focus.
+    // Preview while dragging; commit once on release rather than seeking each pixel.
+    this.seekSlider.addEventListener('pointerdown', () => { this.seeking = true; this.showControls(); });
+    this.seekSlider.addEventListener('input', () => {
       this.seeking = true;
+      const time = Number(this.seekSlider.value);
+      this.paintProgress(time, this.playbackDuration());
+      this.updateTimelineDetails(time);
+      const rect = this.container.querySelector('.progress-track').getBoundingClientRect();
+      this.queueSeekTooltipUpdate({ clientX: rect.left + time / this.playbackDuration() * rect.width });
     });
-    document.addEventListener('mouseup', () => {
+    this.seekSlider.addEventListener('change', () => {
+      this.seekToTime(Number(this.seekSlider.value));
       this.seeking = false;
+      this.hideSeekTooltip();
     });
-    this.progressBar.addEventListener('mousemove', (e) => {
-      if (this.seeking) {
-        this.seekToPosition(e);
-      }
-      this.queueSeekTooltipUpdate(e);
+    pageListen(document, 'pointerup', () => {
+      if (!this.seeking) return;
+      this.seekToTime(Number(this.seekSlider.value));
+      this.seeking = false;
+      this.hideSeekTooltip();
     });
-
-    if (this.progressContainer) {
-      this.progressContainer.addEventListener('mouseleave', () => this.hideSeekTooltip());
-      this.progressContainer.addEventListener('mousemove', (e) => this.queueSeekTooltipUpdate(e));
+    const cancelScrub = () => { this.seeking = false; this.hideSeekTooltip(); this.updateProgress(); };
+    this.seekSlider.addEventListener('pointercancel', cancelScrub);
+    this.seekSlider.addEventListener('blur', cancelScrub);
+    this.seekSlider.addEventListener('keydown', (event) => {
+      let time = this._seq?.currentTime ?? this.video.currentTime;
+      const delta = event.shiftKey ? 30 : 5;
+      if (event.key === 'Home') time = 0;
+      else if (event.key === 'End') time = this.playbackDuration();
+      else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') time -= delta;
+      else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') time += delta;
+      else if (event.key === 'Escape') { cancelScrub(); return; }
+      else return;
+      event.preventDefault();
+      this.seekToTime(time);
+    });
+    this.progressBar.addEventListener('pointermove', (event) => this.queueSeekTooltipUpdate(event));
+    this.progressBar.addEventListener('pointerleave', () => { if (!this.seeking) this.hideSeekTooltip(); });
+    this.controlsContainer.addEventListener('focusin', () => this.showControls());
+    for (const [button, direction] of [[this.timelinePrevious, -1], [this.timelineNext, 1]]) {
+      button.addEventListener('click', () => {
+        const entry = adjacentEntry(this.timelineEntries, this.video.currentTime, direction);
+        if (entry) this.seekToTime(entry.start);
+      });
     }
     
     // Volume
@@ -150,7 +248,8 @@ class VideoPlayer {
     
     // Fullscreen
     this.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
-    document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
+    this.theaterBtn?.addEventListener('click', () => this.toggleTheaterMode());
+    pageListen(document, 'fullscreenchange', () => this.handleFullscreenChange());
     
     // Video events
     this.video.addEventListener('play', () => this.updatePlayButton());
@@ -166,6 +265,7 @@ class VideoPlayer {
       this.updateProgress();
       this.restoreSavedPosition();
     });
+    this.video.addEventListener('progress', () => this.updateBuffered());
     this.video.addEventListener('volumechange', () => this.updateVolumeIcon());
     this.video.addEventListener('pause', () => this.saveCurrentPosition());
     this.video.addEventListener('seeked', () => this.saveCurrentPosition());
@@ -275,7 +375,7 @@ class VideoPlayer {
   async initSeekThumbnails() {
     if (!this.videoID) return;
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(this.videoID)}/seek/seek.json`, {
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/seek/seek.json`, {
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) return;
@@ -289,13 +389,12 @@ class VideoPlayer {
 
   queueSeekTooltipUpdate(evt) {
     if (!this.seekTooltip || !this.seekTooltipThumb || !this.seekTooltipTime) return;
-    if (!this.seek.manifest) return;
-    if (!this.video || !isFinite(this.video.duration) || this.video.duration <= 0) return;
+    if (!this.video || !Number.isFinite(this.playbackDuration()) || this.playbackDuration() <= 0) return;
     if (!this.progressBar) return;
 
     // Throttle to rAF to avoid excessive DOM work.
     if (this._seekTooltipRAF) return;
-    this._seekTooltipRAF = requestAnimationFrame(() => {
+    this._seekTooltipRAF = pageFrame(() => {
       this._seekTooltipRAF = null;
       this.updateSeekTooltip(evt);
     });
@@ -303,7 +402,9 @@ class VideoPlayer {
 
   hideSeekTooltip() {
     if (!this.seekTooltip) return;
+    if (this._seekTooltipRAF) { cancelAnimationFrame(this._seekTooltipRAF); this._seekTooltipRAF = null; }
     this.seekTooltip.classList.add('hidden');
+    this._tooltipRequest = (this._tooltipRequest || 0) + 1;
   }
 
   chooseSeekLevel() {
@@ -331,7 +432,7 @@ class VideoPlayer {
 
     const p = (async () => {
       try {
-        const res = await fetch(
+        const res = await pageFetch(
           `/api/videos/${encodeURIComponent(this.videoID)}/seek/levels/${encodeURIComponent(levelName)}/seek.vtt`,
           { headers: { 'Accept': 'text/vtt' } }
         );
@@ -404,24 +505,38 @@ class VideoPlayer {
 
   async updateSeekTooltip(evt) {
     if (!this.seekTooltip || !this.seekTooltipThumb || !this.seekTooltipTime) return;
-    if (!this.seek.manifest || !this.progressBar || !this.video) return;
-    if (!isFinite(this.video.duration) || this.video.duration <= 0) return;
+    if (!this.progressBar || !this.video) return;
+    const duration = this.playbackDuration();
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const request = this._tooltipRequest = (this._tooltipRequest || 0) + 1;
 
-    const rect = this.progressBar.getBoundingClientRect();
+    const rect = this.container.querySelector('.progress-track').getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
     const pct = rect.width > 0 ? x / rect.width : 0;
-    const t = pct * this.video.duration;
+    const t = pct * duration;
+    const tooltip = this.seekTooltip;
+    this.seekTooltipTime.textContent = this.formatTime(t);
+    const entry = entryAtTime(this.timelineEntries, t);
+    tooltip.querySelector('.seek-tooltip-title').textContent = entry?.title || '';
+    this.seekTooltipThumb.classList.add('hidden');
+    tooltip.classList.remove('hidden');
+    const position = () => {
+      const width = tooltip.offsetWidth;
+      const offset = rect.left - this.progressContainer.getBoundingClientRect().left;
+      tooltip.style.left = `${offset + Math.max(width / 2, Math.min(rect.width - width / 2, x))}px`;
+    };
+    position();
+    if (!this.seek.manifest || this._seq) return;
 
     const lvl = this.chooseSeekLevel();
     const levelName = (lvl?.name || '').toString();
     if (!levelName) {
-      this.hideSeekTooltip();
       return;
     }
 
     const cues = await this.ensureSeekVttLoaded(levelName);
+    if (request !== this._tooltipRequest) return;
     if (!cues || cues.length === 0) {
-      this.hideSeekTooltip();
       return;
     }
 
@@ -431,7 +546,6 @@ class VideoPlayer {
     if (idx >= cues.length) idx = cues.length - 1;
     const cue = cues[idx];
     if (!cue) {
-      this.hideSeekTooltip();
       return;
     }
 
@@ -439,30 +553,19 @@ class VideoPlayer {
     const sheetW = Number(lvl?.cols) * Number(lvl?.thumb_width);
     const sheetH = Number(lvl?.rows) * Number(lvl?.thumb_height);
 
-    this.seekTooltipThumb.style.width = `${cue.w}px`;
-    this.seekTooltipThumb.style.height = `${cue.h}px`;
+    const scale = Math.min(1, 192 / cue.w, rect.width * 0.6 / cue.w);
+    this.seekTooltipThumb.style.width = `${cue.w * scale}px`;
+    this.seekTooltipThumb.style.height = `${cue.h * scale}px`;
     this.seekTooltipThumb.style.backgroundImage = `url(${sheetURL})`;
     this.seekTooltipThumb.style.backgroundRepeat = 'no-repeat';
     if (isFinite(sheetW) && isFinite(sheetH) && sheetW > 0 && sheetH > 0) {
-      this.seekTooltipThumb.style.backgroundSize = `${sheetW}px ${sheetH}px`;
+      this.seekTooltipThumb.style.backgroundSize = `${sheetW * scale}px ${sheetH * scale}px`;
     } else {
       this.seekTooltipThumb.style.backgroundSize = '';
     }
-    this.seekTooltipThumb.style.backgroundPosition = `-${cue.x}px -${cue.y}px`;
-
-    this.seekTooltipTime.textContent = this.formatTime(t);
-
-    // Position tooltip.
-    const tooltip = this.seekTooltip;
-    tooltip.classList.remove('hidden');
-
-    // Clamp X so the tooltip stays within the progress bar.
-    const tooltipW = tooltip.offsetWidth || 0;
-    let leftPx = x;
-    if (tooltipW > 0) {
-      leftPx = Math.max(tooltipW / 2, Math.min(rect.width - tooltipW / 2, leftPx));
-    }
-    tooltip.style.left = `${leftPx}px`;
+    this.seekTooltipThumb.style.backgroundPosition = `-${cue.x * scale}px -${cue.y * scale}px`;
+    this.seekTooltipThumb.classList.remove('hidden');
+    position();
   }
   
   restoreSettings() {
@@ -556,24 +659,97 @@ class VideoPlayer {
   }
   
   seekToPosition(e) {
-    const rect = this.progressBar.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    if (this._seq) {
-      this._seq.seekTo(pos * this._seq.duration);
-      return;
+    const rect = this.container.querySelector('.progress-track').getBoundingClientRect();
+    this.seekToTime(rect.width > 0 ? (e.clientX - rect.left) / rect.width * this.playbackDuration() : 0);
+  }
+
+  playbackDuration() { return this._seq?.duration ?? this.video.duration; }
+
+  seekToTime(time) {
+    const duration = this.playbackDuration();
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const target = clampSeek(time, duration);
+    if (this._seq) this._seq.seekTo(target);
+    else this.video.currentTime = target;
+    this.paintProgress(target, duration);
+    this.updateTimelineDetails(target);
+  }
+
+  paintProgress(time, duration) {
+    const ready = Number.isFinite(duration) && duration > 0;
+    const target = clampSeek(time, duration);
+    this.progressFill.style.width = (ready ? target / duration * 100 : 0) + '%';
+    this.seekSlider.disabled = !ready;
+    this.seekSlider.max = ready ? String(duration) : '1';
+    this.seekSlider.value = String(target);
+    this.seekSlider.setAttribute('aria-valuetext', `${this.formatTime(target)} of ${this.formatTime(ready ? duration : 0)}`);
+    this.timeDisplay.textContent = `${this.formatTime(target)} / ${this.formatTime(ready ? duration : 0)}`;
+  }
+
+  updateBuffered() {
+    const duration = this.playbackDuration();
+    const ranges = [];
+    if (!this._seq && Number.isFinite(duration) && duration > 0) {
+      for (let i = 0; i < this.video.buffered.length; i++) {
+        const start = this.video.buffered.start(i) / duration * 100;
+        const end = this.video.buffered.end(i) / duration * 100;
+        ranges.push(`transparent ${start}%, rgba(255,255,255,.3) ${start}% ${end}%, transparent ${end}%`);
+      }
     }
-    this.video.currentTime = pos * this.video.duration;
+    this.progressBuffer.style.background = ranges.length ? `linear-gradient(to right, ${ranges.join(',')})` : 'none';
+  }
+
+  renderTimelineDetails() {
+    const duration = this.playbackDuration();
+    let entries = [];
+    if (!this._seq) {
+      const matching = [...(this.markerManager?.markers || [])].sort((a, b) => a.timestamp - b.timestamp);
+      const unique = new Map();
+      for (const marker of matching) {
+        const kind = isSkipSegment(marker) ? 'skips' : marker.marker_type === 'chapter' || marker.action_type === 'chapter' ? 'chapters' : 'markers';
+        const key = `${kind}:${marker.timestamp}:${marker.title}`;
+        if (!unique.has(key) || (marker.duration || 0) > (unique.get(key).duration || 0)) unique.set(key, {...marker, kind});
+      }
+      const markers = [...unique.values()];
+      entries = markers.map(m => ({start: m.timestamp, end: m.duration > 0 ? m.timestamp + m.duration : m.kind === 'chapters' ? (markers.find(next => next.kind === 'chapters' && next.timestamp > m.timestamp)?.timestamp ?? duration) : m.timestamp + .1, title: m.title || 'Marker', point: m.kind === 'markers' && !m.duration, skip: isSkipSegment(m), kind: m.kind}));
+      entries.push(...(this.contextWindowManager?.windows || []).map(w => ({...w, kind: 'context'})));
+      entries.push(...(this.clipManager?.clips || []).map(c => ({start: Number(c.StartTs ?? c.start_ts), end: Number(c.EndTs ?? c.end_ts), title: c.Title || c.title || 'Clip', kind: 'clips'})));
+    }
+    this.timelineEntries = entries.filter(e => Number.isFinite(e.start) && Number.isFinite(e.end) && e.start >= 0 && e.start < duration && e.end > e.start).sort((a, b) => a.start - b.start);
+    this.timelineLane.replaceChildren();
+    this.timelineLane.hidden = !this.timelineEntries.length;
+    this.container.querySelector('.timeline-heading').hidden = !this.timelineEntries.length;
+    for (const entry of this.timelineEntries) {
+      const segment = document.createElement('button');
+      segment.type = 'button';
+      segment.className = 'timeline-segment';
+      segment.tabIndex = -1; // Previous/next controls provide keyboard navigation.
+      segment.dataset.kind = entry.kind;
+      segment.dataset.skip = String(!!entry.skip);
+      segment.dataset.point = String(!!entry.point);
+      segment.style.left = `${entry.start / duration * 100}%`;
+      segment.style.width = `${(Math.min(entry.end, duration) - entry.start) / duration * 100}%`;
+      segment.title = `${this.formatTime(entry.start)} · ${entry.title}${entry.skip ? ' · Auto-skip segment' : ''}`;
+      segment.setAttribute('aria-label', segment.title);
+      segment.addEventListener('click', () => this.seekToTime(entry.start));
+      this.timelineLane.appendChild(segment);
+    }
+    this.updateTimelineDetails(this.video.currentTime);
+  }
+
+  updateTimelineDetails(time) {
+    const active = entryAtTime(this.timelineEntries, time);
+    this.timelineTitle.textContent = active?.title || (this.timelineEntries.length ? `${this.timelineEntries.length} timeline entries` : '');
+    this.timelineTitle.title = active?.title || '';
+    this.timelinePrevious.disabled = !this.timelineEntries.length || time <= (this.timelineEntries[0]?.start ?? 0);
+    this.timelineNext.disabled = !adjacentEntry(this.timelineEntries, time, 1);
+    for (const [i, element] of [...this.timelineLane.children].entries()) element.classList.toggle('is-current', this.timelineEntries[i] === active);
   }
   
   updateProgress() {
-    if (!this.video.duration) return;
-    
-    const percent = (this.video.currentTime / this.video.duration) * 100;
-    this.progressFill.style.width = percent + '%';
-    
-    const current = this.formatTime(this.video.currentTime);
-    const duration = this.formatTime(this.video.duration);
-    this.timeDisplay.textContent = `${current} / ${duration}`;
+    if (this.seeking) return;
+    this.paintProgress(this._seq?.currentTime ?? this.video.currentTime, this.playbackDuration());
+    this.updateTimelineDetails(this.video.currentTime);
 
     if (this.markerManager) {
       this.markerManager.renderIfNeeded();
@@ -671,8 +847,19 @@ class VideoPlayer {
   }
   
   toggleTheaterMode() {
-    this.isTheaterMode = !this.isTheaterMode;
+    this.setTheaterMode(!this.isTheaterMode);
+  }
+
+  setTheaterMode(enabled) {
+    const page = this.container.closest('[data-watch-page]');
+    if (!page) return;
+    this.isTheaterMode = enabled;
+    page.classList.toggle('is-theater', enabled);
     this.container.classList.toggle('theater-mode', this.isTheaterMode);
+    this.theaterBtn?.setAttribute('aria-pressed', String(enabled));
+    this.theaterBtn?.setAttribute('aria-label', enabled ? 'Exit theater mode' : 'Theater mode');
+    if (this.theaterBtn) this.theaterBtn.title = enabled ? 'Exit theater mode (T)' : 'Theater mode (T)';
+    try { localStorage.setItem('videoPlayer.theaterMode', String(enabled)); } catch (_) {}
     
     // Dispatch event for parent page to adjust layout
     this.container.dispatchEvent(new CustomEvent('theatermodechange', {
@@ -696,14 +883,14 @@ class VideoPlayer {
     
     // Auto-hide after 3 seconds if playing
     if (!this.video.paused) {
-      this.hideControlsTimeout = setTimeout(() => {
+      this.hideControlsTimeout = pageTimeout(() => {
         this.hideControls();
       }, 3000);
     }
   }
   
   hideControls() {
-    if (!this.video.paused) {
+    if (!this.video.paused && !this.seeking && !this.controlsContainer.querySelector(':focus-visible')) {
       this.controlsVisible = false;
       this.controlsContainer.classList.add('hidden');
     }
@@ -769,10 +956,7 @@ class VideoPlayer {
     var self = this;
     this._seq.on('timeupdate', function(vt, dur) {
       if (!self.progressFill) return;
-      self.progressFill.style.width = (dur > 0 ? (vt / dur * 100) : 0) + '%';
-      if (self.timeDisplay) {
-        self.timeDisplay.textContent = self.formatTime(vt) + ' / ' + self.formatTime(dur);
-      }
+      if (!self.seeking) self.paintProgress(vt, dur);
     });
     this._seq.on('play', function() { self.updatePlayButton(); });
     this._seq.on('pause', function() { self.updatePlayButton(); });
@@ -782,6 +966,8 @@ class VideoPlayer {
     });
     
     this._seq.load(segments);
+    this.renderTimelineDetails();
+    this.updateBuffered();
     this._seq.setVolume(this.video.volume);
     this._seq.setMuted(this.video.muted);
   }
@@ -790,6 +976,8 @@ class VideoPlayer {
     if (!this._seq) return;
     this._seq.destroy();
     this._seq = null;
+    this.renderTimelineDetails();
+    this.updateProgress();
   }
   
   /** @returns {boolean} Whether the player is in sequence playback mode. */
@@ -801,19 +989,25 @@ class VideoPlayer {
   // Position tracking methods
   initPositionTracking() {
     // Start interval to save position periodically (every 5 seconds during playback)
-    this.positionSaveInterval = setInterval(() => {
+    this.positionSaveInterval = pageInterval(() => {
       if (!this.video.paused && !this.video.ended) {
         this.saveCurrentPosition();
       }
     }, 5000);
 
     // Save position when page unloads
-    window.addEventListener('beforeunload', () => {
+    pageListen(window, 'beforeunload', () => {
       this.saveCurrentPosition();
     });
   }
 
   restoreSavedPosition() {
+    const urlT = parseFloat(new URLSearchParams(window.location.search).get('t') || '');
+    if (Number.isFinite(urlT) && urlT >= 0 && Number.isFinite(this.video.duration) && urlT < this.video.duration) {
+      this.video.currentTime = urlT;
+      return;
+    }
+
     const savedPosition = parseFloat(this.container.dataset.savedPosition || '0');
     
     // Only restore if we have a valid saved position and it's not at the very beginning or end
@@ -836,7 +1030,8 @@ class VideoPlayer {
     this.lastSavedPosition = currentPos;
 
     // Send position to server (fire and forget, no need to wait for response)
-    fetch(`/api/videos/${encodeURIComponent(this.videoID)}/position`, {
+    pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/position`, {
+      keepalive: true,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -849,6 +1044,73 @@ class VideoPlayer {
       console.debug('Failed to save playback position:', err);
     });
   }
+}
+
+class ContextWindowManager {
+  constructor(videoID, player = null) {
+    this.videoID = videoID;
+    this.player = player;
+    this.windows = [];
+    this.activeID = null;
+    this.player?.video?.addEventListener('loadedmetadata', () => this.renderRail());
+    const contextList = document.querySelector('[data-context-list]');
+    if (player && contextList) {
+      this.highlight = new RangeListHighlight(player, contextList, '[data-range-start]');
+    }
+  }
+
+  async load() {
+    if (this.loading) return;
+    this.loading = true;
+    try {
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/context-windows`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return;
+      this.windows = ((await res.json()) || []).map(raw => ({
+        id: String(raw.ID ?? raw.id ?? ''),
+        start: Number(raw.StartTs ?? raw.start_ts ?? 0),
+        end: Number(raw.EndTs ?? raw.end_ts ?? 0),
+        title: String(raw.Title ?? raw.title ?? 'Context'),
+        summary: String(raw.Summary ?? raw.summary ?? ''),
+        topics: asStringArray(raw.Topics ?? raw.topics),
+        entities: asStringArray(raw.Entities ?? raw.entities),
+        stale: Boolean(raw.EvidenceStale ?? raw.evidence_stale ?? false),
+        kind: String(raw.Kind ?? raw.kind ?? 'window'),
+        parentId: String(raw.ParentID ?? raw.parent_id ?? ''),
+        hook: String(raw.Hook ?? raw.hook ?? ''),
+      })).filter(w => w.id && w.end > w.start);
+
+      this.loaded = true;
+      this.renderRail();
+    } catch (_) {
+      // Context Windows are additive; playback remains available on failure.
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  renderRail() { this.player?.renderTimelineDetails(); }
+
+  seek(w) { if (this.player?.video) { this.player.video.currentTime = w.start; void this.player.video.play(); } else { window.RewindNavigation.navigate(`/videos/${encodeURIComponent(this.videoID)}?t=${w.start}`); } }
+  updateActive() { this.player?.updateTimelineDetails(this.player.video.currentTime); }
+
+}
+
+function formatContextTime(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item ?? '').trim()).filter(Boolean);
+}
+
+function contextWindowTooltip(w) {
+  const lines = [w?.title || 'Context'];
+  if (Array.isArray(w?.topics) && w.topics.length) lines.push(`Topics: ${w.topics.join(', ')}`);
+  if (Array.isArray(w?.entities) && w.entities.length) lines.push(`Entities: ${w.entities.join(', ')}`);
+  return lines.join('\n');
 }
 
 class MarkerManager {
@@ -876,16 +1138,13 @@ class MarkerManager {
     if (!this.player.videoID) return;
     this.loading = true;
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/markers`, {
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/markers`, {
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) return;
       this.markers = await res.json();
       
-      // Separate skip segments (markers with duration > 0)
-      this.skipSegments = this.markers.filter(m => 
-        m.duration && m.duration > 0
-      );
+      this.skipSegments = this.markers.filter(isSkipSegment);
       
       this.renderedForDuration = null;
       this.renderIfNeeded();
@@ -930,7 +1189,7 @@ class MarkerManager {
     if (!id || typeof id !== 'string') return;
     if (id.startsWith('sb:')) return;
     try {
-      const res = await fetch(`/api/markers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await pageFetch(`/api/markers/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (!res.ok) return;
       await this.load();
     } catch (_) {
@@ -982,9 +1241,9 @@ class MarkerManager {
 
     // Auto-hide after 2 seconds
     clearTimeout(this._skipNotifTimeout);
-    this._skipNotifTimeout = setTimeout(() => {
+    this._skipNotifTimeout = pageTimeout(() => {
       toast.classList.add('fade-out');
-      setTimeout(() => toast.classList.add('hidden'), 300);
+      pageTimeout(() => toast.classList.add('hidden'), 300);
     }, 2000);
   }
   
@@ -1002,64 +1261,9 @@ class MarkerManager {
     this.render();
   }
 
-  clearTicks() {
-    this.player.progressBar.querySelectorAll('.marker-tick, .marker-range').forEach(el => el.remove());
-  }
+  clearTicks() { this.player.timelineLane?.replaceChildren(); }
 
-  render() {
-    if (!this.player.progressBar) return;
-    this.clearTicks();
-
-    const duration = this.player.video.duration;
-    if (!duration || !isFinite(duration) || duration <= 0) return;
-
-    (this.markers || []).forEach(m => {
-      const ts = typeof m.timestamp === 'number' ? m.timestamp : NaN;
-      if (!isFinite(ts) || ts < 0 || ts > duration) return;
-
-      // If marker has duration, render as a range
-      if (m.duration && m.duration > 0) {
-        const start = ts;
-        const end = Math.min(ts + m.duration, duration);
-        
-        const range = document.createElement('div');
-        range.className = 'marker-range';
-        range.style.left = `${(start / duration) * 100}%`;
-        range.style.width = `${((end - start) / duration) * 100}%`;
-        if (m.color) {
-          range.style.background = m.color;
-        }
-        if (m.title) {
-          range.title = `${m.title} (${m.duration.toFixed(1)}s)`;
-        }
-        
-        // Click to jump to start of segment
-        range.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.player.video.currentTime = start;
-        });
-        
-        this.player.progressBar.appendChild(range);
-      } else {
-        // Point marker (existing code)
-        const tick = document.createElement('div');
-        tick.className = 'marker-tick';
-        tick.style.left = `${(ts / duration) * 100}%`;
-        if (m.color) {
-          tick.style.background = m.color;
-        }
-        if (m.title) {
-          tick.title = m.title;
-        }
-        tick.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.player.video.currentTime = ts;
-        });
-
-        this.player.progressBar.appendChild(tick);
-      }
-    });
-  }
+  render() { this.player.renderTimelineDetails(); }
 
   async createMarkerAtCurrentTime() {
     if (!this.player.videoID) return;
@@ -1068,7 +1272,7 @@ class MarkerManager {
     if (!isFinite(ts) || ts < 0) return;
 
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/markers`, {
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/markers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1106,7 +1310,7 @@ class TranscriptManager {
       this.attach();
       // Cues are loaded via data-init SSE on [data-transcript-list].
       // Watch for SSE patches to discover rendered cue rows.
-      const observer = new MutationObserver(() => this._discoverCues());
+      const observer = new PageMutationObserver(() => this._discoverCues());
       observer.observe(this.listEl, { childList: true, subtree: true });
     }
   }
@@ -1131,7 +1335,7 @@ class TranscriptManager {
       this.listEl.addEventListener('scroll', () => {
         this.userScrolling = true;
         clearTimeout(this.scrollTimeout);
-        this.scrollTimeout = setTimeout(() => {
+        this.scrollTimeout = pageTimeout(() => {
           this.userScrolling = false;
         }, 3000); // Resume auto-scroll after 3 seconds of no manual scrolling
       }, { passive: true });
@@ -1227,7 +1431,10 @@ class ClipManager {
     this.btnCreate = this.panel?.querySelector('[data-clip-create]') || null;
 
     this.attachPanelListeners();
-    
+    if (this.listEl) {
+      this.highlight = new RangeListHighlight(player, this.listEl, '[data-clip-row][data-range-start]');
+    }
+
     // Timeline imperative API for backend SSE control
     this.timeline = {
       addClip: (clip) => this.timelineAddClip(clip),
@@ -1281,7 +1488,7 @@ class ClipManager {
   async loadClipsForTimeline() {
     if (!this.player.videoID) return;
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/clips`, {
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.player.videoID)}/clips`, {
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) return;
@@ -1342,7 +1549,7 @@ class ClipManager {
   }
 
   clearTimeline() {
-    this.player.progressBar?.querySelectorAll('.clip-range').forEach(el => el.remove());
+    this.player.renderTimelineDetails();
   }
 
   renderIfNeeded() {
@@ -1353,51 +1560,7 @@ class ClipManager {
     this.renderTimeline();
   }
 
-  renderTimeline() {
-    if (!this.player.progressBar) return;
-    const duration = this.player.video.duration;
-    if (!duration || !isFinite(duration) || duration <= 0) return;
-
-    this.clearTimeline();
-
-    (this.clips || []).forEach(cl => {
-      const startTs = cl.StartTs ?? cl.start_ts ?? 0;
-      const endTs = cl.EndTs ?? cl.end_ts ?? 0;
-      if (!isFinite(startTs) || !isFinite(endTs) || endTs <= startTs) return;
-      if (startTs < 0 || startTs > duration) return;
-
-      const start = Math.max(0, Math.min(startTs, duration));
-      const end = Math.max(0, Math.min(endTs, duration));
-      if (end <= start) return;
-
-      const left = (start / duration) * 100;
-      const width = ((end - start) / duration) * 100;
-
-      const range = document.createElement('div');
-      range.className = 'clip-range';
-      range.style.left = `${left}%`;
-      range.style.width = `${width}%`;
-
-      const color = (cl.color || cl.Color || '').toString().trim();
-      if (color) {
-        range.style.background = color;
-      }
-
-      const title = (cl.title || cl.Title || '').toString().trim();
-      if (title) {
-        range.title = title;
-      }
-
-      range.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const rect = this.player.progressBar.getBoundingClientRect();
-        const pos = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;
-        this.player.video.currentTime = Math.max(0, Math.min(pos, 1)) * duration;
-      });
-
-      this.player.progressBar.appendChild(range);
-    });
-  }
+  renderTimeline() { this.player.renderTimelineDetails(); }
 
   // Clips are now server-rendered via components.ClipListContainer
   // This class only handles timeline overlay
@@ -1432,7 +1595,7 @@ class ClipManager {
     // This legacy method kept for backwards compatibility but unused
     if (!id || typeof id !== 'string') return;
     try {
-      const res = await fetch(`/api/clips/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await pageFetch(`/api/clips/${encodeURIComponent(id)}`, { method: 'DELETE' });
       // Backend returns SSE that updates DOM + timeline automatically via DataStar
     } catch (_) {
       // Best-effort.
@@ -1454,13 +1617,15 @@ class KeyboardShortcutHandler {
   }
   
   attachListeners() {
-    document.addEventListener('keydown', (e) => {
+    pageListen(document, 'keydown', (e) => {
       if (!this.enabled) return;
       
       // Don't trigger if user is typing in an input
       if (
         e.target?.isContentEditable ||
-        e.target?.tagName === 'INPUT' ||
+          e.target?.tagName === 'INPUT' ||
+          e.target?.tagName === 'BUTTON' ||
+          e.target?.tagName === 'A' ||
         e.target?.tagName === 'TEXTAREA' ||
         e.target?.tagName === 'SELECT'
       ) {
@@ -1687,10 +1852,33 @@ window.seekToTime = function(seconds) {
   }
 };
 
-// Auto-initialize players on page load
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize both direct MPA loads and scripts mounted by DataStar navigation.
+function initVideoPlayers() {
+  pageListen(document, 'click', event => {
+    const button = event.target.closest('[data-context-seek]');
+    if (!button) return;
+    const video = document.querySelector('[data-video-player] video');
+    if (video) { video.currentTime = Number(button.dataset.contextSeek); }
+  });
+
   const playerContainers = document.querySelectorAll('[data-video-player]');
   playerContainers.forEach(container => {
-    new VideoPlayer(container);
+    if (container.dataset.playerInitialized) return;
+    container.dataset.playerInitialized = 'true';
+    const player = new VideoPlayer(container);
+    onPageCleanup(() => {
+      player.saveCurrentPosition();
+      player.video.pause();
+      player._seq?.destroy();
+      clearInterval(player.positionSaveInterval);
+      if (navigator.mediaSession) navigator.mediaSession.metadata = null;
+    });
   });
-});
+  document.querySelectorAll('[data-context-window-list][data-video-id]').forEach(list => {
+    if (!document.querySelector(`[data-video-player][data-video-id="${CSS.escape(list.dataset.videoId)}"]`)) {
+      void new ContextWindowManager(list.dataset.videoId).load();
+    }
+  });
+}
+if (document.readyState === 'loading') pageListen(document, 'DOMContentLoaded', initVideoPlayers);
+else initVideoPlayers();

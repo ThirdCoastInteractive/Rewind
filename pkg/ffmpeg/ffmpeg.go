@@ -28,6 +28,11 @@ func (c *Command) VideoFilterStrings() []string { return c.filters }
 // Used by stitch builder to extract per-segment filter strings.
 func (c *Command) AudioFilterStrings() []string { return c.audioFilters }
 
+// SetMeasuredLoudnorm rewrites loudnorm filters to a linear second pass.
+func (c *Command) SetMeasuredLoudnorm(targetI float64, m *LoudnormMeasurement) {
+	c.audioFilters = ReplaceLoudnorm(c.audioFilters, targetI, m)
+}
+
 // Option modifies a Command. Options are composable and order-independent
 // (ffmpeg will receive args in correct order regardless of option order).
 type Option interface {

@@ -20,19 +20,24 @@ import (
 
 // videosListSignals is the DataStar/query shape for the library grid.
 type videosListSignals struct {
-	Query      string   `json:"q"`
-	Sort       string   `json:"sort"`
-	Duration   string   `json:"duration"`
-	Uploader   string   `json:"uploader"`
-	Tags       []string `json:"tags"`
-	TagIDs     []string `json:"tagIds"`
-	DateType   *string  `json:"dateType"`
-	DateFrom   *string  `json:"dateFrom"`
-	DateTo     *string  `json:"dateTo"`
-	HasClips   bool     `json:"hasClips"`
-	HasMarkers bool     `json:"hasMarkers"`
-	Page       int      `json:"page"`
-	PageSize   int      `json:"pageSize"`
+	AssetFilters     map[string]bool `json:"assetFilters"`
+	RequiredAssets   []string        `json:"requiredAssets"`
+	Query            string          `json:"q"`
+	Sort             string          `json:"sort"`
+	Duration         string          `json:"duration"`
+	Uploader         string          `json:"uploader"`
+	UploaderExcluded bool            `json:"uploaderExcluded"`
+	CreatorID        string          `json:"creatorId"`
+	ChannelID        string          `json:"channelId"`
+	Tags             []string        `json:"tags"`
+	TagIDs           []string        `json:"tagIds"`
+	DateType         *string         `json:"dateType"`
+	DateFrom         *string         `json:"dateFrom"`
+	DateTo           *string         `json:"dateTo"`
+	HasClips         bool            `json:"hasClips"`
+	HasMarkers       bool            `json:"hasMarkers"`
+	Page             int             `json:"page"`
+	PageSize         int             `json:"pageSize"`
 }
 
 // HandleIndex returns a filtered/paginated list of videos.
@@ -50,6 +55,9 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			signals.Sort = c.QueryParam("sort")
 			signals.Duration = c.QueryParam("duration")
 			signals.Uploader = c.QueryParam("uploader")
+			signals.UploaderExcluded = c.QueryParam("uploaderExcluded") == "true"
+			signals.CreatorID = c.QueryParam("creator_id")
+			signals.ChannelID = c.QueryParam("channel_id")
 			signals.Tags = parseTagsString(c.QueryParam("tags"))
 			signals.TagIDs = parseTagsString(c.QueryParam("tagIds"))
 			if dt := c.QueryParam("dateType"); dt != "" {
@@ -61,6 +69,7 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			if dto := c.QueryParam("dateTo"); dto != "" {
 				signals.DateTo = &dto
 			}
+			signals.RequiredAssets = parseTagsString(c.QueryParam("requiredAssets"))
 			signals.HasClips = c.QueryParam("hasClips") == "true"
 			signals.HasMarkers = c.QueryParam("hasMarkers") == "true"
 			if p, err := strconv.Atoi(c.QueryParam("page")); err == nil {
@@ -107,7 +116,16 @@ func patchVideosList(c echo.Context, dbc *db.DatabaseConnection, sse *datastar.S
 		params.PageSize = signals.PageSize
 	}
 	params.Validate()
-	compiled := search.Compile(params.Query)
+	requiredAssets := append([]string(nil), signals.RequiredAssets...)
+	for _, asset := range []string{"context", "transcript", "thumbnail", "preview", "waveform", "seek"} {
+		if signals.AssetFilters[asset] {
+			requiredAssets = append(requiredAssets, asset)
+		}
+	}
+	libraryQuery := search.ParseLibrary(params.Query)
+	compiled := libraryQuery.General
+	creatorID := parseOptionalUUID(signals.CreatorID)
+	channelRowID := parseOptionalUUID(signals.ChannelID)
 	if compiled.Raw != "" && params.Sort == "newest" {
 		// Default listing sort is newest; switch to relevance while a query is
 		// active unless the user picked something else.
@@ -121,21 +139,26 @@ func patchVideosList(c echo.Context, dbc *db.DatabaseConnection, sse *datastar.S
 		p.Page = page
 		p.Validate()
 		dbParams := &db.ListVideosPaginatedParams{
-			Query:          nullableString(compiled.Raw),
-			Tsquery:        nullableString(compiled.TSQuery),
-			Uploader:       nullableString(p.Uploader),
-			ChannelID:      nil,
-			DurationFilter: nullableString(p.Duration),
-			Tags:           p.Tags,
-			TagIds:         parseUUIDList(signals.TagIDs),
-			DateType:       nullableString(p.DateType),
-			DateFrom:       parseDate(p.DateFrom),
-			DateTo:         parseDate(p.DateTo),
-			HasClips:       nullableBool(p.HasClips),
-			HasMarkers:     nullableBool(p.HasMarkers),
-			SortOrder:      p.Sort,
-			PageOffset:     p.Offset(),
-			PageLimit:      int32(p.PageSize),
+			FieldClauses:     libraryQuery.FieldsJSON(),
+			RequiredAssets:   requiredAssets,
+			Query:            nullableString(compiled.Raw),
+			Tsquery:          nullableString(compiled.TSQuery),
+			Uploader:         nullableString(p.Uploader),
+			UploaderExcluded: nullableBool(signals.UploaderExcluded),
+			ChannelID:        nil,
+			CreatorID:        creatorID,
+			ChannelRowID:     channelRowID,
+			DurationFilter:   nullableString(p.Duration),
+			Tags:             p.Tags,
+			TagIds:           parseUUIDList(signals.TagIDs),
+			DateType:         nullableString(p.DateType),
+			DateFrom:         parseDate(p.DateFrom),
+			DateTo:           parseDate(p.DateTo),
+			HasClips:         nullableBool(p.HasClips),
+			HasMarkers:       nullableBool(p.HasMarkers),
+			SortOrder:        p.Sort,
+			PageOffset:       p.Offset(),
+			PageLimit:        int32(p.PageSize),
 		}
 		rows, err := dbc.Queries(ctx).ListVideosPaginated(ctx, dbParams)
 		if err != nil {
@@ -177,6 +200,20 @@ func patchVideosList(c echo.Context, dbc *db.DatabaseConnection, sse *datastar.S
 		slog.Error("failed to send videos grid SSE patch", "error", err)
 		return err
 	}
+	catalog := []*db.ListCatalogCandidatesRow{}
+	if compiled.TSQuery != "" && len(libraryQuery.Fields) == 0 && len(requiredAssets) == 0 {
+		var err error
+		catalog, err = dbc.Queries(ctx).ListCatalogCandidates(ctx, &db.ListCatalogCandidatesParams{
+			Tsquery: nullableString(compiled.TSQuery), CreatorID: creatorID, ChannelRowID: channelRowID, PageLimit: 25,
+		})
+		if err != nil {
+			slog.Error("failed to fetch catalog candidates", "error", err)
+			catalog = nil
+		}
+	}
+	if err := sse.PatchElementTempl(templates.CatalogCandidates(catalog)); err != nil {
+		return err
+	}
 	if err := sse.PatchElementTempl(components.PaginationControls(pagination)); err != nil {
 		slog.Error("failed to send pagination SSE patch", "error", err)
 		return err
@@ -186,6 +223,18 @@ func patchVideosList(c echo.Context, dbc *db.DatabaseConnection, sse *datastar.S
 		_ = sse.PatchSignals([]byte(`{"page":` + strconv.Itoa(pagination.CurrentPage) + `}`))
 	}
 	return nil
+}
+
+func parseOptionalUUID(raw string) pgtype.UUID {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return pgtype.UUID{}
+	}
+	var id pgtype.UUID
+	if err := id.Scan(raw); err != nil || !id.Valid {
+		return pgtype.UUID{}
+	}
+	return id
 }
 
 // parseUUIDList parses tag id strings into a UUID slice for the tag filter,

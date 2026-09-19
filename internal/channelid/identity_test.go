@@ -9,6 +9,12 @@ func TestPlatformFromSrc(t *testing.T) {
 	if PlatformFromSrc("https://rumble.com/v123") != "rumble" {
 		t.Fatal("rumble")
 	}
+	if PlatformFromSrc("https://x.com/SomeHandle/status/1") != "twitter" {
+		t.Fatal("x.com")
+	}
+	if PlatformFromSrc("https://twitter.com/SomeHandle") != "twitter" {
+		t.Fatal("twitter.com")
+	}
 }
 
 func TestFromMetadataPrefersChannelID(t *testing.T) {
@@ -113,6 +119,20 @@ func TestFromURL(t *testing.T) {
 			platform:     "kick",
 			key:          "coolstreamer",
 			canonicalURL: "https://kick.com/coolstreamer",
+		},
+		{
+			name:         "x.com profile",
+			raw:          "https://x.com/LuisJGomez",
+			platform:     "twitter",
+			key:          "LuisJGomez",
+			canonicalURL: "https://x.com/LuisJGomez",
+		},
+		{
+			name:         "twitter.com profile",
+			raw:          "https://twitter.com/LuisJGomez",
+			platform:     "twitter",
+			key:          "LuisJGomez",
+			canonicalURL: "https://x.com/LuisJGomez",
 		},
 		{
 			name:         "generic host+path",

@@ -19,7 +19,7 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 		data-cut-page
 		data-video-id={ video.ID }
 		data-video-fps={ fmt.Sprintf("%.5f", video.Info.GetFPS()) }
-		data-signals="{_localClipBankOpen: true, _localInspectorOpen: true, _localFiltersOpen: false, _localMulticamOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}"
+		data-signals="{_localClipBankOpen: true, _localContextOpen: false, _localInspectorOpen: true, _localFiltersOpen: false, _localMulticamOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}"
 		data-init={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }
 	>
 		<div class="shrink-0">
@@ -30,6 +30,18 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 			<div class="w-full md:w-1/3 lg:w-1/4 xl:w-1/5 shrink-0 min-h-0 flex flex-col gap-0 overflow-y-auto overflow-x-hidden">
 				@components.SidebarPanel("CLIP BANK", "_localClipBankOpen") {
 					@components.ClipBankList(clips)
+				}
+				@components.SidebarPanel("CONTEXT WINDOWS", "_localContextOpen") {
+					<div class="p-2 space-y-2">
+						<div data-cut-context-list class="space-y-1"><p class="font-mono text-xs text-white/40">Loading…</p></div>
+						<input type="text" class="form-input" placeholder="Context title…" data-cut-context-title/>
+						<div class="flex flex-wrap gap-1">
+							<button type="button" class="btn-primary btn-sm" data-cut-context-create>Save new</button>
+							<button type="button" class="ghost-btn-sm" data-cut-context-update disabled>Update range</button>
+							<button type="button" class="ghost-btn-sm text-red-400" data-cut-context-delete disabled>Delete</button>
+						</div>
+						<p class="font-mono text-xs text-white/40">Selecting a window loads its range. Creating a clip remains a separate action.</p>
+					</div>
 				}
 				@components.SidebarPanel("INSPECTOR", "_localInspectorOpen") {
 					@CutClipInspector()
@@ -68,11 +80,41 @@ templ VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[strin
 						</div>
 					</div>
 				</div>
-				<!-- Audio tools: flat - 1 div, 3 canvases, no sub-wrappers -->
-				<div id="audio-tools-container" class="hidden shrink-0 h-24 flex gap-1 border-2 border-white/10 bg-neutral-900 p-1" data-audio-tools>
-					<canvas class="w-10 border border-white/10 bg-neutral-950" data-audio-meter title="Levels" width="56" height="120"></canvas>
-					<canvas class="flex-1 min-w-0 border border-white/10 bg-neutral-950" data-audio-spectrum title="Spectrum" width="400" height="120"></canvas>
-					<canvas class="w-32 border border-white/10 bg-neutral-950" data-audio-scope title="Scope" width="192" height="120"></canvas>
+				<!-- Audio tools: meters + loudness actions for quiet dialogue -->
+				<div id="audio-tools-container" class="hidden shrink-0 flex flex-col gap-1 border-2 border-white/10 bg-neutral-900 p-1" data-audio-tools>
+					<div class="h-24 flex gap-1">
+						<canvas class="w-10 border border-white/10 bg-neutral-950" data-audio-meter title="Levels" width="56" height="120"></canvas>
+						<canvas class="flex-1 min-w-0 border border-white/10 bg-neutral-950" data-audio-spectrum title="Spectrum" width="400" height="120"></canvas>
+						<canvas class="w-32 border border-white/10 bg-neutral-950" data-audio-scope title="Scope" width="192" height="120"></canvas>
+					</div>
+					<div class="flex items-center gap-2 flex-wrap px-1 py-1 border-t border-white/10">
+						<span class="text-[10px] font-mono text-white/50 tabular-nums min-w-16" data-audio-lufs title="Approximate loudness from the meter">-- LUFS</span>
+						<button
+							type="button"
+							class="btn-ghost btn-sm"
+							title="Two-pass loudnorm to -14 LUFS on export. Use this for quiet podcasts."
+							data-on:click={ filters.FilterAddExprWithParams("normalize", "{mode:'loudnorm',target:'-14'}", filters.CutFilterConfig(video.ID)) }
+						>Normalize -14</button>
+						<button
+							type="button"
+							class="btn-ghost btn-sm"
+							title="Louder speech target"
+							data-on:click={ filters.FilterAddExprWithParams("normalize", "{mode:'loudnorm',target:'-12'}", filters.CutFilterConfig(video.ID)) }
+						>Normalize -12</button>
+						<button
+							type="button"
+							class="btn-ghost btn-sm"
+							title="Fixed +6 dB gain"
+							data-on:click={ filters.FilterAddExprWithParams("volume", "{gain:'2'}", filters.CutFilterConfig(video.ID)) }
+						>+6 dB</button>
+						<button
+							type="button"
+							class="btn-ghost btn-sm"
+							title="Broadcast compressor"
+							data-on:click={ filters.FilterAddExprWithParams("compressor", "{threshold:'-24',ratio:'6',attack:'10',release:'300'}", filters.CutFilterConfig(video.ID)) }
+						>Compress</button>
+						<span class="text-[10px] font-mono text-white/30">Adds to COLOR / FILTERS · applied on export</span>
+					</div>
 				</div>
 				<!-- Overview timeline: fixed height -->
 				<div class="shrink-0 h-10">

@@ -11,12 +11,55 @@ import (
 )
 
 type Querier interface {
+	//AckRuntimeSettings
+	//
+	//  INSERT INTO runtime_settings_consumers(service,snapshot,hostname,stopped_at)
+	//  VALUES($1,$2,$3,NULL)
+	//  ON CONFLICT(service) DO UPDATE SET
+	//      snapshot=EXCLUDED.snapshot,
+	//      hostname=EXCLUDED.hostname,
+	//      stopped_at=NULL,
+	//      updated_at=now()
+	AckRuntimeSettings(ctx context.Context, arg *AckRuntimeSettingsParams) error
+	//AddAgentArtifact
+	//
+	//  UPDATE agent_runs SET artifacts=artifacts || jsonb_build_array($1::jsonb) WHERE id=$2 AND lease_owner=$3 AND status='running' AND lease_until>now() AND NOT artifacts @> jsonb_build_array($1::jsonb)
+	AddAgentArtifact(ctx context.Context, arg *AddAgentArtifactParams) error
+	//AddAgentEvent
+	//
+	//  INSERT INTO agent_events(run_id,kind,data) SELECT r.id,$1,$2::jsonb FROM agent_runs r WHERE r.id=$3 AND r.lease_owner=$4 AND r.status='running' AND r.lease_until>now()
+	AddAgentEvent(ctx context.Context, arg *AddAgentEventParams) (int64, error)
+	//AddCompilationPlanSegment
+	//
+	//  INSERT INTO compilation_plan_segments (
+	//      plan_id, position, video_id, start_ts, end_ts, context_window_id,
+	//      match_evidence, selection_rationale, media_ready
+	//  )
+	//  SELECT $1, $2, $3, $4, $5,
+	//         $6, $7, $8,
+	//         (v.media <> 'metadata' AND v.video_path IS NOT NULL)
+	//  FROM videos v WHERE v.id = $3
+	//  RETURNING id, plan_id, position, video_id, start_ts, end_ts, context_window_id, match_evidence, selection_rationale, media_ready, failure_state, download_job_id, created_at, updated_at
+	AddCompilationPlanSegment(ctx context.Context, arg *AddCompilationPlanSegmentParams) (*CompilationPlanSegment, error)
+	// AddCreatorBundleMember links a creator into a bundle.
+	//
+	//  INSERT INTO creator_bundle_members (bundle_id, creator_id)
+	//  VALUES ($1, $2)
+	//  ON CONFLICT (bundle_id, creator_id) DO NOTHING
+	AddCreatorBundleMember(ctx context.Context, arg *AddCreatorBundleMemberParams) error
 	// AddCreatorSuggestionMember attaches a channel to a suggestion.
 	//
 	//  INSERT INTO creator_suggestion_members (suggestion_id, channel_id)
 	//  VALUES ($1, $2)
 	//  ON CONFLICT DO NOTHING
 	AddCreatorSuggestionMember(ctx context.Context, arg *AddCreatorSuggestionMemberParams) error
+	//AddHost
+	//
+	//  INSERT INTO show_note_hosts (show_note_id, user_id, role)
+	//  VALUES ($1, $2, $3)
+	//  ON CONFLICT (show_note_id, user_id) DO UPDATE SET role = EXCLUDED.role
+	//  RETURNING id, show_note_id, user_id, role, created_at
+	AddHost(ctx context.Context, arg *AddHostParams) (*ShowNoteHost, error)
 	// AddVideoTag links a tag to a video (idempotent).
 	//
 	//  INSERT INTO video_tags (video_id, tag_id, created_by)
@@ -31,11 +74,37 @@ type Querier interface {
 	//  FROM unnest($3::uuid[]) AS v
 	//  ON CONFLICT (video_id, tag_id) DO NOTHING
 	AddVideoTagToMany(ctx context.Context, arg *AddVideoTagToManyParams) error
+	//AdvanceCatalogCrawl
+	//
+	//  UPDATE catalog_crawls SET next_page_index = $1,
+	//      entries_seen = entries_seen + $2,
+	//      entries_added = entries_added + $3,
+	//      entries_updated = entries_updated + $4,
+	//      locked_at = NOW(), updated_at = NOW()
+	//  WHERE id = $5 AND status = 'running'
+	AdvanceCatalogCrawl(ctx context.Context, arg *AdvanceCatalogCrawlParams) error
+	//AdvanceFaceIndex
+	//
+	//  UPDATE face_index_sets SET next_sample=$1,status=$2,error=$3,active=CASE WHEN $2::text='succeeded' THEN true ELSE active END,updated_at=now() WHERE id=$4
+	AdvanceFaceIndex(ctx context.Context, arg *AdvanceFaceIndexParams) error
+	//AdvanceVisualIndex
+	//
+	//  UPDATE visual_index_sets SET next_sample=$1,status=$2,error=$3,active=CASE WHEN $2::text='succeeded' THEN true ELSE active END,updated_at=now() WHERE id=$4
+	AdvanceVisualIndex(ctx context.Context, arg *AdvanceVisualIndexParams) error
 	// Releases a PostgreSQL advisory lock
 	// Returns true if the lock was released, false if it wasn't held
 	//
 	//  SELECT pg_advisory_unlock($1::bigint) AS unlocked
 	AdvisoryUnlock(ctx context.Context, lockID int64) (bool, error)
+	//AgentUsesModel
+	//
+	//  SELECT EXISTS(SELECT 1 FROM agent_runs WHERE status IN ('queued','running','waiting_capacity','waiting_input','waiting_approval') AND settings->>'agent.model'=$1::text)::boolean
+	AgentUsesModel(ctx context.Context, dollar_1 string) (bool, error)
+	//AppendShowNoteDocumentUpdate
+	//
+	//  INSERT INTO show_note_document_updates (show_note_id, revision, update)
+	//  VALUES ($1, $2, $3)
+	AppendShowNoteDocumentUpdate(ctx context.Context, arg *AppendShowNoteDocumentUpdateParams) error
 	// ArchiveJob marks a job as archived (soft delete).
 	//
 	//  UPDATE download_jobs
@@ -50,6 +119,36 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = ANY($1::uuid[])
 	ArchiveJobs(ctx context.Context, jobIds []pgtype.UUID) error
+	//AssignAutomaticFace
+	//
+	//  UPDATE face_observations SET person_id=$1,assignment='automatic' WHERE id=$2 AND assignment='unassigned' AND NOT dismissed
+	AssignAutomaticFace(ctx context.Context, arg *AssignAutomaticFaceParams) error
+	// AttachCommentersForVideo sets video_comments.commenter_id from matching commenters.
+	//
+	//  UPDATE video_comments vc
+	//  SET commenter_id = c.id,
+	//      updated_at = NOW()
+	//  FROM commenters c
+	//  WHERE vc.video_id = $1
+	//    AND vc.commenter_id IS NULL
+	//    AND c.source = vc.source
+	//    AND c.author_id = comment_author_id(vc.author_id, vc.author_url)
+	AttachCommentersForVideo(ctx context.Context, videoID pgtype.UUID) (int64, error)
+	//BackupTranscriptRepair
+	//
+	//  INSERT INTO transcript_repair_backups(job_id,transcript)
+	//  SELECT $1,to_jsonb(t) FROM video_transcripts t
+	//  WHERE video_id=$2 AND lang=$3
+	//  ON CONFLICT(job_id) DO NOTHING
+	BackupTranscriptRepair(ctx context.Context, arg *BackupTranscriptRepairParams) error
+	//BindWindowTopic
+	//
+	//  INSERT INTO context_window_topics (window_id, topic_slug, raw, match_kind)
+	//  VALUES ($1, $2, $3, $4)
+	//  ON CONFLICT (window_id, topic_slug) DO UPDATE SET
+	//      raw = EXCLUDED.raw,
+	//      match_kind = EXCLUDED.match_kind
+	BindWindowTopic(ctx context.Context, arg *BindWindowTopicParams) error
 	// BumpChannelEdge increments an existing directed edge (matched by the unique
 	// identity expression) and fills in a resolved to_channel_id / video_id when
 	// those were previously null.
@@ -62,6 +161,31 @@ type Querier interface {
 	//    AND kind = $5
 	//    AND COALESCE(channel_edges.to_channel_id::text, channel_edges.to_url) = $6::text
 	BumpChannelEdge(ctx context.Context, arg *BumpChannelEdgeParams) (int64, error)
+	//BumpCompilationPlanRevision
+	//
+	//  UPDATE compilation_plans SET revision = revision + 1, status = 'draft', stitch_job_id = NULL,
+	//      estimated_duration = $1, last_error = '', updated_at = NOW()
+	//  WHERE id = $2
+	//  RETURNING id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at
+	BumpCompilationPlanRevision(ctx context.Context, arg *BumpCompilationPlanRevisionParams) (*CompilationPlan, error)
+	//CancelAgentRun
+	//
+	//  UPDATE agent_runs SET cancel_requested=true,updated_at=now() WHERE id=$1 AND user_id=$2
+	CancelAgentRun(ctx context.Context, arg *CancelAgentRunParams) error
+	// CancelClaimableMLJobs takes queued, waiting, and in-flight jobs off the
+	// line. Heartbeat then drops the worker. Explicit retry/enqueue can revive.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'cancelled',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      lease_token = NULL,
+	//      last_error = CASE WHEN last_error = '' THEN 'cancelled' ELSE last_error END,
+	//      updated_at = now()
+	//  WHERE status IN ('queued', 'processing', 'waiting_model', 'waiting_assets', 'retry_wait', 'paused')
+	//    AND ($1 = '' OR kind = $1)
+	//    AND priority >= $2
+	CancelClaimableMLJobs(ctx context.Context, arg *CancelClaimableMLJobsParams) (int64, error)
 	// CancelDownloadJob marks a job as cancelled.
 	//
 	//  UPDATE download_jobs
@@ -72,6 +196,53 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1
 	CancelDownloadJob(ctx context.Context, id pgtype.UUID) error
+	// CancelMLJob cancels one non-terminal job, including an in-flight run.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'cancelled',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      lease_token = NULL,
+	//      last_error = CASE WHEN last_error = '' THEN 'cancelled' ELSE last_error END,
+	//      updated_at = now()
+	//  WHERE id = $1
+	//    AND status IN ('queued', 'processing', 'waiting_model', 'waiting_assets', 'retry_wait', 'paused')
+	CancelMLJob(ctx context.Context, id pgtype.UUID) (int64, error)
+	//CaptureJobConfiguration
+	//
+	//  INSERT INTO job_configuration(kind,job_id,snapshot) VALUES($1,$2,$3) ON CONFLICT(kind,job_id) DO UPDATE SET job_id=EXCLUDED.job_id RETURNING snapshot
+	CaptureJobConfiguration(ctx context.Context, arg *CaptureJobConfigurationParams) ([]byte, error)
+	//CheckpointAgentRun
+	//
+	//  UPDATE agent_runs SET messages=$3,calls=$4,model_digest=$5,updated_at=now() WHERE id=$1 AND lease_owner=$2 AND status='running' AND lease_until>now()
+	CheckpointAgentRun(ctx context.Context, arg *CheckpointAgentRunParams) (int64, error)
+	//ClaimAgentRun
+	//
+	//  UPDATE agent_runs SET status='running',lease_owner=$1,lease_until=now()+interval '60 seconds',updated_at=now()
+	//  WHERE id=(SELECT id FROM agent_runs WHERE agent_runs.runtime=$2 AND status IN ('queued','running','waiting_capacity') AND (lease_until IS NULL OR lease_until<now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id, conversation_id, user_id, status, runtime, provider_session_id, provider_run_id, pending_request, artifacts, cancellation_acknowledged, messages, settings, model_digest, calls, cancel_requested, lease_owner, lease_until, last_error, created_at, updated_at
+	ClaimAgentRun(ctx context.Context, arg *ClaimAgentRunParams) (*AgentRun, error)
+	//ClaimCatalogCrawl
+	//
+	//  UPDATE catalog_crawls SET status = 'running', locked_at = NOW(), locked_by = $1,
+	//      attempts = attempts + 1, updated_at = NOW()
+	//  WHERE id = (
+	//      SELECT c.id FROM catalog_crawls c
+	//      WHERE c.status IN ('queued', 'retry_wait')
+	//        AND (c.retry_at IS NULL OR c.retry_at <= NOW())
+	//        AND NOT EXISTS (
+	//          SELECT 1 FROM catalog_crawls active
+	//          WHERE active.platform = c.platform AND active.status = 'running'
+	//            AND active.locked_at > NOW() - INTERVAL '15 minutes'
+	//        )
+	//      ORDER BY c.created_at
+	//      LIMIT 1 FOR UPDATE SKIP LOCKED
+	//  )
+	//  RETURNING id, created_at, updated_at, channel_id, requested_by, feed_url, feed_kind, platform, next_page_index, page_size, overlap_size, status, attempts, retry_at, entries_seen, entries_added, entries_updated, last_error, refresh, locked_at, locked_by, finished_at
+	ClaimCatalogCrawl(ctx context.Context, workerID string) (*CatalogCrawl, error)
+	//ClaimCompilationExecution
+	//
+	//  SELECT id, plan_id, revision, created_by, title, status, stitch_project_id, stitch_job_id, last_error, next_check, created_at, updated_at FROM compilation_executions WHERE status IN ('waiting_media','rendering') AND next_check<=now() ORDER BY next_check,id LIMIT 1 FOR UPDATE SKIP LOCKED
+	ClaimCompilationExecution(ctx context.Context) (*CompilationExecution, error)
 	// ClaimDueWatchedChannels locks due, enabled watches for scheduling. Must run
 	// inside a transaction: SKIP LOCKED keeps multiple downloader replicas from
 	// double-scheduling the same watch. Watches whose previous scan job is still
@@ -90,6 +261,53 @@ type Querier interface {
 	//  LIMIT $1
 	//  FOR UPDATE OF w SKIP LOCKED
 	ClaimDueWatchedChannels(ctx context.Context, maxWatches int32) ([]*WatchedChannel, error)
+	// ClaimMLJob takes one queued (or cooled-down waiting_model) row of the
+	// requested kinds. Serial per kind so transcribe cannot starve visual_index.
+	// waiting_model / waiting_assets reclaims do not increment attempts: those
+	// are infrastructure waits, not retries toward a failed-job cap.
+	// ORDER BY priority, created_at. FOR UPDATE SKIP LOCKED.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'processing',
+	//      locked_at = NOW(),
+	//      locked_by = $1,
+	//      lease_token = gen_random_uuid(),
+	//      attempts = CASE WHEN status IN ('queued', 'retry_wait') THEN attempts + 1 ELSE attempts END,
+	//      updated_at = NOW()
+	//  WHERE id = (
+	//      SELECT j.id
+	//      FROM ml_jobs j
+	//      WHERE j.kind <> 'face_index'
+	//        AND j.kind = ANY($2::text[])
+	//        AND j.status IN ('queued', 'waiting_model', 'waiting_assets', 'retry_wait')
+	//        AND j.retry_at <= now()
+	//        AND NOT EXISTS (SELECT 1 FROM ml_runtime_health h WHERE h.kind=j.kind AND h.retry_at>now())
+	//        AND (
+	//            j.status = 'queued'
+	//            OR j.retry_at <= now()
+	//        )
+	//        AND (
+	//            SELECT count(*)
+	//            FROM ml_jobs active
+	//            WHERE active.status = 'processing'
+	//              AND active.kind = j.kind
+	//              AND active.locked_at > NOW() - INTERVAL '15 minutes'
+	//        ) < $3::int
+	//      ORDER BY j.priority, j.created_at
+	//      LIMIT 1
+	//      FOR UPDATE SKIP LOCKED
+	//  )
+	//  RETURNING id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript
+	ClaimMLJob(ctx context.Context, arg *ClaimMLJobParams) (*MlJob, error)
+	//ClaimModelOperation
+	//
+	//  UPDATE model_operations SET status='running',updated_at=now() WHERE id=(SELECT id FROM model_operations WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id, user_id, runtime, model, action, status, progress, options, created_at, updated_at
+	ClaimModelOperation(ctx context.Context) (*ModelOperation, error)
+	//ClaimNoteMaterialization
+	//
+	//  UPDATE show_note_materializations SET lease_token=gen_random_uuid(),retry_at=now()+interval '2 minutes',attempts=attempts+1
+	//  WHERE thread_id=(SELECT thread_id FROM show_note_materializations WHERE status='pending' AND retry_at<=now() ORDER BY retry_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING thread_id, show_note_id, user_id, accepted_revision, base_markdown, proposed_markdown, status, lease_token, retry_at, last_error, attempts
+	ClaimNoteMaterialization(ctx context.Context) (*ShowNoteMaterialization, error)
 	// ClaimVideosForCommentCatchup atomically claims up to batch_size videos that
 	// have no comments (and weren't checked in the last 30 days), marking
 	// comments_checked_at so other downloader replicas skip them. The downloader
@@ -167,6 +385,20 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1
 	ClearClipExportPID(ctx context.Context, id pgtype.UUID) error
+	//ClearCompilationPlanSegments
+	//
+	//  DELETE FROM compilation_plan_segments WHERE plan_id = $1
+	ClearCompilationPlanSegments(ctx context.Context, planID pgtype.UUID) error
+	//ClearDirector
+	//
+	//  UPDATE producer_connections
+	//  SET is_director = FALSE
+	//  WHERE show_note_id = $1
+	ClearDirector(ctx context.Context, showNoteID pgtype.UUID) error
+	//ClearFailedExecutionDownloads
+	//
+	//  UPDATE compilation_execution_segments s SET download_job_id=NULL FROM download_jobs d WHERE s.execution_id=$1 AND d.id=s.download_job_id AND d.status='failed'
+	ClearFailedExecutionDownloads(ctx context.Context, executionID pgtype.UUID) error
 	// ClearVideoAssetErrors resets error tracking for a single video so catchup retries it.
 	//
 	//  UPDATE videos
@@ -181,12 +413,18 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE video_id = $1
 	ClearVideoFromJobs(ctx context.Context, videoID pgtype.UUID) error
-	//ClearVideoFromPlayerSessions
+	// CommentClassifyInputHash fingerprints unscored-input churn for a video.
 	//
-	//  UPDATE player_sessions
-	//  SET current_video_id = NULL, last_activity = NOW()
-	//  WHERE current_video_id = $1
-	ClearVideoFromPlayerSessions(ctx context.Context, videoID pgtype.UUID) error
+	//  SELECT (COALESCE(MAX(c.updated_at), 'epoch'::timestamptz)::text || COUNT(*)::text)::text AS input_hash
+	//  FROM video_comments c
+	//  WHERE c.video_id = $1
+	CommentClassifyInputHash(ctx context.Context, videoID pgtype.UUID) (string, error)
+	//CommitShowNoteDocumentUpdateProjection
+	//
+	//  UPDATE show_note_documents
+	//  SET markdown = $1, revision = $2, updated_at = NOW()
+	//  WHERE show_note_id = $3
+	CommitShowNoteDocumentUpdateProjection(ctx context.Context, arg *CommitShowNoteDocumentUpdateProjectionParams) error
 	// CompletePlaylistJob marks a playlist parent job done after fan-out and records
 	// how many child jobs were enqueued (batch_total) and a human label (batch_label).
 	//
@@ -199,6 +437,29 @@ type Querier interface {
 	//      last_error = NULL
 	//  WHERE id = $3
 	CompletePlaylistJob(ctx context.Context, arg *CompletePlaylistJobParams) error
+	//ContinueAgentRun
+	//
+	//  INSERT INTO agent_runs(conversation_id,user_id,messages,settings,model_digest,runtime,artifacts)
+	//  SELECT r.conversation_id,r.user_id,$1::jsonb,r.settings,r.model_digest,r.runtime,r.artifacts
+	//  FROM agent_runs r WHERE r.id=$2 AND r.user_id=$3
+	//  AND r.status IN ('limited','interrupted','cancelled')
+	//  AND NOT EXISTS(SELECT 1 FROM agent_runs newer WHERE newer.conversation_id=r.conversation_id AND newer.created_at>r.created_at)
+	//  RETURNING id, conversation_id, user_id, status, runtime, provider_session_id, provider_run_id, pending_request, artifacts, cancellation_acknowledged, messages, settings, model_digest, calls, cancel_requested, lease_owner, lease_until, last_error, created_at, updated_at
+	ContinueAgentRun(ctx context.Context, arg *ContinueAgentRunParams) (*AgentRun, error)
+	// CooldownMLKind parks every claimable row of a kind so ClaimMLJob will not
+	// pick them until ml_runtime_health.retry_at (and this retry_at) expire.
+	// queued/retry_wait become waiting_model; attempts are not touched.
+	//
+	//  UPDATE ml_jobs
+	//  SET retry_at = greatest(retry_at, now() + interval '15 minutes'),
+	//      status = CASE WHEN status IN ('queued', 'retry_wait') THEN 'waiting_model' ELSE status END
+	//  WHERE kind = $1
+	//    AND status IN ('queued', 'retry_wait', 'waiting_model')
+	CooldownMLKind(ctx context.Context, kind string) error
+	//CorrectFace
+	//
+	//  UPDATE face_observations SET person_id=$1,dismissed=$2,assignment='manual' WHERE id=$3
+	CorrectFace(ctx context.Context, arg *CorrectFaceParams) error
 	//CountClipExports
 	//
 	//  SELECT COUNT(*) FROM clip_exports
@@ -207,6 +468,46 @@ type Querier interface {
 	//
 	//  SELECT COUNT(*)::bigint FROM users WHERE deleted_at IS NULL AND enabled = TRUE AND role = 'admin'
 	CountEnabledAdmins(ctx context.Context) (int64, error)
+	//CountMLJobs
+	//
+	//  SELECT kind, status, count(*)::bigint AS n
+	//  FROM ml_jobs
+	//  GROUP BY kind, status
+	//  ORDER BY kind, status
+	CountMLJobs(ctx context.Context) ([]*CountMLJobsRow, error)
+	//CountPendingWorkspaceMigrations
+	//
+	//  SELECT COUNT(*) FROM show_notes sn
+	//  LEFT JOIN show_note_documents d ON d.show_note_id = sn.id
+	//  WHERE sn.workspace_migrated_at IS NULL OR d.show_note_id IS NULL
+	CountPendingWorkspaceMigrations(ctx context.Context) (int64, error)
+	//CountShowNoteReferencesAtRevision
+	//
+	//  SELECT COUNT(*) FROM show_note_references
+	//  WHERE show_note_id = $1 AND parsed_revision = $2
+	CountShowNoteReferencesAtRevision(ctx context.Context, arg *CountShowNoteReferencesAtRevisionParams) (int64, error)
+	//CountStitchExports
+	//
+	//  SELECT COUNT(*) FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+	CountStitchExports(ctx context.Context) (int64, error)
+	//CountTopicChannels
+	//
+	//  SELECT count(DISTINCT v.channel_row_id)::bigint
+	//  FROM context_window_topics cwt
+	//  JOIN context_windows cw ON cw.id = cwt.window_id
+	//  JOIN videos v ON v.id = cw.video_id
+	//  WHERE cwt.topic_slug = $1
+	//    AND NOT cw.stale
+	//    AND cw.kind = 'window'
+	//    AND v.channel_row_id IS NOT NULL
+	CountTopicChannels(ctx context.Context, slug string) (int64, error)
+	//CountTopicWindows
+	//
+	//  SELECT count(*)::bigint
+	//  FROM context_window_topics cwt
+	//  JOIN context_windows cw ON cw.id = cwt.window_id
+	//  WHERE cwt.topic_slug = $1 AND NOT cw.stale AND cw.kind = 'window'
+	CountTopicWindows(ctx context.Context, slug string) (int64, error)
 	// CountUserCookies counts the number of cookies for a user
 	//
 	//  SELECT COUNT(*) as count
@@ -219,10 +520,8 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	// CountVideoComments returns total comments ingested for a video.
 	//
-	//  SELECT COUNT(*)
-	//  FROM video_comments
-	//  WHERE video_id = $1
-	CountVideoComments(ctx context.Context, videoID pgtype.UUID) (int64, error)
+	//  SELECT COALESCE((SELECT comment_count FROM videos WHERE id = $1), 0)::bigint
+	CountVideoComments(ctx context.Context, id pgtype.UUID) (int64, error)
 	// CountVideosWithAssetErrors returns the number of videos with asset generation errors.
 	//
 	//  SELECT COUNT(*)
@@ -241,6 +540,31 @@ type Querier interface {
 	//
 	//  SELECT COUNT(*) FROM ytdlp_logs WHERE job_id = $1
 	CountYtdlpLogsForJob(ctx context.Context, jobID pgtype.UUID) (int64, error)
+	//CreateAgentConversation
+	//
+	//  INSERT INTO agent_conversations(user_id,title) VALUES($1,$2) RETURNING id, user_id, title, created_at, updated_at
+	CreateAgentConversation(ctx context.Context, arg *CreateAgentConversationParams) (*AgentConversation, error)
+	//CreateAgentRun
+	//
+	//  INSERT INTO agent_runs(conversation_id,user_id,messages,settings) SELECT c.id,c.user_id,$1::jsonb,$2::jsonb FROM agent_conversations c WHERE c.id=$3 AND c.user_id=$4 RETURNING id, conversation_id, user_id, status, runtime, provider_session_id, provider_run_id, pending_request, artifacts, cancellation_acknowledged, messages, settings, model_digest, calls, cancel_requested, lease_owner, lease_until, last_error, created_at, updated_at
+	CreateAgentRun(ctx context.Context, arg *CreateAgentRunParams) (*AgentRun, error)
+	//CreateBlock
+	//
+	//  INSERT INTO show_note_blocks (
+	//      show_note_id, parent_id, block_type, title, notes, video_id, clip_id, position, duration_override
+	//  ) VALUES (
+	//      $1, $2, $3, $4, $5,
+	//      $6, $7, $8, $9
+	//  ) RETURNING id, show_note_id, parent_id, block_type, title, notes, video_id, clip_id, position, duration_override, created_at
+	CreateBlock(ctx context.Context, arg *CreateBlockParams) (*ShowNoteBlock, error)
+	//CreateCatalogCrawl
+	//
+	//  INSERT INTO catalog_crawls (channel_id, requested_by, feed_url, feed_kind, platform, refresh)
+	//  VALUES ($1, $2, $3, $4, $5, $6)
+	//  ON CONFLICT (channel_id, feed_kind) WHERE status IN ('queued', 'running', 'paused', 'retry_wait')
+	//  DO UPDATE SET refresh = catalog_crawls.refresh OR EXCLUDED.refresh, updated_at = NOW()
+	//  RETURNING id, created_at, updated_at, channel_id, requested_by, feed_url, feed_kind, platform, next_page_index, page_size, overlap_size, status, attempts, retry_at, entries_seen, entries_added, entries_updated, last_error, refresh, locked_at, locked_by, finished_at
+	CreateCatalogCrawl(ctx context.Context, arg *CreateCatalogCrawlParams) (*CatalogCrawl, error)
 	//CreateClip
 	//
 	//  INSERT INTO clips (
@@ -263,7 +587,7 @@ type Querier interface {
 	//      $7,
 	//      $8,
 	//      $9
-	//  ) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+	//  ) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 	CreateClip(ctx context.Context, arg *CreateClipParams) (*Clip, error)
 	//CreateClipExport
 	//
@@ -271,12 +595,79 @@ type Querier interface {
 	//  VALUES ($1, $2, $3, $4, $5, $6, '', 'queued', NOW(), NOW())
 	//  RETURNING id
 	CreateClipExport(ctx context.Context, arg *CreateClipExportParams) (pgtype.UUID, error)
+	//CreateCompilationExecution
+	//
+	//  INSERT INTO compilation_executions(plan_id,revision,created_by,title)
+	//  SELECT p.id,p.revision,p.created_by,p.title FROM compilation_plans p WHERE p.id=$1
+	//  ON CONFLICT(plan_id,revision) DO UPDATE SET plan_id=EXCLUDED.plan_id RETURNING id, plan_id, revision, created_by, title, status, stitch_project_id, stitch_job_id, last_error, next_check, created_at, updated_at
+	CreateCompilationExecution(ctx context.Context, planID pgtype.UUID) (*CompilationExecution, error)
+	//CreateCompilationPlan
+	//
+	//  INSERT INTO compilation_plans (created_by, creator_id, source_query, title)
+	//  VALUES ($1, $2, $3, $4)
+	//  RETURNING id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at
+	CreateCompilationPlan(ctx context.Context, arg *CreateCompilationPlanParams) (*CompilationPlan, error)
+	// Deterministic ID per plan revision makes client retries safe.
+	//
+	//  INSERT INTO stitch_projects (id, created_by, title)
+	//  VALUES ($1, $2, $3)
+	//  ON CONFLICT (id) DO NOTHING
+	CreateCompilationStitchProject(ctx context.Context, arg *CreateCompilationStitchProjectParams) (int64, error)
+	//CreateContextWindow
+	//
+	//  INSERT INTO context_windows (
+	//      video_id, start_ts, end_ts, title, summary, topics, entities, search,
+	//      origin, source_query, transcript_cue_evidence, transcript_version,
+	//      boundary_quality, created_by
+	//  )
+	//  SELECT
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7,
+	//      context_window_search_vector($4, $5, $6, $7),
+	//      $8, $9, $10,
+	//      v.transcript_version, $11, $12
+	//  FROM videos v WHERE v.id = $1
+	//  RETURNING id, video_id, start_ts, end_ts, title, summary, topics, entities, search, origin, source_query, transcript_cue_evidence, transcript_version, boundary_quality, created_by, created_at, updated_at, set_id, ordinal, cue_start, cue_end, generated_start_ts, generated_end_ts, confidence, override_title, override_summary, override_bounds, stale, kind, parent_id, hook, topic_resolved_at
+	CreateContextWindow(ctx context.Context, arg *CreateContextWindowParams) (*ContextWindow, error)
+	// CreateContextWindowSet inserts a generation set. The unique key is
+	// (video_id, transcript_hash, model_digest, prompt_version); a repeat
+	// returns the existing row.
+	//
+	//  INSERT INTO context_window_sets (
+	//      video_id,
+	//      transcript_hash,
+	//      model_digest,
+	//      prompt_version,
+	//      status,
+	//      metrics
+	//  )
+	//  VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      $4,
+	//      $5,
+	//      COALESCE($6::jsonb, '{}'::jsonb)
+	//  )
+	//  ON CONFLICT (video_id, transcript_hash, model_digest, prompt_version)
+	//  DO UPDATE SET
+	//      status = CASE WHEN context_window_sets.status = 'succeeded' THEN context_window_sets.status ELSE EXCLUDED.status END,
+	//      metrics = CASE WHEN context_window_sets.status = 'succeeded' THEN context_window_sets.metrics ELSE EXCLUDED.metrics END,
+	//      updated_at = NOW()
+	//  RETURNING id, video_id, transcript_hash, model_digest, prompt_version, status, metrics, created_at, updated_at
+	CreateContextWindowSet(ctx context.Context, arg *CreateContextWindowSetParams) (*ContextWindowSet, error)
 	// CreateCreator inserts a named person that one or more channels can belong to.
 	//
 	//  INSERT INTO creators (name, notes, search)
 	//  VALUES ($1, COALESCE($2, ''), setweight(to_tsvector('simple', $1), 'A'))
 	//  RETURNING id, created_at, updated_at, name, notes, search
 	CreateCreator(ctx context.Context, arg *CreateCreatorParams) (*Creator, error)
+	// CreateCreatorBundle inserts a named grouping of creators (e.g. Gas Digital).
+	//
+	//  INSERT INTO creator_bundles (name, notes, search)
+	//  VALUES ($1, COALESCE($2, ''), setweight(to_tsvector('simple', $1), 'A'))
+	//  RETURNING id, created_at, updated_at, name, notes, search
+	CreateCreatorBundle(ctx context.Context, arg *CreateCreatorBundleParams) (*CreatorBundle, error)
 	//CreateExtensionToken
 	//
 	//  INSERT INTO extension_tokens (user_id, token, expires_at)
@@ -309,12 +700,112 @@ type Querier interface {
 	//      COALESCE($10::text, '')
 	//  ) RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 	CreateMarker(ctx context.Context, arg *CreateMarkerParams) (*Marker, error)
-	//CreatePlayerSession
+	//CreateModelOperation
 	//
-	//  INSERT INTO player_sessions (producer_id, session_code, expires_at)
+	//  INSERT INTO model_operations(user_id,runtime,model,action,options) VALUES($1,$2,$3,$4,$5) RETURNING id, user_id, runtime, model, action, status, progress, options, created_at, updated_at
+	CreateModelOperation(ctx context.Context, arg *CreateModelOperationParams) (*ModelOperation, error)
+	//CreatePerson
+	//
+	//  INSERT INTO people(name,representative_id) VALUES($1,$2) RETURNING id, name, creator_id, representative_id, hidden, revision, merged_into, created_at
+	CreatePerson(ctx context.Context, arg *CreatePersonParams) (*Person, error)
+	//CreateShowNote
+	//
+	//  INSERT INTO show_notes (owner_id, title)
+	//  VALUES ($1, $2)
+	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+	CreateShowNote(ctx context.Context, arg *CreateShowNoteParams) (*ShowNote, error)
+	//CreateShowNoteAgentLease
+	//
+	//  INSERT INTO show_note_agent_leases (
+	//      show_note_id, api_token_id, user_id, agent_name, expires_at, last_cursor
+	//  ) VALUES (
+	//      $1, $2, $3,
+	//      $4, $5, $6
+	//  ) RETURNING id, show_note_id, api_token_id, user_id, agent_name, expires_at, last_cursor, created_at, updated_at
+	CreateShowNoteAgentLease(ctx context.Context, arg *CreateShowNoteAgentLeaseParams) (*ShowNoteAgentLease, error)
+	//CreateShowNoteClip
+	//
+	//  INSERT INTO clips (
+	//      video_id, start_ts, end_ts, duration, created_by, title, description, source, source_ref
+	//  ) VALUES (
+	//      $1, $2, $3,
+	//      $3 - $2, $4,
+	//      $5, $6, 'show-note', $7
+	//  )
+	//  ON CONFLICT (source, source_ref)
+	//  WHERE source <> 'user' AND source_ref <> ''
+	//  DO UPDATE SET source_ref = EXCLUDED.source_ref
+	//  RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
+	CreateShowNoteClip(ctx context.Context, arg *CreateShowNoteClipParams) (*Clip, error)
+	//CreateShowNoteDocument
+	//
+	//  INSERT INTO show_note_documents (show_note_id, markdown, revision, snapshot, snapshot_revision)
+	//  VALUES ($1, $2, $3, $4, $5)
+	//  ON CONFLICT (show_note_id) DO NOTHING
+	//  RETURNING show_note_id, markdown, revision, snapshot, snapshot_revision, updated_at
+	CreateShowNoteDocument(ctx context.Context, arg *CreateShowNoteDocumentParams) (*ShowNoteDocument, error)
+	//CreateShowNoteMarker
+	//
+	//  INSERT INTO markers (
+	//      video_id, timestamp, title, description, color, marker_type, duration,
+	//      created_by, source, source_ref
+	//  ) VALUES (
+	//      $1, $2, $3, $4,
+	//      '#a67c52', 'point', NULL, $5, 'show-note', $6
+	//  )
+	//  ON CONFLICT (video_id, source, (round(timestamp::numeric, 0)), source_ref)
+	//  WHERE source <> 'user'
+	//  DO UPDATE SET source_ref = EXCLUDED.source_ref
+	//  RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
+	CreateShowNoteMarker(ctx context.Context, arg *CreateShowNoteMarkerParams) (*Marker, error)
+	//CreateShowNoteReviewReply
+	//
+	//  INSERT INTO show_note_review_replies (
+	//      thread_id, actor_kind, actor_user_id, actor_token_id, actor_name, body
+	//  ) VALUES (
+	//      $1, $2, $3,
+	//      $4, $5, $6
+	//  ) RETURNING id, thread_id, actor_kind, actor_user_id, actor_token_id, actor_name, body, created_at
+	CreateShowNoteReviewReply(ctx context.Context, arg *CreateShowNoteReviewReplyParams) (*ShowNoteReviewReply, error)
+	//CreateShowNoteReviewThread
+	//
+	//  INSERT INTO show_note_review_threads (
+	//      show_note_id, kind, actor_kind, actor_user_id, actor_token_id, actor_name,
+	//      body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end,
+	//      start_line, start_column, end_line, end_column
+	//  ) VALUES (
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7, $8,
+	//      $9, $10, $11, $12, $13,
+	//      $14, $15, $16, $17,
+	//      $18
+	//  ) RETURNING id, show_note_id, kind, status, actor_kind, actor_user_id, actor_token_id, actor_name, body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end, start_line, start_column, end_line, end_column, detached, created_at, updated_at, closed_at, closed_by_user_id
+	CreateShowNoteReviewThread(ctx context.Context, arg *CreateShowNoteReviewThreadParams) (*ShowNoteReviewThread, error)
+	//CreateShowNoteRoomEvent
+	//
+	//  INSERT INTO show_note_room_events (
+	//      show_note_id, event_type, actor_kind, actor_user_id, actor_token_id, actor_name, payload
+	//  ) VALUES (
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7
+	//  ) RETURNING cursor, show_note_id, event_type, actor_kind, actor_user_id, actor_token_id, actor_name, payload, created_at
+	CreateShowNoteRoomEvent(ctx context.Context, arg *CreateShowNoteRoomEventParams) (*ShowNoteRoomEvent, error)
+	//CreateShowNoteRoomMessage
+	//
+	//  INSERT INTO show_note_room_messages (
+	//      show_note_id, event_cursor, actor_kind, actor_user_id, actor_token_id,
+	//      actor_name, body, reply_to
+	//  ) VALUES (
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7, $8
+	//  ) RETURNING id, show_note_id, event_cursor, actor_kind, actor_user_id, actor_token_id, actor_name, body, reply_to, created_at
+	CreateShowNoteRoomMessage(ctx context.Context, arg *CreateShowNoteRoomMessageParams) (*ShowNoteRoomMessage, error)
+	//CreateStitchFolder
+	//
+	//  INSERT INTO stitch_folders (created_by, parent_id, name)
 	//  VALUES ($1, $2, $3)
-	//  RETURNING id, session_code, producer_id, current_video_id, state, created_at, expires_at, last_activity
-	CreatePlayerSession(ctx context.Context, arg *CreatePlayerSessionParams) (*PlayerSession, error)
+	//  RETURNING id, created_by, parent_id, name, created_at, updated_at
+	CreateStitchFolder(ctx context.Context, arg *CreateStitchFolderParams) (*StitchFolder, error)
 	//CreateStitchJob
 	//
 	//  INSERT INTO stitch_jobs (created_by, title, format, quality, segments, global_filters, project_id)
@@ -322,12 +813,16 @@ type Querier interface {
 	//          $5, $6, $7)
 	//  RETURNING id
 	CreateStitchJob(ctx context.Context, arg *CreateStitchJobParams) (pgtype.UUID, error)
-	//CreateStitchProject
+	// New projects are always canonical documents (editor_enabled is set, never a product switch).
 	//
-	//  INSERT INTO stitch_projects (created_by, title)
-	//  VALUES ($1, $2)
+	//  INSERT INTO stitch_projects (created_by, title, document, document_version, editor_enabled, revision)
+	//  VALUES ($1, $2, $3, 1, true, 0)
 	//  RETURNING id
 	CreateStitchProject(ctx context.Context, arg *CreateStitchProjectParams) (pgtype.UUID, error)
+	//CreateVisualReference
+	//
+	//  INSERT INTO visual_references(owner_id,model_id,embedding) VALUES($1,$2,$3::text::vector) RETURNING id,expires_at
+	CreateVisualReference(ctx context.Context, arg *CreateVisualReferenceParams) (*CreateVisualReferenceRow, error)
 	// CreateWatchedChannel registers a channel/playlist URL for periodic scanning.
 	//
 	//  INSERT INTO watched_channels (
@@ -354,6 +849,14 @@ type Querier interface {
 	//
 	//  DELETE FROM clip_exports
 	DeleteAllClipExports(ctx context.Context) error
+	//DeleteAllStitchExports
+	//
+	//  DELETE FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+	DeleteAllStitchExports(ctx context.Context) error
+	// Children cascade via the self-FK.
+	//
+	//  DELETE FROM show_note_blocks WHERE id = $1
+	DeleteBlock(ctx context.Context, id pgtype.UUID) error
 	//DeleteClip
 	//
 	//  DELETE FROM clips
@@ -372,6 +875,10 @@ type Querier interface {
 	//  DELETE FROM clips
 	//  WHERE video_id = $1
 	DeleteClipsByVideo(ctx context.Context, videoID pgtype.UUID) error
+	//DeleteContextWindow
+	//
+	//  DELETE FROM context_windows WHERE id = $1
+	DeleteContextWindow(ctx context.Context, id pgtype.UUID) error
 	//DeleteMarker
 	//
 	//  DELETE FROM markers
@@ -382,16 +889,65 @@ type Querier interface {
 	//  DELETE FROM markers
 	//  WHERE video_id = $1
 	DeleteMarkersByVideo(ctx context.Context, videoID pgtype.UUID) error
+	//DeleteOwnedWatchedChannel
+	//
+	//  DELETE FROM watched_channels WHERE id=$1 AND created_by=$2
+	DeleteOwnedWatchedChannel(ctx context.Context, arg *DeleteOwnedWatchedChannelParams) (int64, error)
 	//DeletePlayerScenePreset
 	//
 	//  DELETE FROM player_scene_presets
 	//  WHERE id = $1 AND producer_id = $2
 	DeletePlayerScenePreset(ctx context.Context, arg *DeletePlayerScenePresetParams) error
-	//DeletePlayerSession
+	//DeleteProducerConnection
 	//
-	//  DELETE FROM player_sessions
-	//  WHERE id = $1
-	DeletePlayerSession(ctx context.Context, id pgtype.UUID) error
+	//  DELETE FROM producer_connections
+	//  WHERE show_note_id = $1 AND user_id = $2
+	DeleteProducerConnection(ctx context.Context, arg *DeleteProducerConnectionParams) error
+	//DeleteShowNote
+	//
+	//  DELETE FROM show_notes
+	//  WHERE id = $1 AND owner_id = $2
+	DeleteShowNote(ctx context.Context, arg *DeleteShowNoteParams) error
+	//DeleteShowNoteAgentLease
+	//
+	//  DELETE FROM show_note_agent_leases
+	//  WHERE id = $1 AND api_token_id = $2
+	DeleteShowNoteAgentLease(ctx context.Context, arg *DeleteShowNoteAgentLeaseParams) error
+	//DeleteShowNoteDocumentUpdatesThrough
+	//
+	//  DELETE FROM show_note_document_updates
+	//  WHERE show_note_id = $1 AND revision <= $2
+	DeleteShowNoteDocumentUpdatesThrough(ctx context.Context, arg *DeleteShowNoteDocumentUpdatesThroughParams) error
+	//DeleteShowNoteReferenceProjection
+	//
+	//  DELETE FROM show_note_references
+	//  WHERE show_note_id = $1
+	DeleteShowNoteReferenceProjection(ctx context.Context, showNoteID pgtype.UUID) error
+	//DeleteStaleConnections
+	//
+	//  DELETE FROM producer_connections
+	//  WHERE last_ping < NOW() - INTERVAL '2 minutes'
+	DeleteStaleConnections(ctx context.Context) error
+	//DeleteStaleShowNoteReferences
+	//
+	//  DELETE FROM show_note_references
+	//  WHERE show_note_id = $1 AND parsed_revision <> $2
+	DeleteStaleShowNoteReferences(ctx context.Context, arg *DeleteStaleShowNoteReferencesParams) error
+	//DeleteStitchExportsByStatus
+	//
+	//  DELETE FROM stitch_jobs
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	//    AND status = $1
+	DeleteStitchExportsByStatus(ctx context.Context, status ExportStatus) error
+	//DeleteStitchFolder
+	//
+	//  DELETE FROM stitch_folders
+	//  WHERE id = $1 AND created_by = $2
+	DeleteStitchFolder(ctx context.Context, arg *DeleteStitchFolderParams) error
+	//DeleteStitchJob
+	//
+	//  DELETE FROM stitch_jobs WHERE id = $1
+	DeleteStitchJob(ctx context.Context, id pgtype.UUID) error
 	//DeleteStitchProject
 	//
 	//  DELETE FROM stitch_projects
@@ -422,6 +978,15 @@ type Querier interface {
 	//
 	//  DELETE FROM watched_channels WHERE id = $1
 	DeleteWatchedChannel(ctx context.Context, id pgtype.UUID) error
+	//DeleteWikiLinksForPage
+	//
+	//  DELETE FROM wiki_links
+	//  WHERE from_tree = $1 AND from_slug = $2
+	DeleteWikiLinksForPage(ctx context.Context, arg *DeleteWikiLinksForPageParams) error
+	//DeleteWindowTopics
+	//
+	//  DELETE FROM context_window_topics WHERE window_id = $1
+	DeleteWindowTopics(ctx context.Context, windowID pgtype.UUID) error
 	// DequeueDownloadJob claims one queued download job. Playlist/channel-scan
 	// jobs are claimed before video downloads: they are quick flat enumerations
 	// whose expansion feeds the queue, and letting them ride FIFO behind a large
@@ -445,10 +1010,13 @@ type Querier interface {
 	//      started_at = COALESCE(started_at, NOW()),
 	//      updated_at = NOW()
 	//  WHERE id IN (SELECT id FROM cte)
-	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	DequeueDownloadJob(ctx context.Context) (*DownloadJob, error)
-	// DequeueIngestJob claims one queued ingest job and returns needed info.
-	// Returns video_id for asset regeneration jobs (NULL for normal ingest).
+	// DequeueIngestJob claims one queued ingest or derived-asset job.
+	// asset_jobs=false claims media ingest: spool/info.json and no asset_scope.
+	// asset_jobs=true claims generation: no spool, or asset_scope set (including
+	// post-ingest 'all' jobs that share the original download row).
+	// Returns video_id for asset regeneration jobs (NULL until ingest links it).
 	// Skips jobs that have already been retried too many times.
 	//
 	//  WITH cte AS (
@@ -457,14 +1025,26 @@ type Querier interface {
 	//      JOIN download_jobs dj ON dj.id = ij.download_job_id
 	//      WHERE ij.status = 'queued'
 	//        AND ij.attempts < 5
-	//      ORDER BY
-	//        -- Real ingests (fresh downloads with a spool/info.json) take priority over
-	//        -- background asset-regeneration jobs, so a large regen batch never starves
-	//        -- user-initiated downloads. 0 = ingest, 1 = regeneration.
-	//        (CASE WHEN (dj.info_json_path IS NOT NULL AND btrim(dj.info_json_path) <> '')
+	//        AND (
+	//          CASE WHEN $1::boolean THEN
+	//            (
+	//              (
+	//                (dj.info_json_path IS NULL OR btrim(dj.info_json_path) = '')
+	//                AND (dj.spool_dir IS NULL OR btrim(dj.spool_dir) = '')
+	//              )
+	//              OR (ij.asset_scope IS NOT NULL AND btrim(ij.asset_scope) <> '')
+	//            )
+	//          ELSE
+	//            (
+	//              (
+	//                (dj.info_json_path IS NOT NULL AND btrim(dj.info_json_path) <> '')
 	//                OR (dj.spool_dir IS NOT NULL AND btrim(dj.spool_dir) <> '')
-	//              THEN 0 ELSE 1 END),
-	//        ij.created_at
+	//              )
+	//              AND (ij.asset_scope IS NULL OR btrim(ij.asset_scope) = '')
+	//            )
+	//          END
+	//        )
+	//      ORDER BY ij.created_at
 	//      LIMIT 1
 	//      FOR UPDATE OF ij SKIP LOCKED
 	//  )
@@ -488,7 +1068,15 @@ type Querier interface {
 	//      ij.asset_scope AS asset_scope,
 	//      dj.extra_args AS extra_args,
 	//      dj.kind AS kind
-	DequeueIngestJob(ctx context.Context) (*DequeueIngestJobRow, error)
+	DequeueIngestJob(ctx context.Context, assetJobs bool) (*DequeueIngestJobRow, error)
+	//DismissOsintFlag
+	//
+	//  UPDATE osint_flags
+	//  SET dismissed_at = NOW(),
+	//      dismissed_by = $1
+	//  WHERE id = $2
+	//    AND dismissed_at IS NULL
+	DismissOsintFlag(ctx context.Context, arg *DismissOsintFlagParams) error
 	// EmailRegistered checks if an email is already registered
 	//
 	//  SELECT EXISTS (
@@ -516,7 +1104,7 @@ type Querier interface {
 	//          v.id
 	//      FROM videos v
 	//      WHERE v.id = $1
-	//      RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//      RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  ),
 	//  new_ingest_job AS (
 	//      INSERT INTO ingest_jobs (
@@ -537,6 +1125,12 @@ type Querier interface {
 	//      new_download_job.video_id AS video_id
 	//  FROM new_ingest_job, new_download_job
 	EnqueueAssetRegenerationJob(ctx context.Context, arg *EnqueueAssetRegenerationJobParams) (*EnqueueAssetRegenerationJobRow, error)
+	//EnqueueCatalogMetadataJobs
+	//
+	//  INSERT INTO download_jobs (url, archived_by, status, kind)
+	//  SELECT u, $1, 'queued', 'metadata'
+	//  FROM unnest($2::text[]) AS u
+	EnqueueCatalogMetadataJobs(ctx context.Context, arg *EnqueueCatalogMetadataJobsParams) (int64, error)
 	// EnqueueChildDownloadJobs bulk-inserts one normal video download job per URL,
 	// all linked to a parent playlist job. Each insert fires the download_jobs
 	// NOTIFY trigger, so existing downloader workers pick them up unchanged.
@@ -551,6 +1145,45 @@ type Querier interface {
 	//  SELECT u, $1, 'queued', 'metadata', $2
 	//  FROM unnest($3::text[]) AS u
 	EnqueueChildMetadataJobs(ctx context.Context, arg *EnqueueChildMetadataJobsParams) (int64, error)
+	// EnqueueDemandContextJobs queues context for videos people use: clips, markers,
+	// playback, and files archived in the last week. Catalog-only rows are skipped.
+	//
+	//  INSERT INTO ml_jobs(video_id,kind,priority,transcript_hash,model_digest,prompt_version)
+	//  SELECT t.video_id,
+	//         'context_windows',
+	//         CASE
+	//             WHEN EXISTS (SELECT 1 FROM clips c WHERE c.video_id = t.video_id) THEN 120
+	//             WHEN EXISTS (SELECT 1 FROM playback_positions p WHERE p.video_id = t.video_id) THEN 130
+	//             ELSE 160
+	//         END,
+	//         transcript_fingerprint(t.video_id),
+	//         $1,
+	//         $2
+	//  FROM video_transcripts t
+	//  JOIN videos v ON v.id = t.video_id
+	//  WHERE t.text <> ''
+	//    AND (
+	//        EXISTS (SELECT 1 FROM clips c WHERE c.video_id = t.video_id)
+	//        OR EXISTS (SELECT 1 FROM playback_positions p WHERE p.video_id = t.video_id)
+	//        OR (v.media = 'file' AND v.created_at > now() - interval '7 days')
+	//    )
+	//    AND NOT EXISTS (
+	//        SELECT 1 FROM context_window_sets s
+	//        WHERE s.video_id = t.video_id
+	//          AND s.transcript_hash = transcript_fingerprint(t.video_id)
+	//          AND s.prompt_version = $2
+	//          AND s.status = 'succeeded'
+	//    )
+	//  ON CONFLICT (video_id, kind, transcript_hash, model_digest, prompt_version) DO UPDATE
+	//  SET status = 'queued',
+	//      retry_at = now(),
+	//      last_error = '',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      lease_token = NULL,
+	//      updated_at = now()
+	//  WHERE ml_jobs.status IN ('cancelled', 'failed', 'paused')
+	EnqueueDemandContextJobs(ctx context.Context, arg *EnqueueDemandContextJobsParams) error
 	// EnqueueDownloadJob inserts a new download job.
 	//
 	//  INSERT INTO download_jobs (
@@ -567,8 +1200,43 @@ type Querier interface {
 	//      $3,
 	//      $4
 	//  )
-	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	EnqueueDownloadJob(ctx context.Context, arg *EnqueueDownloadJobParams) (*DownloadJob, error)
+	// EnqueueDownloadJobOnce atomically reuses a queued, processing, or succeeded
+	// top-level video job for the same canonical URL. Explicit redownload and
+	// format-selection actions use EnqueueDownloadJob instead.
+	//
+	//  WITH existing AS (
+	//      SELECT dj.id
+	//      FROM download_jobs dj
+	//      WHERE dj.url = $1
+	//        AND dj.kind = 'video'
+	//        AND dj.parent_job_id IS NULL
+	//        AND dj.status IN ('queued', 'processing', 'succeeded')
+	//      ORDER BY
+	//        CASE dj.status WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+	//        dj.created_at DESC
+	//      LIMIT 1
+	//  ),
+	//  inserted AS (
+	//      INSERT INTO download_jobs (url, archived_by, status, refresh, extra_args, dedupe_key)
+	//      SELECT $1, $2, 'queued', $3, $4, $1
+	//      WHERE NOT EXISTS (SELECT 1 FROM existing)
+	//      ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('queued', 'processing')
+	//      DO UPDATE SET dedupe_key = EXCLUDED.dedupe_key
+	//      RETURNING id, (xmax <> 0) AS reused
+	//  )
+	//  SELECT id, reused FROM inserted
+	//  UNION ALL
+	//  SELECT id, TRUE AS reused FROM existing
+	//  LIMIT 1
+	EnqueueDownloadJobOnce(ctx context.Context, arg *EnqueueDownloadJobOnceParams) (*EnqueueDownloadJobOnceRow, error)
+	//EnqueueGenerationRetry
+	//
+	//  INSERT INTO ml_jobs(video_id,kind,status,priority,transcript_hash,model_digest,prompt_version,range_start,range_end,retry_instructions,repair_transcript)
+	//  VALUES($1,$2,'queued',10,$3,'',$4,$5,$6,$7,$8)
+	//  RETURNING id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript
+	EnqueueGenerationRetry(ctx context.Context, arg *EnqueueGenerationRetryParams) (*MlJob, error)
 	// EnqueueIngestJob inserts a new ingest job from a download job.
 	//
 	//  INSERT INTO ingest_jobs (
@@ -581,6 +1249,29 @@ type Querier interface {
 	//  )
 	//  RETURNING id, created_at, updated_at, download_job_id, status, attempts, last_error, started_at, finished_at, asset_scope
 	EnqueueIngestJob(ctx context.Context, downloadJobID pgtype.UUID) (*IngestJob, error)
+	// EnqueueMLJob inserts a queued ML job. UNIQUE (video_id, kind, transcript_hash,
+	// model_digest, prompt_version) makes a duplicate enqueue a no-op.
+	//
+	//  INSERT INTO ml_jobs (
+	//      video_id,
+	//      kind,
+	//      status,
+	//      priority,
+	//      transcript_hash,
+	//      model_digest,
+	//      prompt_version
+	//  )
+	//  VALUES (
+	//      $1,
+	//      $2,
+	//      'queued',
+	//      $3,
+	//      $4,
+	//      $5,
+	//      $6
+	//  )
+	//  ON CONFLICT (video_id, kind, transcript_hash, model_digest, prompt_version) DO NOTHING
+	EnqueueMLJob(ctx context.Context, arg *EnqueueMLJobParams) error
 	// EnqueueMetadataCatalogJob inserts a parent job that fans out metadata-only children.
 	//
 	//  INSERT INTO download_jobs (
@@ -595,7 +1286,7 @@ type Querier interface {
 	//      'queued',
 	//      'metadata-catalog'
 	//  )
-	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	EnqueueMetadataCatalogJob(ctx context.Context, arg *EnqueueMetadataCatalogJobParams) (*DownloadJob, error)
 	// EnqueuePlaylistJob inserts a parent "playlist" job. The downloader expands it
 	// into child video jobs (see EnqueueChildDownloadJobs) rather than downloading.
@@ -612,8 +1303,47 @@ type Querier interface {
 	//      'queued',
 	//      'playlist'
 	//  )
-	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	EnqueuePlaylistJob(ctx context.Context, arg *EnqueuePlaylistJobParams) (*DownloadJob, error)
+	// EnqueuePostIngestAssetsJob queues derived-asset generation on the same
+	// download job after ingest has published playable media. asset_scope='all'
+	// is what separates this claim from the parent ingest job.
+	//
+	//  INSERT INTO ingest_jobs (
+	//      download_job_id,
+	//      status,
+	//      asset_scope
+	//  )
+	//  VALUES (
+	//      $1,
+	//      'queued',
+	//      'all'
+	//  )
+	//  RETURNING id, created_at, updated_at, download_job_id, status, attempts, last_error, started_at, finished_at, asset_scope
+	EnqueuePostIngestAssetsJob(ctx context.Context, downloadJobID pgtype.UUID) (*IngestJob, error)
+	//EnqueueSubtitleBackfillJobs
+	//
+	//  INSERT INTO download_jobs (url, archived_by, status, kind)
+	//  SELECT v.src, v.archived_by, 'queued', 'metadata'
+	//  FROM videos v
+	//  WHERE NOT EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id)
+	//    AND v.subtitle_state <> 'unavailable'
+	//    AND NOT EXISTS (
+	//        SELECT 1 FROM download_jobs dj
+	//        WHERE (dj.video_id = v.id OR dj.url = v.src)
+	//          AND dj.status IN ('queued', 'processing')
+	//    )
+	//  ORDER BY v.subtitle_checked_at NULLS FIRST, v.created_at
+	//  LIMIT $1
+	EnqueueSubtitleBackfillJobs(ctx context.Context, pageLimit int32) (int64, error)
+	//EnqueueTranscription
+	//
+	//  INSERT INTO ml_jobs(video_id,kind,status,priority,transcript_hash,model_digest,prompt_version,range_start,range_end)
+	//  VALUES($1,'transcribe','queued',10,$2,'','asr-v1',$3,$4)
+	//  ON CONFLICT(video_id,kind,transcript_hash,model_digest,prompt_version)
+	//  DO UPDATE SET video_id=EXCLUDED.video_id
+	//  RETURNING id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript
+	EnqueueTranscription(ctx context.Context, arg *EnqueueTranscriptionParams) (*MlJob, error)
 	// EnqueueUploadIngestJob creates a download + ingest job pair for a local file upload.
 	// The download_job is pre-marked as succeeded (no yt-dlp download needed).
 	//
@@ -636,7 +1366,7 @@ type Querier interface {
 	//          $4,
 	//          NOW()
 	//      )
-	//      RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//      RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  ),
 	//  new_ingest_job AS (
 	//      INSERT INTO ingest_jobs (
@@ -658,8 +1388,34 @@ type Querier interface {
 	//
 	//  INSERT INTO download_jobs (url, archived_by, status, kind, watch_id)
 	//  VALUES ($1, $2, 'queued', 'playlist', $3)
-	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	EnqueueWatchScanJob(ctx context.Context, arg *EnqueueWatchScanJobParams) (*DownloadJob, error)
+	//EnsureFaceIndexSet
+	//
+	//  INSERT INTO face_index_sets(video_id,model_id,asset_fingerprint,interval_seconds,start_ts,end_ts) VALUES($1,$2,$3,$4,$5,$6)
+	//  ON CONFLICT(video_id,model_id,asset_fingerprint,interval_seconds,start_ts,end_ts) DO UPDATE SET updated_at=now() RETURNING id, video_id, model_id, asset_fingerprint, interval_seconds, start_ts, end_ts, status, active, next_sample, error, updated_at
+	EnsureFaceIndexSet(ctx context.Context, arg *EnsureFaceIndexSetParams) (*FaceIndexSet, error)
+	//EnsureVisualIndexSet
+	//
+	//  INSERT INTO visual_index_sets(video_id,model_id,asset_fingerprint,interval_seconds,start_ts,end_ts) VALUES($1,$2,$3,$4,$5,$6)
+	//  ON CONFLICT(video_id,model_id,asset_fingerprint,interval_seconds,start_ts,end_ts) DO UPDATE SET updated_at=now() RETURNING id, video_id, model_id, asset_fingerprint, interval_seconds, start_ts, end_ts, status, active, next_sample, error, updated_at
+	EnsureVisualIndexSet(ctx context.Context, arg *EnsureVisualIndexSetParams) (*VisualIndexSet, error)
+	//FaceIndexEnabled
+	//
+	//  SELECT EXISTS(SELECT 1 FROM face_index_selections s JOIN videos v ON s.video_id=v.id OR s.channel_id=v.channel_row_id WHERE s.enabled AND v.id=$1)::boolean
+	FaceIndexEnabled(ctx context.Context, videoID pgtype.UUID) (bool, error)
+	//FacePersonCandidates
+	//
+	//  SELECT p.id AS person_id,(f.embedding <=> $1::text::vector)::float8 AS distance FROM people p
+	//  JOIN face_observations f ON f.id=p.representative_id JOIN face_index_sets s ON s.id=f.set_id
+	//  WHERE s.model_id=$2 AND NOT f.dismissed AND f.eligible AND p.merged_into IS NULL
+	//  AND f.embedding <=> $1::text::vector <= 0.4 ORDER BY distance LIMIT 2
+	FacePersonCandidates(ctx context.Context, arg *FacePersonCandidatesParams) ([]*FacePersonCandidatesRow, error)
+	//FaceSupportCount
+	//
+	//  SELECT count(DISTINCT (s.video_id,floor(f.sample_ts/30)))::int FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id
+	//  WHERE s.model_id=$1 AND s.active AND f.eligible AND NOT f.dismissed AND f.embedding <=> $2::text::vector <= 0.4
+	FaceSupportCount(ctx context.Context, arg *FaceSupportCountParams) (int32, error)
 	// FailExcessiveRetryIngestJobs permanently fails jobs that have been retried too many times.
 	// This prevents zombie jobs from wasting workers indefinitely.
 	//
@@ -727,7 +1483,7 @@ type Querier interface {
 	//      LIMIT 1
 	//      FOR UPDATE SKIP LOCKED
 	//  )
-	//  RETURNING id, created_by, title, format, quality, segments, global_filters
+	//  RETURNING id, created_by, title, format, quality, segments, global_filters, document_snapshot, project_revision, render_options, render_kind, range_start_us, range_end_us, frame_time_us
 	FindAndLockPendingStitchJob(ctx context.Context, lockedBy *string) (*FindAndLockPendingStitchJobRow, error)
 	// Find existing queued/processing export that is NOT stuck (updated in last 5 minutes)
 	//
@@ -772,6 +1528,24 @@ type Querier interface {
 	//  ORDER BY clip_exports.created_at DESC
 	//  LIMIT 1
 	FindReusableClipExport(ctx context.Context, arg *FindReusableClipExportParams) (*FindReusableClipExportRow, error)
+	//FindVideoForShowNoteSource
+	//
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count FROM videos
+	//  WHERE src = $1
+	//    AND media <> 'metadata'
+	//    AND video_path IS NOT NULL
+	//    AND btrim(video_path) <> ''
+	//  ORDER BY created_at DESC
+	//  LIMIT 1
+	FindVideoForShowNoteSource(ctx context.Context, sourceUri string) (*Video, error)
+	//FinishAgentRun
+	//
+	//  UPDATE agent_runs SET status=$3,last_error=$4,cancellation_acknowledged=($3='cancelled'),lease_until=NULL,updated_at=now() WHERE id=$1 AND lease_owner=$2 AND status='running' AND lease_until>now()
+	FinishAgentRun(ctx context.Context, arg *FinishAgentRunParams) (int64, error)
+	//FinishAgentToolCall
+	//
+	//  UPDATE agent_tool_calls c SET status='completed',result=$1::jsonb FROM agent_runs r WHERE c.id=$2 AND r.id=c.run_id AND r.lease_owner=$3 AND r.status='running' AND r.lease_until>now()
+	FinishAgentToolCall(ctx context.Context, arg *FinishAgentToolCallParams) (int64, error)
 	// Mark export as failed with error message
 	//
 	//  UPDATE clip_exports
@@ -799,6 +1573,25 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $3
 	FinishClipExportReady(ctx context.Context, arg *FinishClipExportReadyParams) error
+	// FinishMLJob records a terminal or waiting_model status and releases the lock.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = $1,
+	//      failure_count = CASE WHEN $1::text IN ('failed','retry_wait') THEN failure_count+1 WHEN $1::text IN ('succeeded','superseded') THEN 0 ELSE failure_count END,
+	//      last_error = $2,
+	//      model_digest = COALESCE(NULLIF($3, ''), model_digest),
+	//      prompt_version = COALESCE(NULLIF($4, ''), prompt_version),
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      retry_at = now() + make_interval(secs => $5::int),
+	//      updated_at = NOW()
+	//  WHERE id = $6 AND lease_token = $7 AND status='processing'
+	FinishMLJob(ctx context.Context, arg *FinishMLJobParams) error
+	//FinishNoteMaterialization
+	//
+	//  UPDATE show_note_materializations SET status=$1,last_error=$2,retry_at=now()+interval '30 seconds',lease_token=NULL
+	//  WHERE thread_id=$3 AND lease_token=$4
+	FinishNoteMaterialization(ctx context.Context, arg *FinishNoteMaterializationParams) error
 	//FinishStitchJobError
 	//
 	//  UPDATE stitch_jobs
@@ -835,7 +1628,7 @@ type Querier interface {
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (*APIToken, error)
 	// GetActiveAssetJobsForVideo returns active (queued/processing) ingest jobs
 	// for a given video, including both normal post-ingest and regen jobs.
-	// asset_scope is NULL for "all assets" jobs, or one of thumbnail/preview/seek/waveform.
+	// asset_scope is NULL or 'all' for all derived assets, or one of thumbnail/preview/seek/waveform.
 	//
 	//  SELECT ij.id AS ingest_job_id,
 	//         ij.asset_scope,
@@ -845,13 +1638,30 @@ type Querier interface {
 	//  WHERE dj.video_id = $1
 	//    AND ij.status IN ('queued', 'processing')
 	GetActiveAssetJobsForVideo(ctx context.Context, videoID pgtype.UUID) ([]*GetActiveAssetJobsForVideoRow, error)
-	//GetActiveSessionByProducer
+	//GetActivePerson
 	//
-	//  SELECT id, session_code, producer_id, current_video_id, state, created_at, expires_at, last_activity FROM player_sessions
-	//  WHERE producer_id = $1 AND expires_at > NOW()
-	//  ORDER BY created_at DESC
-	//  LIMIT 1
-	GetActiveSessionByProducer(ctx context.Context, producerID pgtype.UUID) (*PlayerSession, error)
+	//  SELECT id, name, creator_id, representative_id, hidden, revision, merged_into, created_at FROM people WHERE id=$1 AND merged_into IS NULL FOR UPDATE
+	GetActivePerson(ctx context.Context, id pgtype.UUID) (*Person, error)
+	//GetAgentConversation
+	//
+	//  SELECT id, user_id, title, created_at, updated_at FROM agent_conversations WHERE id=$1 AND user_id=$2
+	GetAgentConversation(ctx context.Context, arg *GetAgentConversationParams) (*AgentConversation, error)
+	//GetAgentRun
+	//
+	//  SELECT id, conversation_id, user_id, status, runtime, provider_session_id, provider_run_id, pending_request, artifacts, cancellation_acknowledged, messages, settings, model_digest, calls, cancel_requested, lease_owner, lease_until, last_error, created_at, updated_at FROM agent_runs WHERE id=$1 AND user_id=$2
+	GetAgentRun(ctx context.Context, arg *GetAgentRunParams) (*AgentRun, error)
+	//GetBlock
+	//
+	//  SELECT id, show_note_id, parent_id, block_type, title, notes, video_id, clip_id, position, duration_override, created_at FROM show_note_blocks WHERE id = $1
+	GetBlock(ctx context.Context, id pgtype.UUID) (*ShowNoteBlock, error)
+	//GetCampaign
+	//
+	//  SELECT id, kind, simhash, normalized_text, first_seen, last_seen, comment_count, commenter_count, video_count, evidence, created_at, updated_at FROM campaigns WHERE id = $1
+	GetCampaign(ctx context.Context, id pgtype.UUID) (*Campaign, error)
+	//GetCatalogCrawl
+	//
+	//  SELECT id, created_at, updated_at, channel_id, requested_by, feed_url, feed_kind, platform, next_page_index, page_size, overlap_size, status, attempts, retry_at, entries_seen, entries_added, entries_updated, last_error, refresh, locked_at, locked_by, finished_at FROM catalog_crawls WHERE id = $1
+	GetCatalogCrawl(ctx context.Context, id pgtype.UUID) (*CatalogCrawl, error)
 	// GetChannel fetches one first-class channel row.
 	//
 	//  SELECT id, created_at, updated_at, platform, identity_key, channel_id, uploader, canonical_url, creator_id, search FROM channels WHERE id = $1
@@ -930,7 +1740,7 @@ type Querier interface {
 	GetChannelOverview(ctx context.Context, uploader string) (*GetChannelOverviewRow, error)
 	//GetClip
 	//
-	//  SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+	//  SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 	//  WHERE id = $1
 	GetClip(ctx context.Context, id pgtype.UUID) (*Clip, error)
 	//GetClipExportByID
@@ -978,14 +1788,54 @@ type Querier interface {
 	GetClipForExport(ctx context.Context, id pgtype.UUID) (*GetClipForExportRow, error)
 	// Bulk load clip data for the encoder (timestamps, crops).
 	//
-	//  SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack
+	//  SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
 	//  FROM clips c
 	//  WHERE c.id = ANY($1::uuid[])
 	GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*GetClipsForStitchRow, error)
+	//GetCommenter
+	//
+	//  SELECT id, created_at, updated_at, source, author_id, author_url, display_name, first_seen, last_seen, comment_count, channel_id, style_features, style_n, simhash FROM commenters WHERE id = $1
+	GetCommenter(ctx context.Context, id pgtype.UUID) (*Commenter, error)
+	//GetCommenterByIdentity
+	//
+	//  SELECT id, created_at, updated_at, source, author_id, author_url, display_name, first_seen, last_seen, comment_count, channel_id, style_features, style_n, simhash FROM commenters
+	//  WHERE source = $1
+	//    AND author_id = $2
+	GetCommenterByIdentity(ctx context.Context, arg *GetCommenterByIdentityParams) (*Commenter, error)
+	//GetCompilationPlan
+	//
+	//  SELECT id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at FROM compilation_plans WHERE id = $1
+	GetCompilationPlan(ctx context.Context, id pgtype.UUID) (*CompilationPlan, error)
+	//GetContextChunk
+	//
+	//  SELECT output FROM context_window_chunks WHERE set_id=$1 AND ordinal=$2
+	GetContextChunk(ctx context.Context, arg *GetContextChunkParams) ([]byte, error)
+	//GetContextWindow
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary, cw.topics, cw.entities, cw.search, cw.origin, cw.source_query, cw.transcript_cue_evidence, cw.transcript_version, cw.boundary_quality, cw.created_by, cw.created_at, cw.updated_at, cw.set_id, cw.ordinal, cw.cue_start, cw.cue_end, cw.generated_start_ts, cw.generated_end_ts, cw.confidence, cw.override_title, cw.override_summary, cw.override_bounds, cw.stale, cw.kind, cw.parent_id, cw.hook, cw.topic_resolved_at, (cw.transcript_version <> v.transcript_version) AS evidence_stale
+	//  FROM context_windows cw JOIN videos v ON v.id = cw.video_id
+	//  WHERE cw.id = $1
+	GetContextWindow(ctx context.Context, id pgtype.UUID) (*GetContextWindowRow, error)
+	//GetContextWindowSet
+	//
+	//  SELECT id, video_id, transcript_hash, model_digest, prompt_version, status, metrics, created_at, updated_at FROM context_window_sets WHERE id = $1
+	GetContextWindowSet(ctx context.Context, id pgtype.UUID) (*ContextWindowSet, error)
+	//GetContextWindowSetByKey
+	//
+	//  SELECT id, video_id, transcript_hash, model_digest, prompt_version, status, metrics, created_at, updated_at FROM context_window_sets
+	//  WHERE video_id = $1
+	//    AND transcript_hash = $2
+	//    AND model_digest = $3
+	//    AND prompt_version = $4
+	GetContextWindowSetByKey(ctx context.Context, arg *GetContextWindowSetByKeyParams) (*ContextWindowSet, error)
 	// GetCreator fetches one creator by id.
 	//
 	//  SELECT id, created_at, updated_at, name, notes, search FROM creators WHERE id = $1
 	GetCreator(ctx context.Context, id pgtype.UUID) (*Creator, error)
+	// GetCreatorBundle fetches one bundle by id.
+	//
+	//  SELECT id, created_at, updated_at, name, notes, search FROM creator_bundles WHERE id = $1
+	GetCreatorBundle(ctx context.Context, id pgtype.UUID) (*CreatorBundle, error)
 	// GetCreatorByNameCI finds a creator by case-insensitive name.
 	//
 	//  SELECT id, created_at, updated_at, name, notes, search FROM creators WHERE lower(name) = lower($1) LIMIT 1
@@ -1002,20 +1852,43 @@ type Querier interface {
 	// Admin Dashboard Metrics
 	// ============================================================================
 	// GetDashboardOverview returns high-level counts and totals for the admin dashboard.
+	// Comment totals use videos.comment_count (maintained on ingest). COUNT(*) on
+	// video_comments seq-scans a multi-GB heap whenever autovacuum has not marked
+	// pages all-visible, which made this page take several seconds.
 	//
 	//
 	//  SELECT
-	//      (SELECT COUNT(*)::bigint FROM videos) AS total_videos,
+	//      v.total_videos,
 	//      (SELECT COUNT(*)::bigint FROM clips) AS total_clips,
 	//      (SELECT COUNT(*)::bigint FROM markers) AS total_markers,
 	//      (SELECT COUNT(*)::bigint FROM users WHERE deleted_at IS NULL) AS total_users,
-	//      (SELECT COUNT(*)::bigint FROM video_comments) AS total_comments,
-	//      (SELECT COALESCE(SUM(file_size), 0)::bigint FROM videos WHERE file_size IS NOT NULL) AS total_storage_bytes,
-	//      (SELECT COALESCE(SUM(duration_seconds), 0)::bigint FROM videos WHERE duration_seconds IS NOT NULL) AS total_duration_seconds
+	//      v.total_comments,
+	//      v.total_storage_bytes,
+	//      v.total_duration_seconds
+	//  FROM (
+	//      SELECT
+	//          COUNT(*)::bigint AS total_videos,
+	//          COALESCE(SUM(comment_count), 0)::bigint AS total_comments,
+	//          COALESCE(SUM(file_size), 0)::bigint AS total_storage_bytes,
+	//          COALESCE(SUM(duration_seconds), 0)::bigint AS total_duration_seconds
+	//      FROM videos
+	//  ) v
 	GetDashboardOverview(ctx context.Context) (*GetDashboardOverviewRow, error)
+	//GetDelegatedMessage
+	//
+	//  SELECT user_id, message_id, request_hash, run_id, created_at FROM agent_delegated_messages WHERE user_id=$1 AND message_id=$2
+	GetDelegatedMessage(ctx context.Context, arg *GetDelegatedMessageParams) (*AgentDelegatedMessage, error)
+	//GetDirector
+	//
+	//  SELECT id, show_note_id, user_id, is_director, connected_at, last_ping FROM producer_connections
+	//  WHERE show_note_id = $1
+	//    AND is_director = TRUE
+	//    AND last_ping > NOW() - INTERVAL '40 seconds'
+	//  LIMIT 1
+	GetDirector(ctx context.Context, showNoteID pgtype.UUID) (*ProducerConnection, error)
 	// GetDownloadJobByID returns a download job by ID
 	//
-	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  FROM download_jobs
 	//  WHERE id = $1
 	GetDownloadJobByID(ctx context.Context, id pgtype.UUID) (*DownloadJob, error)
@@ -1030,6 +1903,14 @@ type Querier interface {
 	//  SELECT id, user_id, token, created_at, last_used_at, expires_at, revoked FROM extension_tokens
 	//  WHERE token = $1 AND NOT revoked AND expires_at > NOW()
 	GetExtensionTokenByToken(ctx context.Context, token string) (*ExtensionToken, error)
+	//GetFaceDimensions
+	//
+	//  SELECT width,height FROM face_observations WHERE id=$1
+	GetFaceDimensions(ctx context.Context, id pgtype.UUID) (*GetFaceDimensionsRow, error)
+	//GetFaceObservation
+	//
+	//  SELECT f.id,f.set_id,f.sample_ts,f.box,f.person_id,s.video_id,s.asset_fingerprint FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id WHERE f.id=$1
+	GetFaceObservation(ctx context.Context, id pgtype.UUID) (*GetFaceObservationRow, error)
 	// GetHomeStats returns aggregate stats for the home page dashboard
 	//
 	//  SELECT
@@ -1039,11 +1920,20 @@ type Querier interface {
 	//      (SELECT COALESCE(SUM(file_size), 0)::bigint FROM videos WHERE file_size IS NOT NULL) AS storage_bytes,
 	//      (SELECT COALESCE(SUM(duration_seconds), 0)::bigint FROM videos WHERE duration_seconds IS NOT NULL) AS total_duration_seconds
 	GetHomeStats(ctx context.Context) (*GetHomeStatsRow, error)
+	// Authorization check used by mutating handlers.
+	//
+	//  SELECT role FROM show_note_hosts
+	//  WHERE show_note_id = $1 AND user_id = $2
+	GetHostRole(ctx context.Context, arg *GetHostRoleParams) (string, error)
 	// GetInstanceSettings fetches the single instance settings row
 	//
 	//  SELECT id, registration_enabled, clip_export_storage_limit_bytes, admin_emails, updated_at, max_download_height FROM instance_settings WHERE id = 1
 	GetInstanceSettings(ctx context.Context) (*InstanceSetting, error)
-	// GetJobStatusCounts returns download and ingest job counts grouped by status.
+	//GetInterfacePreferences
+	//
+	//  SELECT preferences FROM user_interface_preferences WHERE user_id=$1
+	GetInterfacePreferences(ctx context.Context, userID pgtype.UUID) ([]byte, error)
+	// GetJobStatusCounts returns download, ingest, export, and ML job counts grouped by status.
 	//
 	//  SELECT
 	//      'download' AS job_type,
@@ -1058,8 +1948,50 @@ type Querier interface {
 	//      COUNT(*)::bigint AS count
 	//  FROM ingest_jobs
 	//  GROUP BY status
+	//  UNION ALL
+	//  SELECT
+	//      'clip_export' AS job_type,
+	//      status::text AS status,
+	//      COUNT(*)::bigint AS count
+	//  FROM clip_exports
+	//  GROUP BY status
+	//  UNION ALL
+	//  SELECT
+	//      'stitch' AS job_type,
+	//      status::text AS status,
+	//      COUNT(*)::bigint AS count
+	//  FROM stitch_jobs
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	//  GROUP BY status
+	//  UNION ALL
+	//  SELECT
+	//      'ml' AS job_type,
+	//      status::text AS status,
+	//      COUNT(*)::bigint AS count
+	//  FROM ml_jobs
+	//  GROUP BY status
 	//  ORDER BY job_type, status
 	GetJobStatusCounts(ctx context.Context) ([]*GetJobStatusCountsRow, error)
+	//GetLibraryEvidence
+	//
+	//  SELECT v.id,
+	//  COALESCE((SELECT t.cues FROM video_transcripts t WHERE t.video_id=v.id AND t.search @@ to_tsquery('simple',$1) ORDER BY CASE WHEN t.lang::text='en' THEN 0 ELSE 1 END,t.lang LIMIT 1),'[]'::jsonb)::jsonb AS cues,
+	//  COALESCE((SELECT c.text FROM video_comments c WHERE c.video_id=v.id AND c.search @@ to_tsquery('simple',$1) ORDER BY c.id LIMIT 1),'')::text AS comment_text
+	//  FROM videos v WHERE v.id=ANY($2::uuid[])
+	GetLibraryEvidence(ctx context.Context, arg *GetLibraryEvidenceParams) ([]*GetLibraryEvidenceRow, error)
+	// GetMLJob returns one job by id.
+	//
+	//  SELECT id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript FROM ml_jobs WHERE id = $1
+	GetMLJob(ctx context.Context, id pgtype.UUID) (*MlJob, error)
+	//GetMLJobByKey
+	//
+	//  SELECT id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript FROM ml_jobs
+	//  WHERE video_id = $1
+	//    AND kind = $2
+	//    AND transcript_hash = $3
+	//  ORDER BY updated_at DESC
+	//  LIMIT 1
+	GetMLJobByKey(ctx context.Context, arg *GetMLJobByKeyParams) (*MlJob, error)
 	//GetMarker
 	//
 	//  SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
@@ -1069,6 +2001,15 @@ type Querier interface {
 	//
 	//  SELECT COALESCE(max_download_height, 0) FROM instance_settings WHERE id = 1
 	GetMaxDownloadHeight(ctx context.Context) (int32, error)
+	//GetNetworkXChannel
+	//
+	//  SELECT id, created_at, updated_at, platform, identity_key, channel_id, uploader, canonical_url, creator_id, search FROM channels
+	//  WHERE platform IN ('twitter','x') AND (
+	//   lower(ltrim(identity_key,'@'))=$1
+	//   OR lower(substring(canonical_url from '^https?://(?:www\.)?(?:x|twitter)\.com/([^/?#]+)'))=$1
+	//  )
+	//  ORDER BY created_at,id LIMIT 1
+	GetNetworkXChannel(ctx context.Context, handle string) (*Channel, error)
 	// GetPlaybackPosition retrieves the last playback position for a user/video
 	//
 	//  SELECT position_seconds, updated_at
@@ -1081,16 +2022,32 @@ type Querier interface {
 	//  SELECT id, producer_id, name, scene, created_at, updated_at FROM player_scene_presets
 	//  WHERE id = $1
 	GetPlayerScenePresetByID(ctx context.Context, id pgtype.UUID) (*PlayerScenePreset, error)
-	//GetPlayerSessionByCode
+	//GetProducerConnection
 	//
-	//  SELECT id, session_code, producer_id, current_video_id, state, created_at, expires_at, last_activity FROM player_sessions
-	//  WHERE session_code = $1 AND expires_at > NOW()
-	GetPlayerSessionByCode(ctx context.Context, sessionCode string) (*PlayerSession, error)
-	//GetPlayerSessionByID
+	//  SELECT id, show_note_id, user_id, is_director, connected_at, last_ping FROM producer_connections
+	//  WHERE show_note_id = $1 AND user_id = $2
+	GetProducerConnection(ctx context.Context, arg *GetProducerConnectionParams) (*ProducerConnection, error)
+	//GetRepairedVideoTranscript
 	//
-	//  SELECT id, session_code, producer_id, current_video_id, state, created_at, expires_at, last_activity FROM player_sessions
-	//  WHERE id = $1
-	GetPlayerSessionByID(ctx context.Context, id pgtype.UUID) (*PlayerSession, error)
+	//  SELECT t.id, t.created_at, t.updated_at, t.video_id, t.lang, t.format, t.text, t.raw, t.search, t.cues, t.coverage FROM video_transcripts t
+	//  WHERE t.video_id=$1 AND EXISTS (
+	//      SELECT 1 FROM transcript_repair_backups b JOIN ml_jobs j ON j.id=b.job_id
+	//      WHERE j.video_id=t.video_id AND b.transcript->>'lang'=t.lang::text
+	//  )
+	//  ORDER BY CASE WHEN t.lang::text='en' THEN 0 ELSE 1 END,t.lang LIMIT 1
+	GetRepairedVideoTranscript(ctx context.Context, videoID pgtype.UUID) (*VideoTranscript, error)
+	// GetReusableDownloadJobForVideo returns an existing useful job for an
+	// already-archived video instead of creating another download row.
+	//
+	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
+	//  FROM download_jobs
+	//  WHERE (video_id = $1 OR url = $2)
+	//    AND status IN ('queued', 'processing', 'succeeded')
+	//  ORDER BY
+	//    CASE status WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+	//    created_at DESC
+	//  LIMIT 1
+	GetReusableDownloadJobForVideo(ctx context.Context, arg *GetReusableDownloadJobForVideoParams) (*DownloadJob, error)
 	// GetSessionInvalidation returns the sessions_invalidated_at and enabled
 	// flag for a user. Used by middleware to check if a session is still valid.
 	//
@@ -1098,15 +2055,76 @@ type Querier interface {
 	//  FROM users
 	//  WHERE id = $1 AND deleted_at IS NULL
 	GetSessionInvalidation(ctx context.Context, id pgtype.UUID) (*GetSessionInvalidationRow, error)
+	//GetShowNote
+	//
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE id = $1
+	GetShowNote(ctx context.Context, id pgtype.UUID) (*ShowNote, error)
+	//GetShowNoteAgentLease
+	//
+	//  SELECT id, show_note_id, api_token_id, user_id, agent_name, expires_at, last_cursor, created_at, updated_at FROM show_note_agent_leases
+	//  WHERE id = $1 AND api_token_id = $2
+	//    AND expires_at > NOW()
+	GetShowNoteAgentLease(ctx context.Context, arg *GetShowNoteAgentLeaseParams) (*ShowNoteAgentLease, error)
+	//GetShowNoteByPublicCode
+	//
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE public_code = $1
+	GetShowNoteByPublicCode(ctx context.Context, publicCode *string) (*ShowNote, error)
+	//GetShowNoteDocument
+	//
+	//  SELECT show_note_id, markdown, revision, snapshot, snapshot_revision, updated_at FROM show_note_documents WHERE show_note_id = $1
+	GetShowNoteDocument(ctx context.Context, showNoteID pgtype.UUID) (*ShowNoteDocument, error)
+	//GetShowNoteReference
+	//
+	//  SELECT id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at FROM show_note_references
+	//  WHERE id = $1 AND show_note_id = $2
+	GetShowNoteReference(ctx context.Context, arg *GetShowNoteReferenceParams) (*ShowNoteReference, error)
+	//GetShowNoteReferenceByOccurrence
+	//
+	//  SELECT id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at FROM show_note_references
+	//  WHERE show_note_id = $1
+	//    AND occurrence_key = $2
+	GetShowNoteReferenceByOccurrence(ctx context.Context, arg *GetShowNoteReferenceByOccurrenceParams) (*ShowNoteReference, error)
+	//GetShowNoteReferenceDownloadJob
+	//
+	//  SELECT dj.id, dj.created_at, dj.updated_at, dj.url, dj.archived_by, dj.status, dj.attempts, dj.last_error, dj.started_at, dj.finished_at, dj.spool_dir, dj.info_json_path, dj.video_id, dj.refresh, dj.process_pid, dj.archived, dj.extra_args, dj.kind, dj.parent_job_id, dj.batch_label, dj.batch_total, dj.watch_id, dj.dedupe_key FROM show_note_references r
+	//  JOIN download_jobs dj ON dj.id = r.download_job_id
+	//  WHERE r.id = $1 AND r.show_note_id = $2
+	GetShowNoteReferenceDownloadJob(ctx context.Context, arg *GetShowNoteReferenceDownloadJobParams) (*DownloadJob, error)
+	//GetShowNoteReviewThread
+	//
+	//  SELECT id, show_note_id, kind, status, actor_kind, actor_user_id, actor_token_id, actor_name, body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end, start_line, start_column, end_line, end_column, detached, created_at, updated_at, closed_at, closed_by_user_id FROM show_note_review_threads WHERE id = $1
+	GetShowNoteReviewThread(ctx context.Context, id pgtype.UUID) (*ShowNoteReviewThread, error)
+	//GetShowNoteRoomCursor
+	//
+	//  SELECT COALESCE(MAX(cursor), 0)::bigint FROM show_note_room_events
+	//  WHERE show_note_id = $1
+	GetShowNoteRoomCursor(ctx context.Context, showNoteID pgtype.UUID) (int64, error)
 	// Lookup a completed stitch export for use as a source.
 	//
 	//  SELECT id, status, file_path, duration_seconds, title
 	//  FROM stitch_jobs
 	//  WHERE id = $1
 	GetStitchExportFile(ctx context.Context, id pgtype.UUID) (*GetStitchExportFileRow, error)
+	//GetStitchExportStats
+	//
+	//  SELECT
+	//      COUNT(*) FILTER (WHERE status = 'queued') AS queued_count,
+	//      COUNT(*) FILTER (WHERE status = 'processing') AS processing_count,
+	//      COUNT(*) FILTER (WHERE status = 'ready') AS ready_count,
+	//      COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+	//      COALESCE(SUM(size_bytes) FILTER (WHERE status = 'ready'), 0)::bigint AS total_size_bytes
+	//  FROM stitch_jobs
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	GetStitchExportStats(ctx context.Context) (*GetStitchExportStatsRow, error)
+	//GetStitchFolder
+	//
+	//  SELECT id, created_by, parent_id, name, created_at, updated_at
+	//  FROM stitch_folders
+	//  WHERE id = $1
+	GetStitchFolder(ctx context.Context, id pgtype.UUID) (*StitchFolder, error)
 	//GetStitchJob
 	//
-	//  SELECT id, title, format, quality, segments, global_filters, status, progress_pct,
+	//  SELECT id, created_by, title, format, quality, segments, global_filters, status, progress_pct,
 	//         file_path, size_bytes, last_error, created_at, updated_at
 	//  FROM stitch_jobs
 	//  WHERE id = $1
@@ -1119,10 +2137,10 @@ type Querier interface {
 	GetStitchJobStatus(ctx context.Context, id pgtype.UUID) (*GetStitchJobStatusRow, error)
 	//GetStitchProject
 	//
-	//  SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at
+	//  SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at, description, tags
 	//  FROM stitch_projects
 	//  WHERE id = $1
-	GetStitchProject(ctx context.Context, id pgtype.UUID) (*StitchProject, error)
+	GetStitchProject(ctx context.Context, id pgtype.UUID) (*GetStitchProjectRow, error)
 	// GetStorageByUploader returns total file storage grouped by uploader.
 	//
 	//  SELECT
@@ -1147,10 +2165,25 @@ type Querier interface {
 	//  ORDER BY count DESC
 	//  LIMIT 10
 	GetTopSources(ctx context.Context) ([]*GetTopSourcesRow, error)
+	//GetTopic
+	//
+	//  SELECT slug, title, origin, created_at FROM topics WHERE slug = $1
+	GetTopic(ctx context.Context, slug string) (*Topic, error)
+	//GetTopicByAlias
+	//
+	//  SELECT t.slug, t.title, t.origin
+	//  FROM topic_aliases a
+	//  JOIN topics t ON t.slug = a.topic_slug
+	//  WHERE a.alias_norm = $1
+	GetTopicByAlias(ctx context.Context, aliasNorm string) (*GetTopicByAliasRow, error)
 	//GetTotalClipExportSize
 	//
 	//  SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM clip_exports WHERE status = 'ready'
 	GetTotalClipExportSize(ctx context.Context) (int64, error)
+	//GetTranscriptFingerprint
+	//
+	//  SELECT transcript_fingerprint($1::uuid)::text AS fingerprint
+	GetTranscriptFingerprint(ctx context.Context, videoID pgtype.UUID) (string, error)
 	// GetUserCookies returns all cookies for a user in Netscape format
 	//
 	//  SELECT domain, flag, path, secure, expiration, name, value
@@ -1166,17 +2199,36 @@ type Querier interface {
 	GetUserKeybindings(ctx context.Context, userID pgtype.UUID) ([]*GetUserKeybindingsRow, error)
 	// GetVideoByID returns a video by ID
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 	//  FROM videos
 	//  WHERE id = $1
 	GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, error)
+	// GetVideoCommentToneRollup averages scored sentiment/toxicity for a video.
+	//
+	//  SELECT
+	//      COUNT(s.comment_id)::bigint AS scored_count,
+	//      COALESCE(AVG(s.sentiment), 0)::float8 AS avg_sentiment,
+	//      COALESCE(AVG(s.toxicity), 0)::float8 AS avg_toxicity
+	//  FROM video_comments c
+	//  JOIN comment_scores s ON s.comment_id = c.id
+	//  WHERE c.video_id = $1
+	GetVideoCommentToneRollup(ctx context.Context, videoID pgtype.UUID) (*GetVideoCommentToneRollupRow, error)
 	// GetVideoTranscript returns one transcript for a video (any language).
 	//
-	//  SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues FROM video_transcripts
+	//  SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts
 	//  WHERE video_id = $1
 	//  ORDER BY CASE WHEN lang::text = 'en' THEN 0 ELSE 1 END, lang
 	//  LIMIT 1
 	GetVideoTranscript(ctx context.Context, videoID pgtype.UUID) (*VideoTranscript, error)
+	//GetVideoTranscriptByLanguage
+	//
+	//  SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id = $1 AND lang = $2
+	GetVideoTranscriptByLanguage(ctx context.Context, arg *GetVideoTranscriptByLanguageParams) (*VideoTranscript, error)
+	//GetVideoTranscriptsBatch
+	//
+	//  SELECT DISTINCT ON(video_id) id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id=ANY($1::uuid[])
+	//  ORDER BY video_id,CASE WHEN lang::text='en' THEN 0 ELSE 1 END,lang
+	GetVideoTranscriptsBatch(ctx context.Context, videoIds []pgtype.UUID) ([]*VideoTranscript, error)
 	// GetVideoWithDownloadJob gets a video with its download job info for playback
 	//
 	//  SELECT
@@ -1210,6 +2262,10 @@ type Querier interface {
 	//  GROUP BY d.day
 	//  ORDER BY d.day
 	GetVideosPerDay(ctx context.Context, days int32) ([]*GetVideosPerDayRow, error)
+	//GetVisualReference
+	//
+	//  SELECT model_id,embedding::text AS embedding FROM visual_references WHERE id=$1 AND owner_id=$2 AND expires_at>now()
+	GetVisualReference(ctx context.Context, arg *GetVisualReferenceParams) (*GetVisualReferenceRow, error)
 	// GetWatchedChannel returns one watch by id.
 	//
 	//  SELECT id, created_at, updated_at, created_by, url, label, cron_schedule, enabled, backfill, first_scan_done, next_scan_at, last_scan_at, last_scan_status, last_scan_error, last_scan_found, channel_id FROM watched_channels WHERE id = $1
@@ -1219,6 +2275,16 @@ type Querier interface {
 	//
 	//  SELECT id, created_at, updated_at, created_by, url, label, cron_schedule, enabled, backfill, first_scan_done, next_scan_at, last_scan_at, last_scan_status, last_scan_error, last_scan_found, channel_id FROM watched_channels WHERE created_by = $1 AND channel_id = $2 LIMIT 1
 	GetWatchedChannelByUserAndChannel(ctx context.Context, arg *GetWatchedChannelByUserAndChannelParams) (*WatchedChannel, error)
+	//GetWikiPage
+	//
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
+	//  WHERE tree = $1 AND slug = $2
+	GetWikiPage(ctx context.Context, arg *GetWikiPageParams) (*WikiPage, error)
+	//GetWikiRevision
+	//
+	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
+	//  WHERE tree = $1 AND slug = $2 AND revision = $3
+	GetWikiRevision(ctx context.Context, arg *GetWikiRevisionParams) (*WikiRevision, error)
 	//GetYtdlpLogsForJob
 	//
 	//  SELECT id, job_id, stream, message, created_at
@@ -1241,6 +2307,27 @@ type Querier interface {
 	//  WHERE job_id = $1 AND created_at > $2
 	//  ORDER BY created_at ASC, id ASC
 	GetYtdlpLogsForJobSince(ctx context.Context, arg *GetYtdlpLogsForJobSinceParams) ([]*YtdlpLog, error)
+	//HasClaimableCompilation
+	//
+	//  SELECT EXISTS(
+	//      SELECT 1 FROM compilation_executions
+	//      WHERE status IN ('waiting_media','rendering') AND next_check<=now()
+	//  )::boolean
+	HasClaimableCompilation(ctx context.Context) (bool, error)
+	//HasHigherPriorityMLJob
+	//
+	//  SELECT EXISTS(SELECT 1 FROM ml_jobs WHERE status IN ('queued','retry_wait') AND retry_at<=now() AND priority<$1)::boolean
+	HasHigherPriorityMLJob(ctx context.Context, priority int32) (bool, error)
+	//HasUnresolvedChannelEdges
+	//
+	//  SELECT EXISTS(
+	//      SELECT 1 FROM channel_edges WHERE to_channel_id IS NULL AND to_url <> ''
+	//  )::boolean
+	HasUnresolvedChannelEdges(ctx context.Context) (bool, error)
+	//HeartbeatAgentRun
+	//
+	//  UPDATE agent_runs SET lease_until=now()+interval '60 seconds' WHERE id=$1 AND lease_owner=$2 AND status='running' AND lease_until>now() RETURNING cancel_requested
+	HeartbeatAgentRun(ctx context.Context, arg *HeartbeatAgentRunParams) (bool, error)
 	// HeartbeatIngestJob touches updated_at to prevent the recovery goroutine from
 	// resetting a long-running job back to "queued" while it is still being processed.
 	//
@@ -1249,6 +2336,16 @@ type Querier interface {
 	//  WHERE id = $1
 	//    AND status = 'processing'
 	HeartbeatIngestJob(ctx context.Context, id pgtype.UUID) error
+	// HeartbeatMLJob refreshes the serial-GPU lock so RecoverStuckMLJobs ignores
+	// a long whisper/ollama run.
+	//
+	//  UPDATE ml_jobs
+	//  SET locked_at = NOW(),
+	//      updated_at = NOW()
+	//  WHERE id = $1
+	//    AND lease_token = $2
+	//    AND status = 'processing'
+	HeartbeatMLJob(ctx context.Context, arg *HeartbeatMLJobParams) (int64, error)
 	//InsertAPIToken
 	//
 	//  INSERT INTO api_tokens (user_id, name, token_hash, scopes)
@@ -1294,6 +2391,42 @@ type Querier interface {
 	//  )
 	//  RETURNING id, created_at, updated_at, kind, creator_id, proposed_name, reason, evidence, status, channel_key
 	InsertCreatorSuggestion(ctx context.Context, arg *InsertCreatorSuggestionParams) (*CreatorSuggestion, error)
+	// InsertGeneratedContextWindow writes one origin=generated window for a set.
+	// created_by is the video's archived_by (users FK).
+	//
+	//  INSERT INTO context_windows (
+	//      video_id, start_ts, end_ts, title, summary, topics, entities, search,
+	//      origin, source_query, transcript_cue_evidence, transcript_version,
+	//      boundary_quality, created_by,
+	//      set_id, ordinal, cue_start, cue_end,
+	//      generated_start_ts, generated_end_ts, confidence,
+	//      override_title, override_summary, override_bounds, stale,
+	//      kind, parent_id, hook
+	//  )
+	//  SELECT
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7,
+	//      context_window_search_vector($4, $5, $6, $7),
+	//      'generated', $8, $9,
+	//      v.transcript_version, $10, v.archived_by,
+	//      $11, $12, $13, $14,
+	//      $15, $16, $17,
+	//      $18, $19, $20, FALSE,
+	//      $21, $22, $23
+	//  FROM videos v WHERE v.id = $1
+	//  ON CONFLICT (set_id,ordinal) DO UPDATE SET start_ts=EXCLUDED.start_ts,end_ts=EXCLUDED.end_ts,title=EXCLUDED.title,summary=EXCLUDED.summary,
+	//   topics=EXCLUDED.topics,entities=EXCLUDED.entities,search=EXCLUDED.search,transcript_version=EXCLUDED.transcript_version,
+	//   cue_start=EXCLUDED.cue_start,cue_end=EXCLUDED.cue_end,transcript_cue_evidence=EXCLUDED.transcript_cue_evidence,generated_start_ts=EXCLUDED.generated_start_ts,generated_end_ts=EXCLUDED.generated_end_ts,confidence=EXCLUDED.confidence,boundary_quality=EXCLUDED.boundary_quality,source_query=EXCLUDED.source_query,
+	//   override_title=EXCLUDED.override_title,override_summary=EXCLUDED.override_summary,override_bounds=EXCLUDED.override_bounds,stale=false,updated_at=now(),
+	//   kind=EXCLUDED.kind,parent_id=EXCLUDED.parent_id,hook=EXCLUDED.hook
+	//  RETURNING id, video_id, start_ts, end_ts, title, summary, topics, entities, search, origin, source_query, transcript_cue_evidence, transcript_version, boundary_quality, created_by, created_at, updated_at, set_id, ordinal, cue_start, cue_end, generated_start_ts, generated_end_ts, confidence, override_title, override_summary, override_bounds, stale, kind, parent_id, hook, topic_resolved_at
+	InsertGeneratedContextWindow(ctx context.Context, arg *InsertGeneratedContextWindowParams) (*ContextWindow, error)
+	//InsertTopicAlias
+	//
+	//  INSERT INTO topic_aliases (alias_norm, topic_slug, raw, source)
+	//  VALUES ($1, $2, $3, $4)
+	//  ON CONFLICT (alias_norm) DO NOTHING
+	InsertTopicAlias(ctx context.Context, arg *InsertTopicAliasParams) error
 	// InsertVideo inserts a video row.
 	//
 	//  INSERT INTO videos (
@@ -1387,7 +2520,7 @@ type Querier interface {
 	//          ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
 	//      END,
 	//      search = EXCLUDED.search
-	//  RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+	//  RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 	InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Video, error)
 	// InsertVideoRevision stores a refresh diff.
 	//
@@ -1414,6 +2547,52 @@ type Querier interface {
 	//      $9
 	//  )
 	InsertVideoRevision(ctx context.Context, arg *InsertVideoRevisionParams) error
+	//InsertWikiLink
+	//
+	//  INSERT INTO wiki_links (from_tree, from_slug, to_tree, to_slug)
+	//  VALUES ($1, $2, $3, $4)
+	//  ON CONFLICT DO NOTHING
+	InsertWikiLink(ctx context.Context, arg *InsertWikiLinkParams) error
+	//InsertWikiPage
+	//
+	//  INSERT INTO wiki_pages (
+	//      tree, slug, title, body, revision, creator_id, channel_id, updated_by
+	//  ) VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      $4,
+	//      1,
+	//      $5,
+	//      $6,
+	//      $7
+	//  )
+	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+	InsertWikiPage(ctx context.Context, arg *InsertWikiPageParams) (*WikiPage, error)
+	//InsertWikiRevision
+	//
+	//  INSERT INTO wiki_revisions (
+	//      tree, slug, revision, title, body, diff, summary,
+	//      actor_kind, actor_id, user_id, session_id,
+	//      client_name, client_version, token_name
+	//  ) VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      $4,
+	//      $5,
+	//      $6,
+	//      $7,
+	//      $8,
+	//      $9,
+	//      $10,
+	//      $11,
+	//      $12,
+	//      $13,
+	//      $14
+	//  )
+	//  RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at
+	InsertWikiRevision(ctx context.Context, arg *InsertWikiRevisionParams) (*WikiRevision, error)
 	//InsertYtdlpLog
 	//
 	//  INSERT INTO ytdlp_logs (job_id, stream, message)
@@ -1427,6 +2606,10 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1 AND deleted_at IS NULL
 	InvalidateUserSessions(ctx context.Context, id pgtype.UUID) error
+	//LatestAgentRun
+	//
+	//  SELECT id, conversation_id, user_id, status, runtime, provider_session_id, provider_run_id, pending_request, artifacts, cancellation_acknowledged, messages, settings, model_digest, calls, cancel_requested, lease_owner, lease_until, last_error, created_at, updated_at FROM agent_runs WHERE conversation_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 1
+	LatestAgentRun(ctx context.Context, arg *LatestAgentRunParams) (*AgentRun, error)
 	// Get the latest stitch job for each project (for library cards).
 	//
 	//  SELECT DISTINCT ON (project_id)
@@ -1443,6 +2626,29 @@ type Querier interface {
 	//  WHERE id = ANY($2::uuid[])
 	//    AND creator_id IS NULL
 	LinkChannelsToCreator(ctx context.Context, arg *LinkChannelsToCreatorParams) error
+	// LinkCommentersToChannelsForVideo sets commenters.channel_id when an archived
+	// channel matches author_id or canonical_url (www/trailing slash ignored).
+	//
+	//  UPDATE commenters c
+	//  SET channel_id = ch.id,
+	//      updated_at = NOW()
+	//  FROM channels ch
+	//  WHERE c.channel_id IS NULL
+	//    AND c.id IN (
+	//        SELECT DISTINCT vc.commenter_id
+	//        FROM video_comments vc
+	//        WHERE vc.video_id = $1
+	//          AND vc.commenter_id IS NOT NULL
+	//    )
+	//    AND (
+	//        (ch.channel_id <> '' AND ch.channel_id = c.author_id)
+	//        OR (
+	//            c.author_url <> ''
+	//            AND regexp_replace(lower(regexp_replace(ch.canonical_url, '^https?://(www\.)?', '')), '/$', '')
+	//              = regexp_replace(lower(regexp_replace(c.author_url, '^https?://(www\.)?', '')), '/$', '')
+	//        )
+	//    )
+	LinkCommentersToChannelsForVideo(ctx context.Context, videoID pgtype.UUID) error
 	// LinkDownloadJobVideo stores the created video id.
 	//
 	//  UPDATE download_jobs
@@ -1450,6 +2656,10 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $2
 	LinkDownloadJobVideo(ctx context.Context, arg *LinkDownloadJobVideoParams) error
+	//LinkExecutionDownload
+	//
+	//  UPDATE compilation_execution_segments SET download_job_id=$1 WHERE execution_id=$2 AND position=$3
+	LinkExecutionDownload(ctx context.Context, arg *LinkExecutionDownloadParams) error
 	// LinkWatchedChannelsToChannels backfills channel_id on follows whose URL or
 	// label already matches a materialized channel.
 	//
@@ -1466,6 +2676,15 @@ type Querier interface {
 	//  WHERE user_id = $1
 	//  ORDER BY created_at DESC
 	ListAPITokensByUser(ctx context.Context, userID pgtype.UUID) ([]*ListAPITokensByUserRow, error)
+	// Connections seen within the liveness window, oldest first.
+	//
+	//  SELECT pc.id, pc.show_note_id, pc.user_id, pc.is_director, pc.connected_at, pc.last_ping, u.user_name AS username
+	//  FROM producer_connections pc
+	//  JOIN users u ON u.id = pc.user_id
+	//  WHERE pc.show_note_id = $1
+	//    AND pc.last_ping > NOW() - INTERVAL '40 seconds'
+	//  ORDER BY pc.connected_at ASC
+	ListActiveConnections(ctx context.Context, showNoteID pgtype.UUID) ([]*ListActiveConnectionsRow, error)
 	// Get active exports for a list of clip IDs (for clip bank hydration)
 	// Only show processing/queued exports that are actively being worked on (updated in last 5 min)
 	//
@@ -1478,6 +2697,28 @@ type Querier interface {
 	//    )
 	//  ORDER BY clip_id, created_at DESC
 	ListActiveExportsForClips(ctx context.Context, clipIds []pgtype.UUID) ([]*ListActiveExportsForClipsRow, error)
+	//ListActiveShowNoteAgentLeases
+	//
+	//  SELECT id, show_note_id, api_token_id, user_id, agent_name, expires_at, last_cursor, created_at, updated_at FROM show_note_agent_leases
+	//  WHERE show_note_id = $1 AND expires_at > NOW()
+	//  ORDER BY created_at
+	ListActiveShowNoteAgentLeases(ctx context.Context, showNoteID pgtype.UUID) ([]*ShowNoteAgentLease, error)
+	//ListAgentConversations
+	//
+	//  SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at FROM agent_conversations c WHERE c.user_id=$1 ORDER BY COALESCE((SELECT max(r.updated_at) FROM agent_runs r WHERE r.conversation_id=c.id),c.updated_at) DESC LIMIT 100
+	ListAgentConversations(ctx context.Context, userID pgtype.UUID) ([]*AgentConversation, error)
+	//ListAgentEvents
+	//
+	//  SELECT e.id, e.run_id, e.kind, e.data, e.created_at FROM agent_events e JOIN agent_runs r ON r.id=e.run_id WHERE e.run_id=$1 AND r.user_id=$2 AND e.id>$3 ORDER BY e.id LIMIT 500
+	ListAgentEvents(ctx context.Context, arg *ListAgentEventsParams) ([]*AgentEvent, error)
+	//ListAgentToolCalls
+	//
+	//  SELECT id, run_id, call_index, name, arguments, result, status, created_at FROM agent_tool_calls WHERE run_id=$1 ORDER BY call_index
+	ListAgentToolCalls(ctx context.Context, runID pgtype.UUID) ([]*AgentToolCall, error)
+	//ListAllShowNoteIDs
+	//
+	//  SELECT id FROM show_notes ORDER BY created_at, id
+	ListAllShowNoteIDs(ctx context.Context) ([]pgtype.UUID, error)
 	// ListAllTagsWithCounts returns every tag with how many videos carry it,
 	// most-used first. Drives the library tag filter/sidebar.
 	//
@@ -1491,6 +2732,109 @@ type Querier interface {
 	//
 	//  SELECT id, user_name, password, email, email_verified, verify_hash, enabled, role, created_at, updated_at, deleted_at, sessions_invalidated_at FROM users WHERE deleted_at IS NULL
 	ListAllUsers(ctx context.Context) ([]*User, error)
+	// ============================================================================
+	// Show note blocks (nested content tree)
+	// ============================================================================
+	// Flat load for in-memory tree assembly (see shownote.BuildTree).
+	//
+	//
+	//  SELECT id, show_note_id, parent_id, block_type, title, notes, video_id, clip_id, position, duration_override, created_at FROM show_note_blocks
+	//  WHERE show_note_id = $1
+	//  ORDER BY parent_id NULLS FIRST, position ASC, created_at ASC
+	ListBlocksForShowNote(ctx context.Context, showNoteID pgtype.UUID) ([]*ShowNoteBlock, error)
+	// ListBundlesForCreator returns bundles that include this creator.
+	//
+	//  SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search
+	//  FROM creator_bundle_members m
+	//  JOIN creator_bundles b ON b.id = m.bundle_id
+	//  WHERE m.creator_id = $1
+	//  ORDER BY b.name
+	ListBundlesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*CreatorBundle, error)
+	//ListCampaigns
+	//
+	//  SELECT id, kind, simhash, normalized_text, first_seen, last_seen, comment_count, commenter_count, video_count, evidence, created_at, updated_at FROM campaigns
+	//  ORDER BY last_seen DESC, created_at DESC
+	//  LIMIT $2::int
+	//  OFFSET $1::int
+	ListCampaigns(ctx context.Context, arg *ListCampaignsParams) ([]*Campaign, error)
+	//ListCatalogCandidateStates
+	//
+	//  SELECT v.id, v.subtitle_state,
+	//         EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id) AS has_transcript
+	//  FROM videos v WHERE v.id = ANY($1::uuid[])
+	ListCatalogCandidateStates(ctx context.Context, ids []pgtype.UUID) ([]*ListCatalogCandidateStatesRow, error)
+	// ListCatalogCandidates returns matching metadata-only rows separately from
+	// playable video cards.
+	//
+	//  WITH params AS (
+	//      SELECT NULLIF(btrim(COALESCE($3::text, '')), '') AS tsq
+	//  ), hits AS (
+	//      SELECT v.id AS video_id,
+	//             COALESCE((v.search @@ to_tsquery('simple', p.tsq)), FALSE)::boolean AS metadata_match,
+	//             EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq)) AS comment_match,
+	//             EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq)) AS transcript_match,
+	//             EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)) AS context_window_match
+	//      FROM videos v CROSS JOIN params p
+	//      WHERE p.tsq IS NOT NULL AND (
+	//          v.search @@ to_tsquery('simple', p.tsq)
+	//          OR EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq))
+	//          OR EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq))
+	//          OR EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq))
+	//      )
+	//  )
+	//  SELECT v.id, v.title, v.uploader, v.src, v.upload_date, v.duration_seconds,
+	//         v.thumbnail_path, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle,
+	//         h.metadata_match, h.comment_match, h.transcript_match, h.context_window_match,
+	//         COUNT(*) OVER() AS total_count
+	//  FROM videos v JOIN hits h ON h.video_id = v.id
+	//  LEFT JOIN channels ch ON ch.id = v.channel_row_id
+	//  WHERE v.media = 'metadata'
+	//    AND ($1::text IS NULL OR v.uploader ILIKE '%' || $1 || '%')
+	//    AND (COALESCE(cardinality($2::text[]),0)=0
+	//      OR (h.metadata_match AND 'metadata'=ANY($2::text[]))
+	//        OR ('title'=ANY($2::text[]) AND to_tsvector('simple',v.title) @@ to_tsquery('simple',$3))
+	//        OR ('description'=ANY($2::text[]) AND to_tsvector('simple',v.description) @@ to_tsquery('simple',$3))
+	//        OR ('uploader'=ANY($2::text[]) AND to_tsvector('simple',v.uploader) @@ to_tsquery('simple',$3))
+	//        OR ('tags'=ANY($2::text[]) AND to_tsvector('simple',array_to_string(v.tags,' ')) @@ to_tsquery('simple',$3))
+	//      OR (h.comment_match AND 'comments'=ANY($2::text[]))
+	//      OR (h.transcript_match AND 'transcript'=ANY($2::text[]))
+	//      OR (h.context_window_match AND 'context_windows'=ANY($2::text[])))
+	//    AND ($4::uuid IS NULL OR ch.creator_id = $4)
+	//    AND ($5::uuid IS NULL OR ch.id = $5)
+	//  ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+	//  LIMIT $6
+	ListCatalogCandidates(ctx context.Context, arg *ListCatalogCandidatesParams) ([]*ListCatalogCandidatesRow, error)
+	//ListCatalogCrawlsForChannel
+	//
+	//  SELECT id, created_at, updated_at, channel_id, requested_by, feed_url, feed_kind, platform, next_page_index, page_size, overlap_size, status, attempts, retry_at, entries_seen, entries_added, entries_updated, last_error, refresh, locked_at, locked_by, finished_at FROM catalog_crawls WHERE channel_id = $1
+	//  ORDER BY created_at DESC
+	ListCatalogCrawlsForChannel(ctx context.Context, channelID pgtype.UUID) ([]*CatalogCrawl, error)
+	//ListCatalogCrawlsForCreator
+	//
+	//  SELECT cc.id, cc.created_at, cc.updated_at, cc.channel_id, cc.requested_by, cc.feed_url, cc.feed_kind, cc.platform, cc.next_page_index, cc.page_size, cc.overlap_size, cc.status, cc.attempts, cc.retry_at, cc.entries_seen, cc.entries_added, cc.entries_updated, cc.last_error, cc.refresh, cc.locked_at, cc.locked_by, cc.finished_at, COALESCE(ch.uploader, ch.identity_key) AS channel_name
+	//  FROM catalog_crawls cc
+	//  JOIN channels ch ON ch.id = cc.channel_id
+	//  WHERE ch.creator_id = $1
+	//  ORDER BY cc.created_at DESC
+	ListCatalogCrawlsForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*ListCatalogCrawlsForCreatorRow, error)
+	// ListChannelCatalog is titles + descriptions for MCP channel analysis.
+	//
+	//  SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+	//         v.view_count, v.media, v.src, v.description
+	//  FROM videos v
+	//  WHERE (
+	//          $1::uuid IS NOT NULL
+	//          AND v.channel_row_id = $1
+	//        )
+	//     OR (
+	//          $1::uuid IS NULL
+	//          AND $2::text IS NOT NULL
+	//          AND v.uploader = $2
+	//        )
+	//  ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+	//  LIMIT $4
+	//  OFFSET $3
+	ListChannelCatalog(ctx context.Context, arg *ListChannelCatalogParams) ([]*ListChannelCatalogRow, error)
 	// ListChannelEdges returns the heaviest edges for the network page.
 	// Unresolved to_url rows are included — they resolve once that channel is archived.
 	//
@@ -1504,7 +2848,7 @@ type Querier interface {
 	//  LEFT JOIN creators fcr ON fcr.id = fc.creator_id
 	//  LEFT JOIN channels tc ON tc.id = e.to_channel_id
 	//  LEFT JOIN creators tcr ON tcr.id = tc.creator_id
-	//  ORDER BY e.weight DESC
+	//  ORDER BY (e.to_channel_id IS NOT NULL) DESC, e.weight DESC
 	//  LIMIT 500
 	ListChannelEdges(ctx context.Context) ([]*ListChannelEdgesRow, error)
 	// ListChannelEdgesForChannel returns edges that start or end at one channel.
@@ -1531,6 +2875,38 @@ type Querier interface {
 	//  ORDER BY e.weight DESC
 	//  LIMIT 200
 	ListChannelEdgesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*ListChannelEdgesForCreatorRow, error)
+	// ListChannelNeighborhood is the 1-hop graph around one channel, optional kind.
+	//
+	//  SELECT e.id, e.created_at, e.updated_at, e.from_channel_id, e.to_channel_id, e.to_url, e.kind, e.evidence, e.video_id, e.weight,
+	//    fc.uploader AS from_uploader, fc.platform AS from_platform,
+	//    COALESCE(tc.uploader, '')::text AS to_uploader, COALESCE(tc.platform, '')::text AS to_platform,
+	//    CASE WHEN e.from_channel_id = $1 THEN 'out' ELSE 'in' END::text AS direction
+	//  FROM channel_edges e
+	//  JOIN channels fc ON fc.id = e.from_channel_id
+	//  LEFT JOIN channels tc ON tc.id = e.to_channel_id
+	//  WHERE (e.from_channel_id = $1 OR e.to_channel_id = $1)
+	//    AND ($2::text IS NULL OR e.kind = $2)
+	//  ORDER BY e.weight DESC
+	//  LIMIT $3
+	ListChannelNeighborhood(ctx context.Context, arg *ListChannelNeighborhoodParams) ([]*ListChannelNeighborhoodRow, error)
+	// ListChannelVideos is the slim MCP listing for one uploader or channel row.
+	//
+	//  SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+	//         v.view_count, v.media, v.src
+	//  FROM videos v
+	//  WHERE (
+	//          $1::uuid IS NOT NULL
+	//          AND v.channel_row_id = $1
+	//        )
+	//     OR (
+	//          $1::uuid IS NULL
+	//          AND $2::text IS NOT NULL
+	//          AND v.uploader = $2
+	//        )
+	//  ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+	//  LIMIT $4
+	//  OFFSET $3
+	ListChannelVideos(ctx context.Context, arg *ListChannelVideosParams) ([]*ListChannelVideosRow, error)
 	// ListChannels aggregates the library by uploader: per-channel video counts,
 	// totals, a representative latest video (for the thumbnail), the channel URL
 	// (from the generated channel_url/uploader_url columns — never the info
@@ -1603,10 +2979,186 @@ type Querier interface {
 	ListClipExportsForAdmin(ctx context.Context, arg *ListClipExportsForAdminParams) ([]*ListClipExportsForAdminRow, error)
 	//ListClipsByVideo
 	//
-	//  SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+	//  SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 	//  WHERE video_id = $1
 	//  ORDER BY start_ts ASC
 	ListClipsByVideo(ctx context.Context, videoID pgtype.UUID) ([]*Clip, error)
+	// ListCommenterComments returns paginated comments for a commenter with video title.
+	//
+	//  SELECT
+	//      c.id,
+	//      c.video_id,
+	//      c.source,
+	//      c.comment_id,
+	//      c.parent_id,
+	//      c.author,
+	//      c.author_id,
+	//      c.author_url,
+	//      c.published_at,
+	//      c.like_count,
+	//      c.text,
+	//      c.created_at,
+	//      c.commenter_id,
+	//      v.title AS video_title
+	//  FROM video_comments c
+	//  JOIN videos v ON v.id = c.video_id
+	//  WHERE c.commenter_id = $1
+	//  ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+	//  LIMIT $3::int
+	//  OFFSET $2::int
+	ListCommenterComments(ctx context.Context, arg *ListCommenterCommentsParams) ([]*ListCommenterCommentsRow, error)
+	//ListCommenterEdges
+	//
+	//  SELECT id, from_channel_id, commenter_id, kind, weight, evidence, video_id, created_at, updated_at FROM commenter_edges
+	//  WHERE commenter_id = $1
+	//  ORDER BY updated_at DESC, created_at DESC
+	ListCommenterEdges(ctx context.Context, commenterID pgtype.UUID) ([]*CommenterEdge, error)
+	//ListCommenterLinks
+	//
+	//  SELECT a_id, b_id, kind, score, evidence, created_by, created_at FROM commenter_links
+	//  WHERE a_id = $1 OR b_id = $1
+	//  ORDER BY created_at DESC
+	ListCommenterLinks(ctx context.Context, commenterID pgtype.UUID) ([]*CommenterLink, error)
+	//ListCommenterNames
+	//
+	//  SELECT commenter_id, display_name, first_seen, last_seen, n FROM commenter_names
+	//  WHERE commenter_id = $1
+	//  ORDER BY n DESC, last_seen DESC
+	ListCommenterNames(ctx context.Context, commenterID pgtype.UUID) ([]*CommenterName, error)
+	// Pre-aggregated commenter edges (strongest-N).
+	//
+	//  WITH sparse AS (
+	//    SELECT c.id
+	//    FROM commenters c
+	//    WHERE c.channel_id IS NOT NULL
+	//       OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
+	//       OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
+	//       OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+	//  ), edge_rows AS (
+	//    SELECT e.id::text AS id,
+	//           e.from_channel_id,
+	//           e.commenter_id,
+	//           NULL::uuid AS peer_commenter_id,
+	//           e.kind,
+	//           e.weight::float8 AS weight,
+	//           COALESCE(e.evidence->>'summary', e.kind)::text AS evidence,
+	//           e.video_id
+	//    FROM commenter_edges e
+	//    WHERE e.commenter_id IN (SELECT id FROM sparse)
+	//      AND (e.kind <> 'commented_by' OR e.from_channel_id IS NOT NULL)
+	//    UNION ALL
+	//    SELECT ('style:' || l.a_id::text || ':' || l.b_id::text) AS id,
+	//           NULL::uuid AS from_channel_id,
+	//           l.a_id AS commenter_id,
+	//           l.b_id AS peer_commenter_id,
+	//           'style'::text AS kind,
+	//           GREATEST(l.score, 1)::float8 AS weight,
+	//           COALESCE(l.evidence->>'summary', 'style suggestion')::text AS evidence,
+	//           NULL::uuid AS video_id
+	//    FROM commenter_links l
+	//    WHERE l.kind = 'style'
+	//      AND l.a_id IN (SELECT id FROM sparse)
+	//      AND l.b_id IN (SELECT id FROM sparse)
+	//  )
+	//  SELECT id, from_channel_id, commenter_id, peer_commenter_id, kind, weight, evidence, video_id
+	//  FROM edge_rows
+	//  ORDER BY weight DESC, id
+	//  LIMIT 200
+	ListCommenterNetworkEdges(ctx context.Context) ([]*ListCommenterNetworkEdgesRow, error)
+	// Sparse commenter nodes for /network (watchlisted, open flag, user link, or channel_id).
+	//
+	//  WITH sparse AS (
+	//    SELECT c.id
+	//    FROM commenters c
+	//    WHERE c.channel_id IS NOT NULL
+	//       OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
+	//       OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
+	//       OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+	//  )
+	//  SELECT c.id,
+	//         c.source,
+	//         c.display_name,
+	//         c.author_url,
+	//         c.comment_count,
+	//         c.channel_id,
+	//         EXISTS (
+	//           SELECT 1 FROM commenter_watchlist w
+	//           WHERE w.commenter_id = c.id AND w.user_id = $1
+	//         ) AS watchlisted,
+	//         COALESCE((
+	//           SELECT array_agg(DISTINCT f.kind ORDER BY f.kind)
+	//           FROM osint_flags f
+	//           WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL
+	//         ), '{}'::text[])::text[] AS open_flag_kinds
+	//  FROM commenters c
+	//  WHERE c.id IN (SELECT id FROM sparse)
+	//  ORDER BY c.comment_count DESC, c.display_name, c.id
+	//  LIMIT 200
+	ListCommenterNetworkNodes(ctx context.Context, userID pgtype.UUID) ([]*ListCommenterNetworkNodesRow, error)
+	//ListCompilationExecutions
+	//
+	//  SELECT id, plan_id, revision, created_by, title, status, stitch_project_id, stitch_job_id, last_error, next_check, created_at, updated_at FROM compilation_executions WHERE plan_id=$1 ORDER BY revision DESC
+	ListCompilationExecutions(ctx context.Context, planID pgtype.UUID) ([]*CompilationExecution, error)
+	//ListCompilationPlanSegments
+	//
+	//  SELECT cps.id, cps.plan_id, cps.position, cps.video_id, cps.start_ts, cps.end_ts, cps.context_window_id, cps.match_evidence, cps.selection_rationale, cps.media_ready, cps.failure_state, cps.download_job_id, cps.created_at, cps.updated_at, v.title AS video_title, v.uploader, v.media, v.src, v.upload_date, v.duration_seconds
+	//  FROM compilation_plan_segments cps JOIN videos v ON v.id = cps.video_id
+	//  WHERE cps.plan_id = $1
+	//  ORDER BY cps.position
+	ListCompilationPlanSegments(ctx context.Context, planID pgtype.UUID) ([]*ListCompilationPlanSegmentsRow, error)
+	//ListCompilationPlansForUser
+	//
+	//  SELECT id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at FROM compilation_plans
+	//  WHERE created_by = $1
+	//  ORDER BY updated_at DESC
+	//  LIMIT $2
+	ListCompilationPlansForUser(ctx context.Context, arg *ListCompilationPlansForUserParams) ([]*CompilationPlan, error)
+	//ListContextWindowSetsForVideo
+	//
+	//  SELECT id, video_id, transcript_hash, model_digest, prompt_version, status, metrics, created_at, updated_at FROM context_window_sets
+	//  WHERE video_id = $1
+	//  ORDER BY created_at DESC
+	ListContextWindowSetsForVideo(ctx context.Context, videoID pgtype.UUID) ([]*ContextWindowSet, error)
+	// ListContextWindowsByVideo is the raw row set used by reconcile/override copy.
+	//
+	//  SELECT id, video_id, start_ts, end_ts, title, summary, topics, entities, search, origin, source_query, transcript_cue_evidence, transcript_version, boundary_quality, created_by, created_at, updated_at, set_id, ordinal, cue_start, cue_end, generated_start_ts, generated_end_ts, confidence, override_title, override_summary, override_bounds, stale, kind, parent_id, hook, topic_resolved_at FROM context_windows
+	//  WHERE video_id = $1
+	//    AND stale = FALSE
+	//  ORDER BY start_ts, ordinal, created_at
+	ListContextWindowsByVideo(ctx context.Context, videoID pgtype.UUID) ([]*ContextWindow, error)
+	//ListContextWindowsForVideo
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary, cw.topics, cw.entities, cw.search, cw.origin, cw.source_query, cw.transcript_cue_evidence, cw.transcript_version, cw.boundary_quality, cw.created_by, cw.created_at, cw.updated_at, cw.set_id, cw.ordinal, cw.cue_start, cw.cue_end, cw.generated_start_ts, cw.generated_end_ts, cw.confidence, cw.override_title, cw.override_summary, cw.override_bounds, cw.stale, cw.kind, cw.parent_id, cw.hook, cw.topic_resolved_at, (cw.transcript_version <> v.transcript_version) AS evidence_stale
+	//  FROM context_windows cw JOIN videos v ON v.id = cw.video_id
+	//  WHERE cw.video_id = $1
+	//    AND cw.stale = FALSE
+	//    AND ($2::float8 IS NULL OR cw.end_ts >= $2)
+	//    AND ($3::float8 IS NULL OR cw.start_ts <= $3)
+	//  ORDER BY cw.start_ts, cw.end_ts, cw.created_at
+	ListContextWindowsForVideo(ctx context.Context, arg *ListContextWindowsForVideoParams) ([]*ListContextWindowsForVideoRow, error)
+	//ListContextWindowsForVideos
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary, cw.topics, cw.entities, cw.search, cw.origin, cw.source_query, cw.transcript_cue_evidence, cw.transcript_version, cw.boundary_quality, cw.created_by, cw.created_at, cw.updated_at, cw.set_id, cw.ordinal, cw.cue_start, cw.cue_end, cw.generated_start_ts, cw.generated_end_ts, cw.confidence, cw.override_title, cw.override_summary, cw.override_bounds, cw.stale, cw.kind, cw.parent_id, cw.hook, cw.topic_resolved_at, (cw.transcript_version <> v.transcript_version) AS evidence_stale
+	//  FROM context_windows cw JOIN videos v ON v.id=cw.video_id
+	//  WHERE cw.video_id=ANY($1::uuid[]) AND NOT cw.stale
+	//  ORDER BY cw.video_id,cw.start_ts
+	ListContextWindowsForVideos(ctx context.Context, videoIds []pgtype.UUID) ([]*ListContextWindowsForVideosRow, error)
+	// ListCreatorBundleMembers returns the creators in a bundle.
+	//
+	//  SELECT c.id, c.created_at, c.updated_at, c.name, c.notes, c.search
+	//  FROM creator_bundle_members m
+	//  JOIN creators c ON c.id = m.creator_id
+	//  WHERE m.bundle_id = $1
+	//  ORDER BY c.name
+	ListCreatorBundleMembers(ctx context.Context, bundleID pgtype.UUID) ([]*Creator, error)
+	// ListCreatorBundles returns every bundle with how many creators it contains.
+	//
+	//  SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search, COUNT(m.creator_id)::bigint AS member_count
+	//  FROM creator_bundles b
+	//  LEFT JOIN creator_bundle_members m ON m.bundle_id = b.id
+	//  GROUP BY b.id
+	//  ORDER BY b.name
+	ListCreatorBundles(ctx context.Context) ([]*ListCreatorBundlesRow, error)
 	// ListCreatorSuggestionMembers returns the channels on one suggestion.
 	//
 	//  SELECT c.id, c.created_at, c.updated_at, c.platform, c.identity_key, c.channel_id, c.uploader, c.canonical_url, c.creator_id, c.search
@@ -1647,7 +3199,7 @@ type Querier interface {
 	ListDistinctUploaders(ctx context.Context) ([]string, error)
 	// ListDownloadJobsByUser returns all download jobs for a user
 	//
-	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  FROM download_jobs
 	//  WHERE archived_by = $1
 	//    AND archived = FALSE
@@ -1657,12 +3209,36 @@ type Querier interface {
 	// ListDownloadJobsByVideoID returns all download jobs for a video.
 	// Matches by video_id FK or by URL matching the video's src column.
 	//
-	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  FROM download_jobs
 	//  WHERE video_id = $1
 	//     OR url = $2
 	//  ORDER BY created_at DESC
 	ListDownloadJobsByVideoID(ctx context.Context, arg *ListDownloadJobsByVideoIDParams) ([]*DownloadJob, error)
+	//ListExecutionSegments
+	//
+	//  SELECT s.execution_id, s.position, s.video_id, s.start_ts, s.end_ts, s.evidence, s.rationale, s.download_job_id,v.title,v.src,v.media,v.video_path,d.status AS download_status,d.last_error AS download_error
+	//  FROM compilation_execution_segments s JOIN videos v ON v.id=s.video_id LEFT JOIN download_jobs d ON d.id=s.download_job_id
+	//  WHERE execution_id=$1 ORDER BY position
+	ListExecutionSegments(ctx context.Context, executionID pgtype.UUID) ([]*ListExecutionSegmentsRow, error)
+	//ListFaceCandidates
+	//
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
+	//  AND EXISTS(SELECT 1 FROM face_index_selections s WHERE s.enabled AND (s.video_id=v.id OR s.channel_id=v.channel_row_id))
+	//  AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
+	//  ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
+	ListFaceCandidates(ctx context.Context) ([]*Video, error)
+	// ============================================================================
+	// Show note hosts (access roster)
+	// ============================================================================
+	//
+	//
+	//  SELECT h.id, h.user_id, h.role, h.created_at, u.user_name AS username
+	//  FROM show_note_hosts h
+	//  JOIN users u ON u.id = h.user_id
+	//  WHERE h.show_note_id = $1
+	//  ORDER BY h.created_at ASC
+	ListHostsForShowNote(ctx context.Context, showNoteID pgtype.UUID) ([]*ListHostsForShowNoteRow, error)
 	// ListIngestJobsByDownloadJobIDs returns ingest jobs for a set of download job IDs.
 	//
 	//  SELECT id, created_at, updated_at, download_job_id, status, attempts, last_error, started_at, finished_at, asset_scope
@@ -1686,12 +3262,45 @@ type Querier interface {
 	//    AND e.to_channel_id IS NULL
 	//    AND e.to_url <> ''
 	ListLabeledUnresolvedOutlinks(ctx context.Context) ([]*ListLabeledUnresolvedOutlinksRow, error)
+	// ListMLJobsForVideo lists jobs for a video, newest first.
+	//
+	//  SELECT id, video_id, kind, status, priority, transcript_hash, model_digest, prompt_version, attempts, last_error, locked_at, locked_by, created_at, updated_at, failure_count, lease_token, retry_at, checkpoint, range_start, range_end, retry_instructions, repair_transcript FROM ml_jobs
+	//  WHERE video_id = $1
+	//  ORDER BY created_at DESC
+	ListMLJobsForVideo(ctx context.Context, videoID pgtype.UUID) ([]*MlJob, error)
+	//ListMLQueue
+	//
+	//  SELECT j.id, j.video_id, j.kind, j.status, j.priority, j.transcript_hash, j.model_digest, j.prompt_version, j.attempts, j.last_error, j.locked_at, j.locked_by, j.created_at, j.updated_at, j.failure_count, j.lease_token, j.retry_at, j.checkpoint, j.range_start, j.range_end, j.retry_instructions, j.repair_transcript, v.title AS video_title
+	//  FROM ml_jobs j JOIN videos v ON v.id = j.video_id
+	//  WHERE ($1 = '' OR j.kind = $1)
+	//    AND ($2 = '' OR j.status = $2)
+	//  ORDER BY
+	//    CASE j.status
+	//      WHEN 'processing' THEN 0
+	//      WHEN 'queued' THEN 1
+	//      WHEN 'retry_wait' THEN 2
+	//      WHEN 'waiting_model' THEN 3
+	//      WHEN 'waiting_assets' THEN 4
+	//      ELSE 5
+	//    END,
+	//    j.priority,
+	//    j.created_at
+	//  LIMIT $3
+	ListMLQueue(ctx context.Context, arg *ListMLQueueParams) ([]*ListMLQueueRow, error)
+	//ListMLRuntimeHealth
+	//
+	//  SELECT kind, failures, retry_at, last_error, verified_at, updated_at FROM ml_runtime_health ORDER BY kind
+	ListMLRuntimeHealth(ctx context.Context) ([]*MlRuntimeHealth, error)
 	//ListMarkersByVideo
 	//
 	//  SELECT id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref FROM markers
 	//  WHERE video_id = $1
 	//  ORDER BY timestamp ASC
 	ListMarkersByVideo(ctx context.Context, videoID pgtype.UUID) ([]*Marker, error)
+	//ListModelOperations
+	//
+	//  SELECT id, user_id, runtime, model, action, status, progress, options, created_at, updated_at FROM model_operations ORDER BY created_at DESC LIMIT 100
+	ListModelOperations(ctx context.Context) ([]*ModelOperation, error)
 	// ListMutualOutlinkPairs returns unique A↔B outlink pairs between archived channels.
 	//
 	//  SELECT
@@ -1712,12 +3321,60 @@ type Querier interface {
 	//    AND b.kind = 'outlink'
 	//    AND a.to_channel_id IS NOT NULL
 	ListMutualOutlinkPairs(ctx context.Context) ([]*ListMutualOutlinkPairsRow, error)
+	//ListNetworkChannels
+	//
+	//  SELECT ch.id, ch.created_at, ch.updated_at, ch.platform, ch.identity_key, ch.channel_id, ch.uploader, ch.canonical_url, ch.creator_id, ch.search, COALESCE(cr.name, '')::text AS creator_name,
+	//   (SELECT count(*) FROM videos v WHERE v.channel_row_id=ch.id)::bigint AS video_count
+	//  FROM channels ch LEFT JOIN creators cr ON cr.id=ch.creator_id
+	//  ORDER BY ch.uploader, ch.id
+	ListNetworkChannels(ctx context.Context) ([]*ListNetworkChannelsRow, error)
+	//ListNetworkContext
+	//
+	//  WITH own_topics AS (
+	//   SELECT DISTINCT cwt.topic_slug AS topic
+	//   FROM context_window_topics cwt
+	//   JOIN context_windows cw ON cw.id = cwt.window_id
+	//   JOIN videos v ON v.id = cw.video_id
+	//   WHERE v.channel_row_id = ANY($1::uuid[]) AND NOT cw.stale AND cw.kind = 'window'
+	//  ), candidates AS (
+	//   SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
+	//   cw.topics, cw.entities, v.title AS video_title, v.uploader, cw.updated_at,
+	//   (v.channel_row_id = ANY($1::uuid[]))::boolean AS selected_channel,
+	//   ARRAY(
+	//     SELECT t.title FROM context_window_topics x
+	//     JOIN topics t ON t.slug = x.topic_slug
+	//     WHERE x.window_id = cw.id AND x.topic_slug IN (SELECT topic FROM own_topics)
+	//   )::text[] AS shared_topics
+	//   FROM context_windows cw JOIN videos v ON v.id = cw.video_id
+	//   WHERE NOT cw.stale AND cw.kind = 'window'
+	//   AND (v.channel_row_id = ANY($1::uuid[])
+	//     OR EXISTS (
+	//       SELECT 1 FROM context_window_topics x
+	//       WHERE x.window_id = cw.id AND x.topic_slug IN (SELECT topic FROM own_topics)
+	//     ))
+	//   AND ($2::text = '' OR concat_ws(' ', cw.title, cw.summary, array_to_string(cw.topics, ' '), array_to_string(cw.entities, ' ')) ILIKE '%' || $2 || '%')
+	//  ), ranked AS (
+	//   SELECT id, video_id, start_ts, end_ts, title, summary, topics, entities, video_title, uploader, updated_at, selected_channel, shared_topics, row_number() OVER (PARTITION BY selected_channel ORDER BY cardinality(shared_topics) DESC, updated_at DESC, id) AS position
+	//   FROM candidates WHERE selected_channel OR cardinality(shared_topics) >= 1
+	//  )
+	//  SELECT id, video_id, start_ts, end_ts, title, summary, topics, entities, video_title, uploader, selected_channel, shared_topics
+	//  FROM ranked WHERE position <= 15
+	//  ORDER BY selected_channel DESC, position
+	ListNetworkContext(ctx context.Context, arg *ListNetworkContextParams) ([]*ListNetworkContextRow, error)
 	//ListOldestClipExportsForCleanup
 	//
 	//  SELECT id, file_path, size_bytes FROM clip_exports
 	//  WHERE status = 'ready'
 	//  ORDER BY last_accessed_at ASC NULLS FIRST
 	ListOldestClipExportsForCleanup(ctx context.Context) ([]*ListOldestClipExportsForCleanupRow, error)
+	//ListOpenOsintFlags
+	//
+	//  SELECT id, kind, commenter_id, video_id, campaign_id, score, evidence, created_at, dismissed_at, dismissed_by, natural_key FROM osint_flags
+	//  WHERE dismissed_at IS NULL
+	//  ORDER BY created_at DESC
+	//  LIMIT $2::int
+	//  OFFSET $1::int
+	ListOpenOsintFlags(ctx context.Context, arg *ListOpenOsintFlagsParams) ([]*OsintFlag, error)
 	// ListPendingCreatorSuggestions returns open nominations.
 	//
 	//  SELECT s.id, s.created_at, s.updated_at, s.kind, s.creator_id, s.proposed_name, s.reason, s.evidence, s.status, s.channel_key,
@@ -1731,6 +3388,28 @@ type Querier interface {
 	//  WHERE s.status = 'pending'
 	//  ORDER BY s.created_at DESC
 	ListPendingCreatorSuggestions(ctx context.Context) ([]*ListPendingCreatorSuggestionsRow, error)
+	//ListPlayableShowNoteReferences
+	//
+	//  SELECT r.occurrence_key, r.ordinal, r.kind, r.label, r.status,
+	//         COALESCE(r.video_id, c.video_id, m.video_id) AS video_id,
+	//         CASE
+	//             WHEN r.clip_id IS NOT NULL THEN c.start_ts
+	//             WHEN r.marker_id IS NOT NULL THEN m.timestamp
+	//             ELSE COALESCE(r.start_seconds, 0)
+	//         END::double precision AS start_seconds,
+	//         COALESCE(CASE WHEN r.clip_id IS NOT NULL THEN c.end_ts ELSE r.end_seconds END, 0)::double precision AS end_seconds
+	//  FROM show_note_references r
+	//  LEFT JOIN clips c ON c.id = r.clip_id
+	//  LEFT JOIN markers m ON m.id = r.marker_id
+	//  JOIN videos v ON v.id = COALESCE(r.video_id, c.video_id, m.video_id)
+	//  WHERE r.show_note_id = $1
+	//    AND r.status = 'ready'
+	//    AND COALESCE(r.video_id, c.video_id, m.video_id) IS NOT NULL
+	//    AND v.media <> 'metadata'
+	//    AND v.video_path IS NOT NULL
+	//    AND btrim(v.video_path) <> ''
+	//  ORDER BY r.ordinal
+	ListPlayableShowNoteReferences(ctx context.Context, showNoteID pgtype.UUID) ([]*ListPlayableShowNoteReferencesRow, error)
 	//ListPlayerScenePresetsByProducer
 	//
 	//  SELECT id, producer_id, name, scene, created_at, updated_at FROM player_scene_presets
@@ -1756,27 +3435,59 @@ type Querier interface {
 	ListRecentClips(ctx context.Context) ([]*ListRecentClipsRow, error)
 	// ListRecentDownloadJobs returns recent download jobs for all users
 	//
-	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+	//  SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 	//  FROM download_jobs
 	//  WHERE archived = FALSE
 	//  ORDER BY created_at DESC
 	//  LIMIT 100
 	ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, error)
+	//ListRecentMLJobs
+	//
+	//  SELECT j.id, j.video_id, j.kind, j.status, j.priority, j.transcript_hash, j.model_digest, j.prompt_version, j.attempts, j.last_error, j.locked_at, j.locked_by, j.created_at, j.updated_at, j.failure_count, j.lease_token, j.retry_at, j.checkpoint, j.range_start, j.range_end, j.retry_instructions, j.repair_transcript, v.title AS video_title
+	//  FROM ml_jobs j JOIN videos v ON v.id = j.video_id
+	//  WHERE j.status NOT IN ('paused', 'cancelled')
+	//  ORDER BY
+	//    CASE j.status
+	//      WHEN 'processing' THEN 0
+	//      WHEN 'queued' THEN 1
+	//      WHEN 'retry_wait' THEN 2
+	//      WHEN 'waiting_model' THEN 3
+	//      WHEN 'waiting_assets' THEN 4
+	//      ELSE 5
+	//    END,
+	//    j.priority,
+	//    j.updated_at DESC
+	//  LIMIT 100
+	ListRecentMLJobs(ctx context.Context) ([]*ListRecentMLJobsRow, error)
 	// ListRecentVideos returns recent videos (by archive date)
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 	//  FROM videos
+	//  WHERE media <> 'metadata'
 	//  ORDER BY created_at DESC
 	//  LIMIT 15
 	ListRecentVideos(ctx context.Context) ([]*Video, error)
 	// ListRecentlyPublishedVideos returns videos sorted by original publish date
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 	//  FROM videos
-	//  WHERE upload_date IS NOT NULL
+	//  WHERE media <> 'metadata'
+	//    AND upload_date IS NOT NULL
 	//  ORDER BY upload_date DESC
 	//  LIMIT 15
 	ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, error)
+	//ListRelatedTopics
+	//
+	//  SELECT t.slug, t.title, count(*)::bigint AS n
+	//  FROM context_window_topics a
+	//  JOIN context_window_topics b ON a.window_id = b.window_id AND a.topic_slug <> b.topic_slug
+	//  JOIN topics t ON t.slug = b.topic_slug
+	//  JOIN context_windows cw ON cw.id = a.window_id AND NOT cw.stale AND cw.kind = 'window'
+	//  WHERE a.topic_slug = $1
+	//  GROUP BY t.slug, t.title
+	//  ORDER BY n DESC, t.title
+	//  LIMIT 12
+	ListRelatedTopics(ctx context.Context, slug string) ([]*ListRelatedTopicsRow, error)
 	// ListResolvedOutlinks returns archived-to-archived outlink edges for creator grouping.
 	//
 	//  SELECT
@@ -1794,12 +3505,121 @@ type Querier interface {
 	//  WHERE e.kind = 'outlink'
 	//    AND e.to_channel_id IS NOT NULL
 	ListResolvedOutlinks(ctx context.Context) ([]*ListResolvedOutlinksRow, error)
-	//ListSessionsByProducer
+	//ListRuntimeConsumers
 	//
-	//  SELECT id, session_code, producer_id, current_video_id, state, created_at, expires_at, last_activity FROM player_sessions
-	//  WHERE producer_id = $1
+	//  SELECT service, snapshot, updated_at, hostname, stopped_at FROM runtime_settings_consumers
+	//  WHERE stopped_at IS NULL
+	//    AND updated_at > now() - interval '3 minutes'
+	//  ORDER BY service
+	ListRuntimeConsumers(ctx context.Context) ([]*RuntimeSettingsConsumer, error)
+	//ListRuntimeSettings
+	//
+	//  SELECT key, value, revision, source, updated_by, updated_at FROM runtime_settings ORDER BY key
+	ListRuntimeSettings(ctx context.Context) ([]*RuntimeSetting, error)
+	//ListShowNoteDocumentUpdates
+	//
+	//  SELECT show_note_id, revision, update, created_at FROM show_note_document_updates
+	//  WHERE show_note_id = $1
+	//  ORDER BY revision
+	ListShowNoteDocumentUpdates(ctx context.Context, showNoteID pgtype.UUID) ([]*ShowNoteDocumentUpdate, error)
+	//ListShowNoteDocumentUpdatesAfter
+	//
+	//  SELECT show_note_id, revision, update, created_at FROM show_note_document_updates
+	//  WHERE show_note_id = $1 AND revision > $2
+	//  ORDER BY revision
+	ListShowNoteDocumentUpdatesAfter(ctx context.Context, arg *ListShowNoteDocumentUpdatesAfterParams) ([]*ShowNoteDocumentUpdate, error)
+	//ListShowNoteReferences
+	//
+	//  SELECT id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at FROM show_note_references
+	//  WHERE show_note_id = $1
+	//  ORDER BY ordinal
+	ListShowNoteReferences(ctx context.Context, showNoteID pgtype.UUID) ([]*ShowNoteReference, error)
+	//ListShowNoteReviewReplies
+	//
+	//  SELECT id, thread_id, actor_kind, actor_user_id, actor_token_id, actor_name, body, created_at FROM show_note_review_replies
+	//  WHERE thread_id = $1
+	//  ORDER BY created_at
+	ListShowNoteReviewReplies(ctx context.Context, threadID pgtype.UUID) ([]*ShowNoteReviewReply, error)
+	//ListShowNoteReviewThreads
+	//
+	//  SELECT id, show_note_id, kind, status, actor_kind, actor_user_id, actor_token_id, actor_name, body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end, start_line, start_column, end_line, end_column, detached, created_at, updated_at, closed_at, closed_by_user_id FROM show_note_review_threads
+	//  WHERE show_note_id = $1
+	//  ORDER BY created_at
+	ListShowNoteReviewThreads(ctx context.Context, showNoteID pgtype.UUID) ([]*ShowNoteReviewThread, error)
+	//ListShowNoteRoomEventsAfter
+	//
+	//  SELECT cursor, show_note_id, event_type, actor_kind, actor_user_id, actor_token_id, actor_name, payload, created_at FROM show_note_room_events
+	//  WHERE show_note_id = $1 AND cursor > $2
+	//  ORDER BY cursor
+	//  LIMIT $3
+	ListShowNoteRoomEventsAfter(ctx context.Context, arg *ListShowNoteRoomEventsAfterParams) ([]*ShowNoteRoomEvent, error)
+	//ListShowNoteRoomMessages
+	//
+	//  SELECT id, show_note_id, event_cursor, actor_kind, actor_user_id, actor_token_id, actor_name, body, reply_to, created_at FROM show_note_room_messages
+	//  WHERE show_note_id = $1
 	//  ORDER BY created_at DESC
-	ListSessionsByProducer(ctx context.Context, producerID pgtype.UUID) ([]*PlayerSession, error)
+	//  LIMIT $2
+	ListShowNoteRoomMessages(ctx context.Context, arg *ListShowNoteRoomMessagesParams) ([]*ShowNoteRoomMessage, error)
+	// ============================================================================
+	// Show notes (producer v2 central entity: content + hosts + live session)
+	// ============================================================================
+	// Show notes the user owns or is a host/viewer on, newest-updated first.
+	//
+	//
+	//  SELECT DISTINCT sn.id, sn.owner_id, sn.title, sn.description, sn.is_live,
+	//         sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at
+	//  FROM show_notes sn
+	//  LEFT JOIN show_note_hosts h ON h.show_note_id = sn.id
+	//  WHERE sn.owner_id = $1 OR h.user_id = $1
+	//  ORDER BY sn.updated_at DESC
+	ListShowNotesForUser(ctx context.Context, userID pgtype.UUID) ([]*ListShowNotesForUserRow, error)
+	//ListShowNotesPendingWorkspaceMigration
+	//
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes
+	//  WHERE workspace_migrated_at IS NULL
+	//  ORDER BY created_at, id
+	ListShowNotesPendingWorkspaceMigration(ctx context.Context) ([]*ShowNote, error)
+	//ListSpeechScoresForVideo
+	//
+	//  SELECT id, video_id, set_id, start_ts, end_ts, model_digest, sentiment, toxicity, labels, scored_at FROM speech_scores
+	//  WHERE video_id = $1
+	//  ORDER BY start_ts, end_ts, scored_at DESC
+	ListSpeechScoresForVideo(ctx context.Context, videoID pgtype.UUID) ([]*SpeechScore, error)
+	//ListStitchExportFilesByStatus
+	//
+	//  SELECT id, file_path FROM stitch_jobs
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	//    AND status = $1
+	ListStitchExportFilesByStatus(ctx context.Context, status ExportStatus) ([]*ListStitchExportFilesByStatusRow, error)
+	//ListStitchExportsForAdmin
+	//
+	//  SELECT
+	//      id,
+	//      project_id,
+	//      title,
+	//      status,
+	//      format,
+	//      quality,
+	//      COALESCE(render_kind, 'export') AS render_kind,
+	//      file_path,
+	//      size_bytes,
+	//      progress_pct,
+	//      attempts,
+	//      last_error,
+	//      created_at
+	//  FROM stitch_jobs
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	//  ORDER BY created_at DESC
+	//  LIMIT $2 OFFSET $1
+	ListStitchExportsForAdmin(ctx context.Context, arg *ListStitchExportsForAdminParams) ([]*ListStitchExportsForAdminRow, error)
+	//ListStitchFoldersForUser
+	//
+	//  SELECT f.id, f.created_by, f.parent_id, f.name, f.created_at, f.updated_at,
+	//         (SELECT COUNT(*)::bigint FROM stitch_projects p WHERE p.folder_id = f.id) AS project_count
+	//  FROM stitch_folders f
+	//  WHERE f.created_by = $1
+	//  ORDER BY f.name
+	ListStitchFoldersForUser(ctx context.Context, userID pgtype.UUID) ([]*ListStitchFoldersForUserRow, error)
 	// List all stitch jobs for a project, newest first. Used to show export history.
 	//
 	//  SELECT id, title, status, progress_pct, file_path, size_bytes, last_error, created_at, finished_at
@@ -1808,17 +3628,39 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT 20
 	ListStitchJobsByProject(ctx context.Context, projectID pgtype.UUID) ([]*ListStitchJobsByProjectRow, error)
+	//ListStitchProjectOwners
+	//
+	//  SELECT u.id, u.user_name, COUNT(*)::bigint AS project_count
+	//  FROM stitch_projects p
+	//  JOIN users u ON u.id = p.created_by
+	//  WHERE u.deleted_at IS NULL
+	//  GROUP BY u.id, u.user_name
+	//  ORDER BY u.user_name
+	ListStitchProjectOwners(ctx context.Context) ([]*ListStitchProjectOwnersRow, error)
 	// ============================================================================
 	// Stitch projects (persistent editor state)
 	// ============================================================================
-	// List all stitch projects for a user, newest-updated first.
+	// List stitch projects. user_id NULL = every owner. folder_mode:
+	//   all     ignore folder
+	//   unfiled folder_id IS NULL
+	//   folder  folder_id = folder_id arg
 	//
 	//
-	//  SELECT id, title, format, quality, segments, created_at, updated_at
-	//  FROM stitch_projects
-	//  WHERE created_by = $1
-	//  ORDER BY updated_at DESC
-	ListStitchProjects(ctx context.Context, userID pgtype.UUID) ([]*ListStitchProjectsRow, error)
+	//  SELECT p.id, p.title, p.format, p.quality, p.segments, p.created_at, p.updated_at,
+	//         p.created_by, p.folder_id, u.user_name AS created_by_name,
+	//         COALESCE(f.name, '') AS folder_name, p.description, p.tags
+	//  FROM stitch_projects p
+	//  JOIN users u ON u.id = p.created_by
+	//  LEFT JOIN stitch_folders f ON f.id = p.folder_id
+	//  WHERE ($1::uuid IS NULL OR p.created_by = $1)
+	//    AND (
+	//      $2::text = 'all'
+	//      OR ($2::text = 'unfiled' AND p.folder_id IS NULL)
+	//      OR ($2::text = 'folder' AND p.folder_id = $3)
+	//    )
+	//    AND ($4::text IS NULL OR $4 = '' OR p.title ILIKE '%' || $4 || '%' OR p.description ILIKE '%' || $4 || '%')
+	//  ORDER BY p.updated_at DESC
+	ListStitchProjects(ctx context.Context, arg *ListStitchProjectsParams) ([]*ListStitchProjectsRow, error)
 	// ListTagsForVideo returns a video's tags, alphabetically.
 	//
 	//  SELECT t.id, t.name, t.slug, t.color
@@ -1827,16 +3669,91 @@ type Querier interface {
 	//  WHERE vt.video_id = $1
 	//  ORDER BY t.name ASC
 	ListTagsForVideo(ctx context.Context, videoID pgtype.UUID) ([]*ListTagsForVideoRow, error)
+	//ListTopicNeighborsForVideo
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title,
+	//         v.title AS video_title, v.uploader, t.slug AS topic_slug, t.title AS topic_title
+	//  FROM context_windows mine
+	//  JOIN context_window_topics mt ON mt.window_id = mine.id
+	//  JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.window_id <> mine.id
+	//  JOIN context_windows cw ON cw.id = ot.window_id AND NOT cw.stale AND cw.kind = 'window'
+	//  JOIN videos v ON v.id = cw.video_id
+	//  JOIN videos mv ON mv.id = mine.video_id
+	//  JOIN topics t ON t.slug = ot.topic_slug
+	//  WHERE mine.video_id = $1
+	//    AND NOT mine.stale
+	//    AND v.id <> mine.video_id
+	//    AND v.channel_row_id IS DISTINCT FROM mv.channel_row_id
+	//  ORDER BY cw.updated_at DESC, cw.id
+	//  LIMIT $2
+	ListTopicNeighborsForVideo(ctx context.Context, arg *ListTopicNeighborsForVideoParams) ([]*ListTopicNeighborsForVideoRow, error)
+	//ListTopicWindows
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
+	//         v.title AS video_title, v.uploader, v.channel_row_id,
+	//         cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
+	//  FROM context_window_topics cwt
+	//  JOIN context_windows cw ON cw.id = cwt.window_id
+	//  JOIN videos v ON v.id = cw.video_id
+	//  JOIN topics t ON t.slug = cwt.topic_slug
+	//  WHERE cwt.topic_slug = $1
+	//    AND NOT cw.stale
+	//    AND cw.kind = 'window'
+	//  ORDER BY cw.updated_at DESC, cw.id
+	//  LIMIT $2
+	ListTopicWindows(ctx context.Context, arg *ListTopicWindowsParams) ([]*ListTopicWindowsRow, error)
+	//ListTopics
+	//
+	//  SELECT slug, title, origin FROM topics
+	//  ORDER BY title, slug
+	//  LIMIT $1
+	ListTopics(ctx context.Context, pageLimit int32) ([]*ListTopicsRow, error)
+	//ListTopicsNeedingStub
+	//
+	//  SELECT t.slug, t.title
+	//  FROM topics t
+	//  WHERE t.origin <> 'wiki'
+	//    AND NOT EXISTS (
+	//      SELECT 1 FROM wiki_pages w WHERE w.tree = 'topic' AND w.slug = t.slug
+	//    )
+	//    AND (
+	//      SELECT count(DISTINCT v.channel_row_id)
+	//      FROM context_window_topics cwt
+	//      JOIN context_windows cw ON cw.id = cwt.window_id
+	//      JOIN videos v ON v.id = cw.video_id
+	//      WHERE cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
+	//    ) >= 3
+	//  ORDER BY t.slug
+	ListTopicsNeedingStub(ctx context.Context) ([]*ListTopicsNeedingStubRow, error)
+	//ListTranscriptCoverage
+	//
+	//  SELECT lang,coverage,updated_at FROM video_transcripts WHERE video_id=$1 ORDER BY lang
+	ListTranscriptCoverage(ctx context.Context, videoID pgtype.UUID) ([]*ListTranscriptCoverageRow, error)
 	// ListUnassignedChannels returns channels that are not yet linked to a creator.
 	//
 	//  SELECT id, created_at, updated_at, platform, identity_key, channel_id, uploader, canonical_url, creator_id, search FROM channels WHERE creator_id IS NULL ORDER BY uploader LIMIT 200
 	ListUnassignedChannels(ctx context.Context) ([]*Channel, error)
+	//ListUngroupedFaces
+	//
+	//  SELECT f.id,f.embedding::text AS embedding,f.sample_ts,s.video_id FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id
+	//  WHERE s.model_id=$1 AND s.active AND f.eligible AND NOT f.dismissed AND f.person_id IS NULL AND f.assignment='unassigned' ORDER BY f.grouping_checked_at NULLS FIRST,f.id LIMIT 1000
+	ListUngroupedFaces(ctx context.Context, modelID string) ([]*ListUngroupedFacesRow, error)
+	//ListUnscoredCommentsForVideo
+	//
+	//  SELECT c.id, c.video_id, c.source, c.comment_id, c.author, c.author_id, c.text, c.like_count, c.published_at
+	//  FROM video_comments c
+	//  LEFT JOIN comment_scores s ON s.comment_id = c.id
+	//  WHERE c.video_id = $1
+	//    AND s.comment_id IS NULL
+	//  ORDER BY c.published_at DESC NULLS LAST, c.id
+	//  LIMIT $2::int
+	ListUnscoredCommentsForVideo(ctx context.Context, arg *ListUnscoredCommentsForVideoParams) ([]*ListUnscoredCommentsForVideoRow, error)
 	// ListVideoCommentReplies returns replies (children) for a given parent comment.
 	// Carries the same display extras as ListVideoComments so replies render with
 	// the same CommentRow component.
 	//
 	//  SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-	//         c.published_at, c.like_count, c.text, c.created_at,
+	//         c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 	//         COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
 	//         COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
 	//         COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -1858,7 +3775,7 @@ type Querier interface {
 	// ::text/::boolean casts on the COALESCE results give sqlc concrete Go types.
 	//
 	//  SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-	//         c.published_at, c.like_count, c.text, c.created_at,
+	//         c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 	//         COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
 	//         COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
 	//         COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -1874,10 +3791,22 @@ type Querier interface {
 	//  LIMIT $3::int
 	//  OFFSET $2::int
 	ListVideoComments(ctx context.Context, arg *ListVideoCommentsParams) ([]*ListVideoCommentsRow, error)
+	//ListVideoFaces
+	//
+	//  SELECT f.id,f.sample_ts,f.frame_ref,f.width,f.height,f.box,f.score,f.eligible,f.person_id,f.assignment,p.name,s.video_id
+	//  FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id LEFT JOIN people p ON p.id=f.person_id
+	//  WHERE NOT f.dismissed AND (s.active OR NOT EXISTS(SELECT 1 FROM face_index_sets a WHERE a.video_id=s.video_id AND a.active))
+	//  AND ($1::uuid IS NULL OR s.video_id=$1)
+	//  AND ($2::uuid IS NULL OR f.person_id=$2)
+	//  AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM videos v WHERE v.id=s.video_id AND v.channel_row_id=$3))
+	//  AND ($4::float8 IS NULL OR f.sample_ts>=$4)
+	//  AND ($5::float8 IS NULL OR f.sample_ts<=$5)
+	//  ORDER BY s.video_id,f.sample_ts,f.id LIMIT $7 OFFSET $6
+	ListVideoFaces(ctx context.Context, arg *ListVideoFacesParams) ([]*ListVideoFacesRow, error)
 	// ListVideosForAnalyze returns the public-metric rows the autopsy analyzer needs.
 	//
 	//  SELECT v.id, v.src, v.title, v.format, v.upload_date, v.duration_seconds, v.view_count, v.like_count,
-	//    (SELECT COUNT(*) FROM video_comments c WHERE c.video_id = v.id)::bigint AS comment_count
+	//    v.comment_count
 	//  FROM videos v
 	//  WHERE v.channel_row_id = ANY($1::uuid[])
 	//    AND v.upload_date IS NOT NULL
@@ -1927,6 +3856,15 @@ type Querier interface {
 	//  ORDER BY updated_at ASC
 	//  LIMIT $1
 	ListVideosMissingVideoPath(ctx context.Context, limit int32) ([]string, error)
+	// ListVideosNeedingCommenters returns distinct videos with unlinked comments.
+	//
+	//  SELECT DISTINCT video_id
+	//  FROM video_comments
+	//  WHERE commenter_id IS NULL
+	//    AND author_id IS NOT NULL
+	//    AND btrim(author_id) <> ''
+	//  LIMIT $1::int
+	ListVideosNeedingCommenters(ctx context.Context, batchSize int32) ([]pgtype.UUID, error)
 	// ListVideosNeedingProbe returns videos with a video_path but no probe_data, for backfill.
 	//
 	//  SELECT id, video_path
@@ -1936,123 +3874,320 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT $1
 	ListVideosNeedingProbe(ctx context.Context, maxCount int32) ([]*ListVideosNeedingProbeRow, error)
+	//ListVideosNeedingSubtitles
+	//
+	//  SELECT id, src FROM videos
+	//  WHERE NOT EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = videos.id)
+	//    AND subtitle_state <> 'unavailable'
+	//  ORDER BY subtitle_checked_at NULLS FIRST, created_at
+	//  LIMIT $1
+	ListVideosNeedingSubtitles(ctx context.Context, pageLimit int32) ([]*ListVideosNeedingSubtitlesRow, error)
 	// ListVideosPaginated returns videos with filters, sorting, and pagination.
 	// Returns total_count via window function for pagination UI.
 	//
 	//  WITH params AS (
 	//      SELECT
-	//          NULLIF(btrim(COALESCE($14::text, '')), '') AS tsq,
-	//          NULLIF(btrim(COALESCE($15::text, '')), '') AS raw
+	//          NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
+	//          NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+	//  ),
+	//  field_clauses AS (
+	//      SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
+	//      FROM jsonb_array_elements(COALESCE($2::jsonb, '[]'::jsonb))
+	//  ),
+	//  field_hits AS (
+	//      SELECT fc.ordinality, fv.id AS video_id
+	//      FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.title, '')) @@ phraseto_tsquery('simple', fc.phrase)
+	//      WHERE fc.field = 'title'
+	//      UNION ALL
+	//      SELECT fc.ordinality, fv.id AS video_id
+	//      FROM field_clauses fc JOIN videos fv ON fc.phrase <> '' AND strpos(lower(fv.src), lower(fc.phrase)) > 0
+	//      WHERE fc.field = 'url'
+	//      UNION ALL
+	//      SELECT fc.ordinality, fv.id AS video_id
+	//      FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.description, '')) @@ phraseto_tsquery('simple', fc.phrase)
+	//      WHERE fc.field = 'description'
+	//      UNION ALL
+	//      SELECT fc.ordinality, fv.id AS video_id
+	//      FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.uploader, '')) @@ phraseto_tsquery('simple', fc.phrase)
+	//      WHERE fc.field = 'uploader'
+	//      UNION ALL
+	//      SELECT fc.ordinality, ft.video_id AS video_id
+	//      FROM field_clauses fc JOIN video_transcripts ft ON ft.search @@ phraseto_tsquery('simple', fc.phrase)
+	//      WHERE fc.field = 'transcript'
+	//      UNION ALL
+	//      SELECT fc.ordinality, fw.video_id AS video_id
+	//      FROM field_clauses fc JOIN context_windows fw ON NOT fw.stale AND fw.search @@ phraseto_tsquery('simple', fc.phrase)
+	//      WHERE fc.field = 'context'
+	//  ),
+	//  field_matches AS (
+	//      SELECT video_id FROM field_hits
+	//      GROUP BY video_id
+	//      HAVING count(DISTINCT ordinality) = (SELECT count(*) FROM field_clauses)
 	//  ),
 	//  hits AS (
-	//      SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+	//      SELECT
+	//          v.id AS video_id,
+	//          -- Title matches boost ×4 using the title tsvector, not whole v.search.
+	//          -- Description/tags/uploader stay ×1.
+	//          ts_rank_cd(v.search, to_tsquery('simple', p.tsq))
+	//              * CASE
+	//                  WHEN to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) THEN 4
+	//                  ELSE 1
+	//                END AS rank,
+	//          to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) AS title_match,
+	//          to_tsvector('simple', coalesce(v.uploader, '')) @@ to_tsquery('simple', p.tsq) AS uploader_match,
+	//          to_tsvector('simple', coalesce(v.description, '')) @@ to_tsquery('simple', p.tsq) AS description_match,
+	//          to_tsvector('simple', coalesce(array_to_string(v.tags, ' '), '')) @@ to_tsquery('simple', p.tsq) AS tags_match,
+	//          FALSE AS comment_match,
+	//          FALSE AS transcript_match,
+	//          FALSE AS context_window_match,
+	//          NULL::text AS snippet,
+	//          NULL::text AS snippet_source,
+	//          3::smallint AS snippet_priority
 	//      FROM videos v
 	//      CROSS JOIN params p
 	//      WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
 	//      UNION ALL
-	//      SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
-	//      FROM videos v
-	//      CROSS JOIN params p
-	//      WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
-	//      UNION ALL
-	//      SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+	//      SELECT
+	//          vc.video_id,
+	//          max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq))) * 1.5,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          TRUE,
+	//          FALSE,
+	//          FALSE,
+	//          NULL::text,
+	//          'comment'::text,
+	//          2::smallint
 	//      FROM video_comments vc
 	//      CROSS JOIN params p
 	//      WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
 	//      GROUP BY vc.video_id
 	//      UNION ALL
-	//      SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+	//      SELECT
+	//          vt.video_id,
+	//          max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq))) * 3,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          TRUE,
+	//          FALSE,
+	//          NULL::text,
+	//          'transcript'::text,
+	//          1::smallint
 	//      FROM video_transcripts vt
 	//      CROSS JOIN params p
 	//      WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
 	//      GROUP BY vt.video_id
 	//      UNION ALL
-	//      SELECT v.id, 0.05::real
-	//      FROM videos v
+	//      SELECT
+	//          cw.video_id,
+	//          max(ts_rank_cd(cw.search, to_tsquery('simple', p.tsq))) * 2,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          FALSE,
+	//          TRUE,
+	//          NULL::text,
+	//          'context_window'::text,
+	//          2::smallint
+	//      FROM context_windows cw
 	//      CROSS JOIN params p
-	//      WHERE p.raw IS NOT NULL AND (
-	//          strpos(lower(v.title), lower(p.raw)) > 0
-	//          OR strpos(lower(v.uploader), lower(p.raw)) > 0
-	//      )
+	//      WHERE p.tsq IS NOT NULL AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+	//      GROUP BY cw.video_id
 	//  ),
 	//  ranked AS (
-	//      SELECT video_id, sum(rank) AS rank
+	//      SELECT
+	//          video_id,
+	//          sum(rank) AS rank,
+	//          bool_or(title_match) AS search_match_title,
+	//          bool_or(uploader_match) AS search_match_uploader,
+	//          bool_or(description_match) AS search_match_description,
+	//          bool_or(tags_match) AS search_match_tags,
+	//          bool_or(comment_match) AS search_match_comment,
+	//          bool_or(transcript_match) AS search_match_transcript,
+	//          bool_or(context_window_match) AS search_match_context_window,
+	//          (array_agg(snippet ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet,
+	//          (array_agg(snippet_source ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet_source
 	//      FROM hits
 	//      GROUP BY video_id
 	//  )
 	//  SELECT
-	//      v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media,
+	//      v.id,
+	//      v.created_at,
+	//      v.title,
+	//      v.uploader,
+	//      v.description,
+	//      v.tags,
+	//      v.media,
+	//      v.format,
+	//      v.upload_date,
+	//      v.duration_seconds,
+	//      v.view_count,
+	//      v.like_count,
+	//      v.comment_count,
+	//      v.thumb_gradient_start,
+	//      v.thumb_gradient_end,
+	//      v.thumb_gradient_angle,
 	//      COUNT(*) OVER() AS total_count,
 	//      COALESCE((SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id), 0) AS clip_count,
 	//      COALESCE((SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id), 0) AS marker_count,
 	//      COALESCE((SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id), '1970-01-01'::timestamptz) AS last_clip_at,
 	//      COALESCE((SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id), '1970-01-01'::timestamptz) AS last_marker_at,
-	//      COALESCE(u.user_name, 'unknown') AS archived_by_username
+	//      COALESCE(u.user_name, 'unknown') AS archived_by_username,
+	//      COALESCE(r.search_match_title, FALSE) AS search_match_title,
+	//      COALESCE(r.search_match_uploader, FALSE) AS search_match_uploader,
+	//      COALESCE(r.search_match_description, FALSE) AS search_match_description,
+	//      COALESCE(r.search_match_tags, FALSE) AS search_match_tags,
+	//      COALESCE(r.search_match_comment, FALSE) AS search_match_comment,
+	//      COALESCE(r.search_match_transcript, FALSE) AS search_match_transcript,
+	//      COALESCE(r.search_match_context_window, FALSE) AS search_match_context_window,
+	//      COALESCE(CASE
+	//          -- Expensive headline extraction is deliberately deferred to the rows
+	//          -- that survive ORDER BY/LIMIT instead of running for every library hit.
+	//          WHEN r.search_match_transcript THEN (
+	//              SELECT regexp_replace(regexp_replace(ts_headline('simple', vt.text, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+	//              FROM video_transcripts vt
+	//              WHERE vt.video_id = v.id AND vt.search @@ to_tsquery('simple', p.tsq)
+	//              ORDER BY ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)) DESC
+	//              LIMIT 1
+	//          )
+	//          WHEN r.search_match_context_window THEN (
+	//              SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', cw.title, cw.summary), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+	//              FROM context_windows cw
+	//              WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+	//              ORDER BY ts_rank_cd(cw.search, to_tsquery('simple', p.tsq)) DESC
+	//              LIMIT 1
+	//          )
+	//          WHEN r.search_match_comment THEN (
+	//              SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', vc.author, vc.text), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+	//              FROM video_comments vc
+	//              WHERE vc.video_id = v.id AND vc.search @@ to_tsquery('simple', p.tsq)
+	//              ORDER BY ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)) DESC
+	//              LIMIT 1
+	//          )
+	//          WHEN r.search_match_description THEN regexp_replace(regexp_replace(ts_headline('simple', v.description, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+	//          WHEN r.search_match_tags THEN array_to_string(v.tags, ', ')
+	//          WHEN r.search_match_title THEN v.title
+	//          WHEN r.search_match_uploader THEN v.uploader
+	//      END, '')::text AS search_match_snippet,
+	//      COALESCE(CASE
+	//          WHEN r.search_match_transcript THEN 'transcript'
+	//          WHEN r.search_match_context_window THEN 'context_window'
+	//          WHEN r.search_match_comment THEN 'comment'
+	//          WHEN r.search_match_description THEN 'description'
+	//          WHEN r.search_match_tags THEN 'tags'
+	//          WHEN r.search_match_title THEN 'title'
+	//          WHEN r.search_match_uploader THEN 'uploader'
+	//      END, '')::text AS search_match_snippet_source
 	//  FROM videos v
 	//  LEFT JOIN users u ON v.archived_by = u.id
 	//  LEFT JOIN ranked r ON r.video_id = v.id
 	//  CROSS JOIN params p
 	//  WHERE
+	//      -- Metadata-only catalog entries are not playable videos and never belong in card feeds.
+	//      v.media <> 'metadata'
 	//      -- Full-text / substring search (optional).
-	//      (p.raw IS NULL OR r.video_id IS NOT NULL)
-	//      -- Uploader filter: substring, case-insensitive (optional)
-	//      AND ($1::text IS NULL OR strpos(lower(v.uploader), lower($1)) > 0)
-	//      -- Channel filter (optional)
-	//      AND ($2::text IS NULL OR v.channel_id = $2)
+	//      AND (p.raw IS NULL OR r.video_id IS NOT NULL)
+	//      AND (COALESCE(cardinality($1::text[]),0)=0
+	//        OR ('title'=ANY($1::text[]) AND r.search_match_title)
+	//        OR ('description'=ANY($1::text[]) AND r.search_match_description)
+	//        OR ('tags'=ANY($1::text[]) AND r.search_match_tags)
+	//        OR ('comments'=ANY($1::text[]) AND r.search_match_comment)
+	//        OR ('transcript'=ANY($1::text[]) AND r.search_match_transcript)
+	//        OR ('context_windows'=ANY($1::text[]) AND r.search_match_context_window)
+	//        OR ('uploader'=ANY($1::text[]) AND r.search_match_uploader))
+	//      -- Resolve each scope once, then intersect by video (all scopes must match).
+	//      AND (COALESCE(jsonb_array_length($2::jsonb), 0) = 0
+	//           OR v.id IN (SELECT video_id FROM field_matches))
+	//      -- Require completed assets. Keep predicates separate so unused filters
+	//      -- disappear from the plan instead of adding per-video conditional subplans.
+	//      AND (NOT COALESCE('context' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM context_windows ac WHERE ac.video_id = v.id AND NOT ac.stale))
+	//      AND (NOT COALESCE('transcript' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM video_transcripts atx WHERE atx.video_id = v.id AND btrim(atx.text) <> ''))
+	//      AND (NOT COALESCE('thumbnail' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"thumbnail":true}'::jsonb)
+	//      AND (NOT COALESCE('preview' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"preview":true}'::jsonb)
+	//      AND (NOT COALESCE('waveform' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"waveform":true}'::jsonb)
+	//      AND (NOT COALESCE('seek' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"seek":true}'::jsonb)
+	//      AND ($3::text[] IS NULL OR $3::text[] <@ ARRAY['context','transcript','thumbnail','preview','waveform','seek'])
+	//      -- Uploader combobox filter: indexed, case-insensitive prefix; optionally negate it.
+	//      AND (
+	//          $4::text IS NULL
+	//          OR (
+	//              COALESCE($5::boolean, FALSE) = FALSE
+	//              AND lower(v.uploader) LIKE lower($4) || '%'
+	//          )
+	//          OR (
+	//              COALESCE($5::boolean, FALSE) = TRUE
+	//              AND lower(v.uploader) NOT LIKE lower($4) || '%'
+	//          )
+	//      )
+	//  	-- Channel filter (optional)
+	//  	AND ($6::text IS NULL OR v.channel_id = $6)
+	//      -- First-class creator/channel filters.
+	//      AND ($7::uuid IS NULL OR EXISTS (
+	//          SELECT 1 FROM channels ch WHERE ch.id = v.channel_row_id AND ch.creator_id = $7
+	//      ))
+	//      AND ($8::uuid IS NULL OR v.channel_row_id = $8)
 	//      -- Duration filter: short=<5min, medium=5-30min, long=>30min
 	//      AND (
-	//          $3::text IS NULL
-	//          OR ($3 = 'short' AND v.duration_seconds < 300)
-	//          OR ($3 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
-	//          OR ($3 = 'long' AND v.duration_seconds >= 1800)
+	//          $9::text IS NULL
+	//          OR ($9 = 'short' AND v.duration_seconds < 300)
+	//          OR ($9 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
+	//          OR ($9 = 'long' AND v.duration_seconds >= 1800)
 	//      )
 	//      -- Scraped tags filter (any tag matches)
-	//      AND ($4::text[] IS NULL OR v.tags && $4::text[])
+	//      AND ($10::text[] IS NULL OR v.tags && $10::text[])
 	//      -- User tag filter (video has any of the selected tag ids)
-	//      AND ($5::uuid[] IS NULL OR EXISTS (
+	//      AND ($11::uuid[] IS NULL OR EXISTS (
 	//          SELECT 1 FROM video_tags vt
-	//          WHERE vt.video_id = v.id AND vt.tag_id = ANY($5::uuid[])
+	//          WHERE vt.video_id = v.id AND vt.tag_id = ANY($11::uuid[])
 	//      ))
 	//      -- Date range (archived or published based on date_type)
 	//      AND (
-	//          $6::date IS NULL
-	//          OR ($7::text = 'published' AND v.upload_date >= $6)
-	//          OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date >= $6)
+	//          $12::date IS NULL
+	//          OR ($13::text = 'published' AND v.upload_date >= $12)
+	//          OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date >= $12)
 	//      )
 	//      AND (
-	//          $8::date IS NULL
-	//          OR ($7::text = 'published' AND v.upload_date <= $8)
-	//          OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date <= $8)
+	//          $14::date IS NULL
+	//          OR ($13::text = 'published' AND v.upload_date <= $14)
+	//          OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date <= $14)
 	//      )
 	//      -- Has clips filter
-	//      AND ($9::boolean IS NULL OR $9 = FALSE
+	//      AND ($15::boolean IS NULL OR $15 = FALSE
 	//           OR EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id))
 	//      -- Has markers filter
-	//      AND ($10::boolean IS NULL OR $10 = FALSE
+	//      AND ($16::boolean IS NULL OR $16 = FALSE
 	//           OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 	//  ORDER BY
-	//      CASE WHEN $11 = 'relevance' THEN r.rank END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
 	//      -- Date sorts (archived)
-	//      CASE WHEN $11 = 'newest' THEN v.created_at END DESC NULLS LAST,
-	//      CASE WHEN $11 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+	//      CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
 	//      -- Date sorts (published)
-	//      CASE WHEN $11 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-	//      CASE WHEN $11 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+	//      CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
 	//      -- Title sorts
-	//      CASE WHEN $11 = 'alpha' THEN v.title END ASC NULLS LAST,
-	//      CASE WHEN $11 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
+	//      CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
 	//      -- Duration sorts
-	//      CASE WHEN $11 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-	//      CASE WHEN $11 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+	//      CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
 	//      -- Activity sorts
-	//      CASE WHEN $11 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $11 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $11 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $11 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
 	//      -- Default fallback
 	//      v.created_at DESC
-	//  LIMIT $13
-	//  OFFSET $12
+	//  LIMIT $19
+	//  OFFSET $18
 	ListVideosPaginated(ctx context.Context, arg *ListVideosPaginatedParams) ([]*ListVideosPaginatedRow, error)
 	// ListVideosWithAssetErrors returns videos that have recorded asset generation errors.
 	//
@@ -2064,6 +4199,29 @@ type Querier interface {
 	//  ORDER BY (assets_status->>'_last_error_at')::timestamptz DESC NULLS LAST
 	//  LIMIT $1
 	ListVideosWithAssetErrors(ctx context.Context, limit int32) ([]*ListVideosWithAssetErrorsRow, error)
+	//ListVisionChannels
+	//
+	//  SELECT id,coalesce(nullif(uploader,''),canonical_url) AS label FROM channels ORDER BY uploader LIMIT 1000
+	ListVisionChannels(ctx context.Context) ([]*ListVisionChannelsRow, error)
+	//ListVisionCreators
+	//
+	//  SELECT id,name AS label FROM creators ORDER BY name LIMIT 1000
+	ListVisionCreators(ctx context.Context) ([]*ListVisionCreatorsRow, error)
+	//ListVisionVideos
+	//
+	//  SELECT id,title AS label FROM videos WHERE media='file' AND (title ILIKE '%'||$1::text||'%' OR uploader ILIKE '%'||$1::text||'%') ORDER BY created_at DESC LIMIT 200
+	ListVisionVideos(ctx context.Context, query string) ([]*ListVisionVideosRow, error)
+	//ListVisualCandidates
+	//
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
+	//  WHERE v.media='file' AND v.duration_seconds>0 AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
+	//  ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
+	ListVisualCandidates(ctx context.Context) ([]*Video, error)
+	//ListVisualProgress
+	//
+	//  SELECT video_id,'visual'::text AS kind,status,next_sample,interval_seconds,start_ts,end_ts,error,updated_at FROM visual_index_sets
+	//   ORDER BY updated_at DESC LIMIT 100
+	ListVisualProgress(ctx context.Context) ([]*ListVisualProgressRow, error)
 	// ListWatchedChannels returns all watches with creator name and how many
 	// videos each watch has enqueued so far, newest watch first.
 	//
@@ -2079,6 +4237,93 @@ type Querier interface {
 	//  ) t ON TRUE
 	//  ORDER BY w.created_at DESC
 	ListWatchedChannels(ctx context.Context) ([]*ListWatchedChannelsRow, error)
+	//ListWatchlist
+	//
+	//  SELECT
+	//      w.user_id,
+	//      w.commenter_id,
+	//      w.note,
+	//      w.created_at,
+	//      c.source,
+	//      c.author_id,
+	//      c.author_url,
+	//      c.display_name,
+	//      c.comment_count,
+	//      c.last_seen
+	//  FROM commenter_watchlist w
+	//  JOIN commenters c ON c.id = w.commenter_id
+	//  WHERE w.user_id = $1
+	//  ORDER BY w.created_at DESC
+	ListWatchlist(ctx context.Context, userID pgtype.UUID) ([]*ListWatchlistRow, error)
+	//ListWikiBacklinks
+	//
+	//  SELECT p.tree, p.slug, p.title, p.revision, p.updated_at
+	//  FROM wiki_links l
+	//  JOIN wiki_pages p ON p.tree = l.from_tree AND p.slug = l.from_slug
+	//  WHERE l.to_tree = $1 AND l.to_slug = $2
+	//  ORDER BY p.tree, p.slug
+	ListWikiBacklinks(ctx context.Context, arg *ListWikiBacklinksParams) ([]*ListWikiBacklinksRow, error)
+	//ListWikiLinks
+	//
+	//  SELECT from_tree, from_slug, to_tree, to_slug
+	//  FROM wiki_links
+	//  ORDER BY from_tree, from_slug, to_tree, to_slug
+	ListWikiLinks(ctx context.Context) ([]*WikiLink, error)
+	//ListWikiLinksFromPage
+	//
+	//  SELECT to_tree, to_slug
+	//  FROM wiki_links
+	//  WHERE from_tree = $1 AND from_slug = $2
+	//  ORDER BY to_tree, to_slug
+	ListWikiLinksFromPage(ctx context.Context, arg *ListWikiLinksFromPageParams) ([]*ListWikiLinksFromPageRow, error)
+	//ListWikiPages
+	//
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
+	//  WHERE ($1::text = '' OR tree = $1)
+	//  ORDER BY tree, slug
+	ListWikiPages(ctx context.Context, tree string) ([]*WikiPage, error)
+	//ListWikiPagesForChannel
+	//
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
+	//  WHERE channel_id = $1
+	//  ORDER BY tree, slug
+	ListWikiPagesForChannel(ctx context.Context, channelID pgtype.UUID) ([]*WikiPage, error)
+	//ListWikiPagesForCreator
+	//
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
+	//  WHERE creator_id = $1
+	//  ORDER BY tree, slug
+	ListWikiPagesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*WikiPage, error)
+	//ListWikiRevisions
+	//
+	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
+	//  WHERE tree = $1 AND slug = $2
+	//  ORDER BY revision DESC
+	ListWikiRevisions(ctx context.Context, arg *ListWikiRevisionsParams) ([]*WikiRevision, error)
+	//ListWindowTopicBinds
+	//
+	//  SELECT cwt.window_id, t.slug, t.title, cwt.match_kind
+	//  FROM context_window_topics cwt
+	//  JOIN topics t ON t.slug = cwt.topic_slug
+	//  JOIN context_windows cw ON cw.id = cwt.window_id AND NOT cw.stale
+	//  WHERE cwt.window_id = ANY($1::uuid[])
+	//  ORDER BY t.title, cwt.window_id
+	ListWindowTopicBinds(ctx context.Context, windowIds []pgtype.UUID) ([]*ListWindowTopicBindsRow, error)
+	//ListWindowsForTopicBind
+	//
+	//  SELECT id, title, topics, entities, kind
+	//  FROM context_windows
+	//  WHERE NOT stale AND kind = 'window' AND topic_resolved_at IS NULL
+	//  ORDER BY updated_at DESC, id
+	//  LIMIT $1
+	ListWindowsForTopicBind(ctx context.Context, pageLimit int32) ([]*ListWindowsForTopicBindRow, error)
+	//ListWorkspacePreflightDocuments
+	//
+	//  SELECT sn.id, d.markdown, d.revision
+	//  FROM show_notes sn
+	//  LEFT JOIN show_note_documents d ON d.show_note_id = sn.id
+	//  ORDER BY sn.created_at, sn.id
+	ListWorkspacePreflightDocuments(ctx context.Context) ([]*ListWorkspacePreflightDocumentsRow, error)
 	// Listen for download job notifications.
 	//
 	//  LISTEN download_jobs
@@ -2087,6 +4332,59 @@ type Querier interface {
 	//
 	//  LISTEN ingest_jobs
 	ListenIngestJobs(ctx context.Context) error
+	//ListenMLJobs
+	//
+	//  LISTEN ml_jobs
+	ListenMLJobs(ctx context.Context) error
+	// ============================================================================
+	// Collaborative Markdown show workspace
+	// ============================================================================
+	//
+	//
+	//  LISTEN show_note_room_events
+	ListenShowNoteRoomEvents(ctx context.Context) error
+	//LockCompilationPlan
+	//
+	//  SELECT id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at FROM compilation_plans WHERE id=$1 FOR UPDATE
+	LockCompilationPlan(ctx context.Context, id pgtype.UUID) (*CompilationPlan, error)
+	//LockContextWindow
+	//
+	//  SELECT id FROM context_windows WHERE id=$1 FOR UPDATE
+	LockContextWindow(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	//LockDelegatedMessage
+	//
+	//  SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))
+	LockDelegatedMessage(ctx context.Context, identity string) error
+	//LockMLPublication
+	//
+	//  SELECT id FROM ml_jobs WHERE id=$1 AND lease_token=$2 AND status='processing' FOR UPDATE
+	LockMLPublication(ctx context.Context, arg *LockMLPublicationParams) (pgtype.UUID, error)
+	//LockReviewThread
+	//
+	//  SELECT id, show_note_id, kind, status, actor_kind, actor_user_id, actor_token_id, actor_name, body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end, start_line, start_column, end_line, end_column, detached, created_at, updated_at, closed_at, closed_by_user_id FROM show_note_review_threads WHERE id=$1 FOR UPDATE
+	LockReviewThread(ctx context.Context, id pgtype.UUID) (*ShowNoteReviewThread, error)
+	//LockShowNoteDocument
+	//
+	//  SELECT show_note_id, markdown, revision, snapshot, snapshot_revision, updated_at FROM show_note_documents
+	//  WHERE show_note_id = $1
+	//  FOR UPDATE
+	LockShowNoteDocument(ctx context.Context, showNoteID pgtype.UUID) (*ShowNoteDocument, error)
+	//LockShowNoteForWorkspaceMigration
+	//
+	//  SELECT id FROM show_notes WHERE id = $1 FOR UPDATE
+	LockShowNoteForWorkspaceMigration(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	//LockTranscriptForContext
+	//
+	//  SELECT video_id FROM video_transcripts WHERE video_id=$1 FOR SHARE
+	LockTranscriptForContext(ctx context.Context, videoID pgtype.UUID) error
+	//LockTranscriptRepair
+	//
+	//  SELECT video_id FROM video_transcripts WHERE video_id=$1 FOR UPDATE
+	LockTranscriptRepair(ctx context.Context, videoID pgtype.UUID) error
+	//LockVideoForContext
+	//
+	//  SELECT id FROM videos WHERE id=$1 FOR UPDATE
+	LockVideoForContext(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	// MarkDownloadJobFailed stores error and marks job failed.
 	//
 	//  UPDATE download_jobs
@@ -2107,6 +4405,20 @@ type Querier interface {
 	//      last_error = NULL
 	//  WHERE id = $3
 	MarkDownloadJobSucceeded(ctx context.Context, arg *MarkDownloadJobSucceededParams) error
+	//MarkFaceGroupingChecked
+	//
+	//  UPDATE face_observations SET grouping_checked_at=now() WHERE id=$1
+	MarkFaceGroupingChecked(ctx context.Context, id pgtype.UUID) error
+	// MarkGeneratedWindowsStale flags previous generated rows (optionally keeping a set).
+	//
+	//  UPDATE context_windows
+	//  SET stale = TRUE,
+	//      updated_at = NOW()
+	//  WHERE video_id = $1
+	//    AND origin = 'generated'
+	//    AND stale = FALSE
+	//    AND ($2::uuid IS NULL OR set_id IS DISTINCT FROM $2)
+	MarkGeneratedWindowsStale(ctx context.Context, arg *MarkGeneratedWindowsStaleParams) error
 	// MarkIngestJobFailed marks ingest failed.
 	//
 	//  UPDATE ingest_jobs
@@ -2125,10 +4437,153 @@ type Querier interface {
 	//      last_error = NULL
 	//  WHERE id = $1
 	MarkIngestJobSucceeded(ctx context.Context, id pgtype.UUID) error
+	// MarkOverrideWindowsStale is used when transcript_hash changed: keep the rows,
+	// do not delete, but stop treating them as current.
+	//
+	//  UPDATE context_windows
+	//  SET stale = TRUE,
+	//      updated_at = NOW()
+	//  WHERE video_id = $1
+	//    AND stale = FALSE
+	//    AND (override_title OR override_summary OR override_bounds)
+	MarkOverrideWindowsStale(ctx context.Context, videoID pgtype.UUID) error
+	//MarkPersonMerged
+	//
+	//  UPDATE people SET merged_into=$1,revision=revision+1 WHERE id=$2 AND merged_into IS NULL
+	MarkPersonMerged(ctx context.Context, arg *MarkPersonMergedParams) error
+	//MarkShowNoteReferenceResolving
+	//
+	//  UPDATE show_note_references
+	//  SET status = 'resolving', download_job_id = $1, diagnostic = '', updated_at = NOW()
+	//  WHERE id = $2 AND show_note_id = $3
+	//  RETURNING id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at
+	MarkShowNoteReferenceResolving(ctx context.Context, arg *MarkShowNoteReferenceResolvingParams) (*ShowNoteReference, error)
+	//MarkShowNoteWorkspaceMigrated
+	//
+	//  UPDATE show_notes
+	//  SET workspace_migrated_at = NOW(), workspace_migration_error = '', updated_at = NOW()
+	//  WHERE id = $1
+	MarkShowNoteWorkspaceMigrated(ctx context.Context, id pgtype.UUID) error
+	//MarkShowNoteWorkspaceMigrationFailed
+	//
+	//  UPDATE show_notes
+	//  SET workspace_migration_error = $1
+	//  WHERE id = $2
+	MarkShowNoteWorkspaceMigrationFailed(ctx context.Context, arg *MarkShowNoteWorkspaceMigrationFailedParams) error
 	// MarkVideoLinksHarvested records that title/description/comment outlinks were harvested.
 	//
 	//  UPDATE videos SET links_harvested_at = NOW() WHERE id = $1
 	MarkVideoLinksHarvested(ctx context.Context, id pgtype.UUID) error
+	//MarkWindowTopicsResolved
+	//
+	//  UPDATE context_windows SET topic_resolved_at = NOW() WHERE id = $1
+	MarkWindowTopicsResolved(ctx context.Context, id pgtype.UUID) error
+	//MergeInterfacePreferences
+	//
+	//  INSERT INTO user_interface_preferences(user_id,preferences) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET preferences=user_interface_preferences.preferences || EXCLUDED.preferences,updated_at=now()
+	MergeInterfacePreferences(ctx context.Context, arg *MergeInterfacePreferencesParams) error
+	//MergePersonCorrections
+	//
+	//  UPDATE face_corrections SET person_id=$1 WHERE person_id=$2
+	MergePersonCorrections(ctx context.Context, arg *MergePersonCorrectionsParams) error
+	//MergePersonObservations
+	//
+	//  UPDATE face_observations SET person_id=$1,assignment='manual' WHERE person_id=$2
+	MergePersonObservations(ctx context.Context, arg *MergePersonObservationsParams) error
+	//MoveStitchProject
+	//
+	//  UPDATE stitch_projects
+	//  SET folder_id = $1, updated_at = now()
+	//  WHERE id = $2 AND created_by = $3
+	MoveStitchProject(ctx context.Context, arg *MoveStitchProjectParams) error
+	// Append position for a new block under a parent (NULL-safe sibling match).
+	//
+	//  SELECT COALESCE(MAX(position) + 1, 0)::int AS next_position
+	//  FROM show_note_blocks
+	//  WHERE show_note_id = $1
+	//    AND parent_id IS NOT DISTINCT FROM $2
+	NextBlockPosition(ctx context.Context, arg *NextBlockPositionParams) (int32, error)
+	// Authorizes viewer-scoped content streaming: true if the video is referenced by
+	// a block in this show note.
+	//
+	//  SELECT COUNT(*) > 0 FROM show_note_blocks
+	//  WHERE show_note_id = $1 AND video_id = $2
+	NoteReferencesVideo(ctx context.Context, arg *NoteReferencesVideoParams) (bool, error)
+	//NoteWorkspaceReferencesVideo
+	//
+	//  SELECT EXISTS (
+	//      SELECT 1 FROM show_note_references r
+	//      LEFT JOIN clips c ON c.id = r.clip_id
+	//      LEFT JOIN markers m ON m.id = r.marker_id
+	//      WHERE r.show_note_id = $1
+	//        AND (r.video_id = $2 OR c.video_id = $2 OR m.video_id = $2)
+	//  )
+	NoteWorkspaceReferencesVideo(ctx context.Context, arg *NoteWorkspaceReferencesVideoParams) (bool, error)
+	//NotifyStitchJob
+	//
+	//  SELECT pg_notify('stitch_jobs', $1)
+	NotifyStitchJob(ctx context.Context, payload string) error
+	//NotifyVisualChange
+	//
+	//  SELECT pg_notify('visual_changed','')
+	NotifyVisualChange(ctx context.Context) error
+	// PromoteContextJobs puts an explicit/agent request ahead of demand backfill
+	// and revives a cancelled row for the same transcript fingerprint.
+	//
+	//  UPDATE ml_jobs
+	//  SET priority = LEAST(priority, 100),
+	//      status = CASE WHEN status IN ('paused', 'cancelled') THEN 'queued' ELSE status END,
+	//      retry_at = CASE WHEN status IN ('paused', 'cancelled') THEN now() ELSE retry_at END,
+	//      updated_at = now()
+	//  WHERE video_id = $1 AND transcript_hash = $2
+	//    AND kind = 'context_windows' AND status IN ('queued', 'paused', 'cancelled')
+	PromoteContextJobs(ctx context.Context, arg *PromoteContextJobsParams) error
+	//PublishExecutionState
+	//
+	//  UPDATE compilation_plans p SET status=e.status,last_error=e.last_error,stitch_project_id=e.stitch_project_id,stitch_job_id=e.stitch_job_id,updated_at=now()
+	//  FROM compilation_executions e WHERE e.id=$1 AND p.id=e.plan_id AND p.revision=e.revision
+	PublishExecutionState(ctx context.Context, executionID pgtype.UUID) error
+	// UpdateVideoPath updates the video_path for a video.
+	// PublishVideoMedia makes a completed file available before derived asset work.
+	//
+	//  UPDATE videos SET video_path=$1, media='file',
+	//   thumbnail_path=COALESCE($2,thumbnail_path),
+	//   file_hash=COALESCE($3,file_hash),
+	//   file_size=$4, updated_at=NOW()
+	//  WHERE id=$5
+	PublishVideoMedia(ctx context.Context, arg *PublishVideoMediaParams) (int64, error)
+	//QueueNoteMaterialization
+	//
+	//  INSERT INTO show_note_materializations(thread_id,show_note_id,user_id,accepted_revision,base_markdown,proposed_markdown)
+	//  VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING
+	QueueNoteMaterialization(ctx context.Context, arg *QueueNoteMaterializationParams) error
+	//QueueVisualRange
+	//
+	//  INSERT INTO ml_jobs(video_id,kind,priority,transcript_hash,model_digest,prompt_version,checkpoint)
+	//  VALUES($1,'visual_index',300,$2,$3,$4,$5)
+	//  ON CONFLICT(video_id,kind,transcript_hash,model_digest,prompt_version) DO UPDATE SET retry_at=now(),status=CASE WHEN ml_jobs.status IN ('failed','waiting_assets','waiting_model') THEN 'queued' ELSE ml_jobs.status END
+	//  RETURNING id
+	QueueVisualRange(ctx context.Context, arg *QueueVisualRangeParams) (pgtype.UUID, error)
+	// RecordMLRuntimeFailure cools the kind immediately. First insert used to
+	// default retry_at=now(), so ClaimMLJob reclaimed transcribe every minute.
+	//
+	//  INSERT INTO ml_runtime_health(kind, failures, last_error, retry_at)
+	//  VALUES ($1, 1, $2, now() + interval '15 minutes')
+	//  ON CONFLICT (kind) DO UPDATE SET
+	//      failures = ml_runtime_health.failures + 1,
+	//      last_error = EXCLUDED.last_error,
+	//      retry_at = now() + interval '15 minutes',
+	//      updated_at = now()
+	RecordMLRuntimeFailure(ctx context.Context, arg *RecordMLRuntimeFailureParams) error
+	//RecordMLRuntimeSuccess
+	//
+	//  INSERT INTO ml_runtime_health(kind,verified_at) VALUES($1,now())
+	//  ON CONFLICT(kind) DO UPDATE SET failures=0,last_error='',retry_at=now(),verified_at=now(),updated_at=now()
+	RecordMLRuntimeSuccess(ctx context.Context, kind string) error
+	//RecordVisionAssetCheck
+	//
+	//  INSERT INTO vision_asset_checks(video_id,kind) VALUES($1,$2) ON CONFLICT(video_id,kind) DO UPDATE SET checked_at=now()
+	RecordVisionAssetCheck(ctx context.Context, arg *RecordVisionAssetCheckParams) error
 	// RecordWatchedChannelScanResult stores the outcome of a scan run.
 	//
 	//  UPDATE watched_channels
@@ -2154,6 +4609,15 @@ type Querier interface {
 	//  )
 	//  ON CONFLICT (watch_id, video_id) DO NOTHING
 	RecordWatchedChannelVideos(ctx context.Context, arg []*RecordWatchedChannelVideosParams) *RecordWatchedChannelVideosBatchResults
+	//RecoverCatalogCrawls
+	//
+	//  UPDATE catalog_crawls SET status = 'queued', locked_at = NULL, locked_by = '', updated_at = NOW()
+	//  WHERE status = 'running' AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '15 minutes')
+	RecoverCatalogCrawls(ctx context.Context) error
+	//RecoverModelOperations
+	//
+	//  UPDATE model_operations SET status='interrupted',updated_at=now() WHERE status='running'
+	RecoverModelOperations(ctx context.Context) error
 	// RecoverStuckDownloadJobs resets orphaned "processing" jobs back to "queued" on service startup.
 	// Jobs stuck in "processing" for more than the timeout are assumed to have been orphaned by a crash or restart.
 	//
@@ -2172,6 +4636,49 @@ type Querier interface {
 	//  WHERE status = 'processing'
 	//    AND updated_at < NOW() - INTERVAL '5 minutes'
 	RecoverStuckIngestJobs(ctx context.Context) error
+	// RecoverStuckMLJobs requeues processing rows whose lock is older than 15m.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'queued',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      updated_at = NOW()
+	//  WHERE status = 'processing'
+	//    AND (locked_at IS NULL OR locked_at < NOW() - INTERVAL '15 minutes')
+	RecoverStuckMLJobs(ctx context.Context) error
+	// RefreshCommenterStatsForVideo recounts comment_count/first_seen/last_seen for
+	// commenters that appear on this video (across all their comments).
+	//
+	//  UPDATE commenters c
+	//  SET comment_count = s.comment_count,
+	//      first_seen = s.first_seen,
+	//      last_seen = s.last_seen,
+	//      updated_at = NOW()
+	//  FROM (
+	//      SELECT
+	//          vc.commenter_id,
+	//          COUNT(*)::bigint AS comment_count,
+	//          MIN(COALESCE(vc.published_at, vc.created_at)) AS first_seen,
+	//          MAX(COALESCE(vc.published_at, vc.created_at)) AS last_seen
+	//      FROM video_comments vc
+	//      WHERE vc.commenter_id IN (
+	//          SELECT DISTINCT vc2.commenter_id
+	//          FROM video_comments vc2
+	//          WHERE vc2.video_id = $1
+	//            AND vc2.commenter_id IS NOT NULL
+	//      )
+	//      GROUP BY vc.commenter_id
+	//  ) s
+	//  WHERE c.id = s.commenter_id
+	RefreshCommenterStatsForVideo(ctx context.Context, videoID pgtype.UUID) error
+	// RefreshVideoCommentCount caches the exact normalized comment total after an
+	// ingest batch. This avoids recounting a hot, actively-written table on reads.
+	//
+	//  UPDATE videos
+	//  SET comment_count = (SELECT COUNT(*) FROM video_comments WHERE video_id = $1),
+	//      updated_at = NOW()
+	//  WHERE id = $1
+	RefreshVideoCommentCount(ctx context.Context, videoID pgtype.UUID) error
 	// RefreshVideoMetadata updates skip-download fields (title, description, tags,
 	// view/like counts, info JSON, search vector) without touching media paths.
 	//
@@ -2188,6 +4695,10 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $8
 	RefreshVideoMetadata(ctx context.Context, arg *RefreshVideoMetadataParams) error
+	//RegisterEmbeddingModel
+	//
+	//  INSERT INTO embedding_models(id,name,revision,recipe,dimensions,license) VALUES($1,$2,$3,$4,512,$5) ON CONFLICT DO NOTHING
+	RegisterEmbeddingModel(ctx context.Context, arg *RegisterEmbeddingModelParams) error
 	// RelabelTwitterMentionsMisfiledAsYouTube rewrites @mentions harvested as
 	// youtube.com/@handle when the source channel is actually Twitter/X.
 	//
@@ -2214,11 +4725,44 @@ type Querier interface {
 	//          = 'https://x.com/' || substring(e.to_url from '(?i)youtube\.com/@([^/?#]+)')
 	//    )
 	RelabelTwitterMentionsMisfiledAsYouTube(ctx context.Context) error
+	// RemoveCreatorBundleMember unlinks a creator from a bundle.
+	//
+	//  DELETE FROM creator_bundle_members
+	//  WHERE bundle_id = $1
+	//    AND creator_id = $2
+	RemoveCreatorBundleMember(ctx context.Context, arg *RemoveCreatorBundleMemberParams) error
+	//RemoveHost
+	//
+	//  DELETE FROM show_note_hosts
+	//  WHERE show_note_id = $1 AND user_id = $2
+	RemoveHost(ctx context.Context, arg *RemoveHostParams) error
 	// RemoveVideoTag unlinks a tag from a video.
 	//
 	//  DELETE FROM video_tags
 	//  WHERE video_id = $1 AND tag_id = $2
 	RemoveVideoTag(ctx context.Context, arg *RemoveVideoTagParams) error
+	//RenameStitchFolder
+	//
+	//  UPDATE stitch_folders
+	//  SET name = $1, updated_at = now()
+	//  WHERE id = $2 AND created_by = $3
+	RenameStitchFolder(ctx context.Context, arg *RenameStitchFolderParams) error
+	//RenewShowNoteAgentLease
+	//
+	//  UPDATE show_note_agent_leases
+	//  SET expires_at = $1, last_cursor = $2, updated_at = NOW()
+	//  WHERE id = $3 AND api_token_id = $4
+	//  RETURNING id, show_note_id, api_token_id, user_id, agent_name, expires_at, last_cursor, created_at, updated_at
+	RenewShowNoteAgentLease(ctx context.Context, arg *RenewShowNoteAgentLeaseParams) (*ShowNoteAgentLease, error)
+	//RepairVideoDuration
+	//
+	//  UPDATE videos SET duration_seconds=$1 WHERE id=$2 AND (duration_seconds IS NULL OR duration_seconds<=0)
+	RepairVideoDuration(ctx context.Context, arg *RepairVideoDurationParams) error
+	//ReplaceTranscriptCues
+	//
+	//  UPDATE video_transcripts SET text=$1, search=to_tsvector('simple',$1), cues=$2,raw='',updated_at=now()
+	//  WHERE video_id=$3 AND lang=$4
+	ReplaceTranscriptCues(ctx context.Context, arg *ReplaceTranscriptCuesParams) (int64, error)
 	// RequestWatchedChannelScan makes a watch due immediately ("scan now").
 	//
 	//  UPDATE watched_channels
@@ -2239,6 +4783,28 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE status = 'error'
 	RequeueAllErrorExports(ctx context.Context) error
+	//RequeueAllErrorStitchExports
+	//
+	//  UPDATE stitch_jobs
+	//  SET status = 'queued',
+	//      locked_at = NULL,
+	//      locked_by = NULL,
+	//      progress_pct = 0,
+	//      last_error = 'Requeued by admin',
+	//      updated_at = NOW()
+	//  WHERE COALESCE(render_kind, 'export') = 'export'
+	//    AND status = 'error'
+	RequeueAllErrorStitchExports(ctx context.Context) error
+	// Startup recovery: this process died, so every processing row is orphaned.
+	//
+	//  UPDATE stitch_jobs
+	//  SET status     = 'queued',
+	//      locked_at  = NULL,
+	//      locked_by  = NULL,
+	//      progress_pct = 0,
+	//      updated_at = NOW()
+	//  WHERE status = 'processing'
+	RequeueAllProcessingStitchJobs(ctx context.Context) error
 	// Re-queue an export that was marked ready but file is missing
 	//
 	//  UPDATE clip_exports
@@ -2254,6 +4820,37 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1
 	RequeueClipExport(ctx context.Context, id pgtype.UUID) error
+	// RequeueMLJob flips a terminal row with the same uniqueness key back to queued
+	// so caption regeneration is not swallowed by ON CONFLICT DO NOTHING.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'queued',
+	//      failure_count = 0,
+	//      retry_at = now(),
+	//      last_error = '',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      updated_at = NOW()
+	//  WHERE video_id = $1
+	//    AND kind = $2
+	//    AND transcript_hash = $3
+	//    AND status IN ('failed', 'succeeded', 'waiting_model', 'waiting_assets', 'retry_wait', 'superseded', 'paused', 'cancelled')
+	RequeueMLJob(ctx context.Context, arg *RequeueMLJobParams) error
+	//RequeueStitchJob
+	//
+	//  UPDATE stitch_jobs
+	//  SET status = 'queued',
+	//      file_path = '',
+	//      size_bytes = 0,
+	//      locked_at = NULL,
+	//      locked_by = NULL,
+	//      progress_pct = 0,
+	//      started_at = NULL,
+	//      finished_at = NULL,
+	//      last_error = 'Requeued by admin',
+	//      updated_at = NOW()
+	//  WHERE id = $1
+	RequeueStitchJob(ctx context.Context, id pgtype.UUID) error
 	// Reset stuck exports that have been in processing state too long without updates
 	//
 	//  UPDATE clip_exports
@@ -2265,7 +4862,8 @@ type Querier interface {
 	//  WHERE status = 'processing'
 	//    AND updated_at < NOW() - INTERVAL '5 minutes'
 	ResetStuckExports(ctx context.Context) error
-	// Reset stitch jobs stuck in processing without recent progress.
+	// Periodic recovery for jobs whose progress heartbeat (updated_at) went stale.
+	// Long chapter encodes can run 40–55 minutes; progress updates refresh updated_at.
 	//
 	//  UPDATE stitch_jobs
 	//  SET status     = 'queued',
@@ -2274,7 +4872,7 @@ type Querier interface {
 	//      progress_pct = 0,
 	//      updated_at = NOW()
 	//  WHERE status = 'processing'
-	//    AND updated_at < NOW() - INTERVAL '10 minutes'
+	//    AND updated_at < NOW() - INTERVAL '30 minutes'
 	ResetStuckStitchJobs(ctx context.Context) error
 	//ResetUserKeybindings
 	//
@@ -2322,6 +4920,57 @@ type Querier interface {
 	//      )
 	//  )
 	ResolveChannelEdges(ctx context.Context) error
+	//RestoreFaceCorrections
+	//
+	//  WITH matches AS (
+	//  SELECT f.id,c.person_id,c.dismissed,row_number() OVER(PARTITION BY f.id ORDER BY face_box_iou(c.box,f.box) DESC,c.updated_at DESC) AS n
+	//  FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id JOIN face_corrections c ON c.video_id=s.video_id AND c.asset_fingerprint=s.asset_fingerprint
+	//  WHERE s.id=$1 AND abs(c.sample_ts-f.sample_ts)<0.2 AND face_box_iou(c.box,f.box)>0.5
+	//  )
+	//  UPDATE face_observations f SET person_id=m.person_id,dismissed=m.dismissed,assignment='manual' FROM matches m WHERE f.id=m.id AND m.n=1
+	RestoreFaceCorrections(ctx context.Context, setID pgtype.UUID) error
+	// ResumeDemandContextJobs unpauses parked demand videos after an archive clear.
+	//
+	//  UPDATE ml_jobs j
+	//  SET status = 'queued',
+	//      retry_at = now(),
+	//      updated_at = now(),
+	//      priority = LEAST(j.priority, CASE
+	//          WHEN EXISTS (SELECT 1 FROM clips c WHERE c.video_id = j.video_id) THEN 120
+	//          WHEN EXISTS (SELECT 1 FROM playback_positions p WHERE p.video_id = j.video_id) THEN 130
+	//          ELSE 160
+	//      END)
+	//  WHERE j.kind = 'context_windows'
+	//    AND j.status = 'paused'
+	//    AND EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = j.video_id AND t.text <> '')
+	//    AND (
+	//        EXISTS (SELECT 1 FROM clips c WHERE c.video_id = j.video_id)
+	//        OR EXISTS (SELECT 1 FROM playback_positions p WHERE p.video_id = j.video_id)
+	//        OR EXISTS (
+	//            SELECT 1 FROM videos v
+	//            WHERE v.id = j.video_id
+	//              AND v.media = 'file'
+	//              AND v.created_at > now() - interval '7 days'
+	//        )
+	//    )
+	ResumeDemandContextJobs(ctx context.Context) error
+	//ResumeSelectedFaceJobs
+	//
+	//  UPDATE ml_jobs j SET status='queued',retry_at=now() FROM videos v WHERE j.video_id=v.id AND j.kind='face_index' AND j.status='paused'
+	//  AND EXISTS(SELECT 1 FROM face_index_selections s WHERE s.enabled AND (s.video_id=v.id OR s.channel_id=v.channel_row_id))
+	ResumeSelectedFaceJobs(ctx context.Context) error
+	//RetireFaceIndexes
+	//
+	//  UPDATE face_index_sets old SET active=false FROM face_index_sets current WHERE current.id=$1 AND old.video_id=current.video_id AND old.id<>current.id
+	RetireFaceIndexes(ctx context.Context, id pgtype.UUID) error
+	//RetireVisualIndexes
+	//
+	//  UPDATE visual_index_sets old SET active=false FROM visual_index_sets current WHERE current.id=$1 AND old.video_id=current.video_id AND old.id<>current.id AND old.interval_seconds=current.interval_seconds AND old.start_ts=current.start_ts AND old.end_ts=current.end_ts
+	RetireVisualIndexes(ctx context.Context, id pgtype.UUID) error
+	//RetryCompilationExecution
+	//
+	//  UPDATE compilation_executions SET status='waiting_media',last_error='',stitch_job_id=NULL,next_check=now() WHERE id=$1 AND status='failed'
+	RetryCompilationExecution(ctx context.Context, id pgtype.UUID) error
 	// RetryDownloadJob resets a job to queued status for retry.
 	//
 	//  UPDATE download_jobs
@@ -2333,6 +4982,20 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1
 	RetryDownloadJob(ctx context.Context, id pgtype.UUID) error
+	// RetryMLJob requeues one operator-selected job without changing its uniqueness key.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'queued',
+	//      failure_count = 0,
+	//      retry_at = now(),
+	//      last_error = '',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      lease_token = NULL,
+	//      updated_at = NOW()
+	//  WHERE id = $1
+	//    AND status IN ('failed', 'retry_wait', 'waiting_model', 'waiting_assets', 'superseded', 'paused', 'cancelled')
+	RetryMLJob(ctx context.Context, id pgtype.UUID) (int64, error)
 	//RevokeAPIToken
 	//
 	//  UPDATE api_tokens
@@ -2351,6 +5014,43 @@ type Querier interface {
 	//  SET revoked = TRUE
 	//  WHERE token = $1
 	RevokeExtensionToken(ctx context.Context, token string) error
+	//SaveContextChunk
+	//
+	//  INSERT INTO context_window_chunks(set_id,ordinal,output) VALUES($1,$2,$3) ON CONFLICT DO NOTHING
+	SaveContextChunk(ctx context.Context, arg *SaveContextChunkParams) error
+	//SaveDelegatedMessage
+	//
+	//  INSERT INTO agent_delegated_messages(user_id,message_id,request_hash,run_id) VALUES($1,$2,$3,$4)
+	SaveDelegatedMessage(ctx context.Context, arg *SaveDelegatedMessageParams) error
+	//SaveFaceCorrection
+	//
+	//  INSERT INTO face_corrections(video_id,asset_fingerprint,sample_ts,box,person_id,dismissed) VALUES($1,$2,$3,$4,$5,$6)
+	//  ON CONFLICT(video_id,asset_fingerprint,sample_ts,box) DO UPDATE SET person_id=EXCLUDED.person_id,dismissed=EXCLUDED.dismissed,updated_at=now()
+	SaveFaceCorrection(ctx context.Context, arg *SaveFaceCorrectionParams) error
+	//SaveFaceObservation
+	//
+	//  INSERT INTO face_observations(set_id,sample_index,face_index,sample_ts,frame_ref,width,height,box,score,eligible,embedding)
+	//  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text::vector) ON CONFLICT DO NOTHING
+	SaveFaceObservation(ctx context.Context, arg *SaveFaceObservationParams) error
+	//SaveInterfacePreferences
+	//
+	//  INSERT INTO user_interface_preferences(user_id,preferences) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET preferences=EXCLUDED.preferences,updated_at=now()
+	SaveInterfacePreferences(ctx context.Context, arg *SaveInterfacePreferencesParams) error
+	//SaveMergedFaceCorrections
+	//
+	//  INSERT INTO face_corrections(video_id,asset_fingerprint,sample_ts,box,person_id,dismissed)
+	//  SELECT s.video_id,s.asset_fingerprint,f.sample_ts,f.box,$1,f.dismissed FROM face_observations f JOIN face_index_sets s ON s.id=f.set_id WHERE f.person_id=$2
+	//  ON CONFLICT(video_id,asset_fingerprint,sample_ts,box) DO UPDATE SET person_id=EXCLUDED.person_id,updated_at=now()
+	SaveMergedFaceCorrections(ctx context.Context, arg *SaveMergedFaceCorrectionsParams) error
+	//SaveRuntimeSetting
+	//
+	//  INSERT INTO runtime_settings(key,value,updated_by) VALUES($1,$2,$3)
+	//  ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,source='user',updated_by=EXCLUDED.updated_by,revision=runtime_settings.revision+1,updated_at=now() RETURNING key, value, revision, source, updated_by, updated_at
+	SaveRuntimeSetting(ctx context.Context, arg *SaveRuntimeSettingParams) (*RuntimeSetting, error)
+	//SaveVisualEmbedding
+	//
+	//  INSERT INTO visual_frame_embeddings(set_id,sample_index,sample_ts,frame_ref,embedding) VALUES($1,$2,$3,$4,$5::text::vector) ON CONFLICT DO NOTHING
+	SaveVisualEmbedding(ctx context.Context, arg *SaveVisualEmbeddingParams) error
 	// ScheduleWatchedChannelNextScan stores the next cron occurrence once a scan
 	// has been scheduled.
 	//
@@ -2373,6 +5073,65 @@ type Querier interface {
 	//      c.created_at DESC
 	//  LIMIT $4 OFFSET $3
 	SearchClipsForStitch(ctx context.Context, arg *SearchClipsForStitchParams) ([]*SearchClipsForStitchRow, error)
+	// SearchCommenters matches display_name / author_id / author_url via ILIKE + trgm.
+	//
+	//  SELECT
+	//      c.id, c.created_at, c.updated_at, c.source, c.author_id, c.author_url, c.display_name, c.first_seen, c.last_seen, c.comment_count, c.channel_id, c.style_features, c.style_n, c.simhash,
+	//      GREATEST(
+	//          similarity(c.display_name, $1),
+	//          similarity(c.author_id, $1),
+	//          similarity(c.author_url, $1)
+	//      )::float4 AS score
+	//  FROM commenters c
+	//  WHERE btrim($1::text) <> ''
+	//    AND (
+	//      c.display_name ILIKE '%' || $1 || '%'
+	//      OR c.author_id ILIKE '%' || $1 || '%'
+	//      OR c.author_url ILIKE '%' || $1 || '%'
+	//      OR similarity(c.display_name, $1) > 0.3
+	//    )
+	//  ORDER BY score DESC, c.comment_count DESC, c.display_name
+	//  LIMIT $3::int
+	//  OFFSET $2::int
+	SearchCommenters(ctx context.Context, arg *SearchCommentersParams) ([]*SearchCommentersRow, error)
+	// SearchCommentsScoped searches comments on one video, one uploader, or the
+	// whole library. video_id and uploader are optional independently.
+	//
+	//  SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+	//         c.commenter_id, c.published_at, c.like_count, c.text, c.created_at, v.title, v.uploader
+	//  FROM video_comments c
+	//  JOIN videos v ON v.id = c.video_id
+	//  WHERE (
+	//      c.search @@ plainto_tsquery('simple', $1::text)
+	//      OR COALESCE(c.text, '') ILIKE '%' || $1 || '%'
+	//      OR COALESCE(c.author, '') ILIKE '%' || $1 || '%'
+	//    )
+	//    AND ($2::uuid IS NULL OR c.video_id = $2)
+	//    AND ($3::text IS NULL OR v.uploader = $3)
+	//  ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
+	//  LIMIT $5::int
+	//  OFFSET $4::int
+	SearchCommentsScoped(ctx context.Context, arg *SearchCommentsScopedParams) ([]*SearchCommentsScopedRow, error)
+	//SearchContextWindows
+	//
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary, cw.topics, cw.entities, cw.search, cw.origin, cw.source_query, cw.transcript_cue_evidence, cw.transcript_version, cw.boundary_quality, cw.created_by, cw.created_at, cw.updated_at, cw.set_id, cw.ordinal, cw.cue_start, cw.cue_end, cw.generated_start_ts, cw.generated_end_ts, cw.confidence, cw.override_title, cw.override_summary, cw.override_bounds, cw.stale, cw.kind, cw.parent_id, cw.hook, cw.topic_resolved_at, v.title AS video_title, v.uploader, v.media,
+	//         (cw.transcript_version <> v.transcript_version) AS evidence_stale,
+	//         ts_rank_cd(cw.search, to_tsquery('simple', $1)) AS rank
+	//  FROM context_windows cw
+	//  JOIN videos v ON v.id = cw.video_id
+	//  LEFT JOIN channels ch ON ch.id = v.channel_row_id
+	//  WHERE cw.search @@ to_tsquery('simple', $1)
+	//    AND cw.stale = FALSE
+	//    AND ($2::uuid IS NULL OR ch.creator_id = $2)
+	//    AND ($3::uuid IS NULL OR ch.id = $3)
+	//  ORDER BY rank DESC, cw.updated_at DESC
+	//  LIMIT $4
+	SearchContextWindows(ctx context.Context, arg *SearchContextWindowsParams) ([]*SearchContextWindowsRow, error)
+	//SearchPeople
+	//
+	//  SELECT p.id, p.name, p.creator_id, p.representative_id, p.hidden, p.revision, p.merged_into, p.created_at,f.frame_ref,s.video_id,f.sample_ts FROM people p LEFT JOIN face_observations f ON f.id=p.representative_id LEFT JOIN face_index_sets s ON s.id=f.set_id
+	//  WHERE p.merged_into IS NULL AND (NOT p.hidden OR $1::boolean) AND p.name ILIKE '%'||$2::text||'%' ORDER BY p.name,p.id LIMIT 100
+	SearchPeople(ctx context.Context, arg *SearchPeopleParams) ([]*SearchPeopleRow, error)
 	// ============================================================================
 	// Universal source browser (unified search across clips, videos, exports)
 	// ============================================================================
@@ -2395,8 +5154,8 @@ type Querier interface {
 	//             ''::text AS file_path
 	//      FROM clips c
 	//      JOIN videos v ON c.video_id = v.id
-	//      WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'clip')
-	//        AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%' OR v.title ILIKE '%' || $2 || '%')
+	//      WHERE (c.created_by = $1::uuid) AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'clip')
+	//        AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%' OR v.title ILIKE '%' || $3 || '%')
 	//
 	//      UNION ALL
 	//
@@ -2413,10 +5172,36 @@ type Querier interface {
 	//             v.created_at,
 	//             ''::text AS file_path
 	//      FROM videos v
-	//      WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'video')
-	//        AND ($2::text = '' OR v.search @@ websearch_to_tsquery('simple', $2)
-	//             OR strpos(lower(v.title), lower($2)) > 0
-	//             OR strpos(lower(v.uploader), lower($2)) > 0)
+	//      WHERE ($2::text = '' OR $2::text = 'all' OR $2::text = 'video')
+	//        AND ($3::text = '' OR v.search @@ websearch_to_tsquery('simple', $3)
+	//             OR strpos(lower(v.title), lower($3)) > 0
+	//             OR strpos(lower(v.uploader), lower($3)) > 0)
+	//
+	//      UNION ALL
+	//
+	//      -- Topic-bound context windows (playable ranges)
+	//      SELECT 'context'::text AS source_type,
+	//             cw.id AS source_id,
+	//             cw.video_id,
+	//             cw.title,
+	//             t.title AS parent_title,
+	//             (cw.end_ts - cw.start_ts)::float8 AS duration,
+	//             cw.start_ts,
+	//             cw.end_ts,
+	//             ''::text AS color,
+	//             cw.updated_at AS created_at,
+	//             ''::text AS file_path
+	//      FROM context_window_topics cwt
+	//      JOIN context_windows cw ON cw.id = cwt.window_id
+	//      JOIN topics t ON t.slug = cwt.topic_slug
+	//      JOIN videos v ON v.id = cw.video_id
+	//      WHERE NOT cw.stale AND cw.kind = 'window'
+	//        AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'context')
+	//        AND $3::text <> ''
+	//        AND (t.slug = $3
+	//             OR t.title ILIKE '%' || $3 || '%'
+	//             OR cw.title ILIKE '%' || $3 || '%'
+	//             OR v.title ILIKE '%' || $3 || '%')
 	//
 	//      UNION ALL
 	//
@@ -2433,27 +5218,55 @@ type Querier interface {
 	//             sj.created_at,
 	//             sj.file_path
 	//      FROM stitch_jobs sj
-	//      WHERE sj.status = 'ready' AND sj.file_path != ''
-	//        AND ($1::text = '' OR $1::text = 'all' OR $1::text = 'stitch')
-	//        AND ($2::text = '' OR sj.title ILIKE '%' || $2 || '%')
+	//      WHERE sj.created_by = $1::uuid AND sj.status = 'ready' AND sj.file_path != ''
+	//        AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'stitch')
+	//        AND ($3::text = '' OR sj.title ILIKE '%' || $3 || '%')
 	//  ) AS combined
 	//  ORDER BY
-	//      CASE WHEN $3::text = 'alpha'    THEN combined.title    END ASC,
-	//      CASE WHEN $3::text = 'duration' THEN combined.duration END DESC,
+	//      CASE WHEN $4::text = 'alpha'    THEN combined.title    END ASC,
+	//      CASE WHEN $4::text = 'duration' THEN combined.duration END DESC,
 	//      combined.created_at DESC
-	//  LIMIT $5
-	//  OFFSET $4
+	//  LIMIT $6
+	//  OFFSET $5
 	SearchSourcesForStitch(ctx context.Context, arg *SearchSourcesForStitchParams) ([]*SearchSourcesForStitchRow, error)
-	// SearchTranscripts finds videos whose cleaned transcript matches tsquery.
+	//SearchTopicWindows
 	//
-	//  SELECT vt.video_id, v.title, v.uploader, vt.lang, vt.text, vt.cues,
-	//         ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank
+	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
+	//         v.title AS video_title, v.uploader, v.channel_row_id,
+	//         cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
+	//  FROM context_window_topics cwt
+	//  JOIN context_windows cw ON cw.id = cwt.window_id
+	//  JOIN videos v ON v.id = cw.video_id
+	//  JOIN topics t ON t.slug = cwt.topic_slug
+	//  WHERE NOT cw.stale AND cw.kind = 'window'
+	//    AND (
+	//      t.slug = $1
+	//      OR t.title ILIKE '%' || $1 || '%'
+	//      OR EXISTS (
+	//        SELECT 1 FROM topic_aliases a
+	//        WHERE a.topic_slug = t.slug AND (a.alias_norm = $2 OR a.raw ILIKE '%' || $1 || '%')
+	//      )
+	//    )
+	//  ORDER BY cw.updated_at DESC, cw.id
+	//  LIMIT $3
+	SearchTopicWindows(ctx context.Context, arg *SearchTopicWindowsParams) ([]*SearchTopicWindowsRow, error)
+	// SearchTranscripts finds videos whose cleaned transcript matches tsquery.
+	// Optional uploader restricts to one channel.
+	//
+	//  SELECT vt.video_id, v.title, v.uploader, v.media, v.duration_seconds, vt.lang,
+	//         ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank,
+	//         COUNT(*) OVER() AS total_video_count
 	//  FROM video_transcripts vt
 	//  JOIN videos v ON v.id = vt.video_id
+	//  LEFT JOIN channels ch ON ch.id = v.channel_row_id
 	//  WHERE $1::text <> ''
 	//    AND vt.search @@ to_tsquery('simple', $1)
-	//  ORDER BY rank DESC
-	//  LIMIT $2
+	//    AND ($2::uuid IS NULL OR v.id = $2)
+	//    AND ($3::text IS NULL OR v.uploader = $3)
+	//    AND ($4::uuid IS NULL OR ch.creator_id = $4)
+	//    AND ($5::uuid IS NULL OR ch.id = $5)
+	//  ORDER BY rank DESC,vt.video_id,vt.lang
+	//  LIMIT $7 OFFSET $6
 	SearchTranscripts(ctx context.Context, arg *SearchTranscriptsParams) ([]*SearchTranscriptsRow, error)
 	// SearchUnassignedChannels ranks unlinked channels by name/url match.
 	// Empty query returns no rows — callers pass a creator name for suggestions.
@@ -2482,13 +5295,27 @@ type Querier interface {
 	//      c.uploader
 	//  LIMIT $2
 	SearchUnassignedChannels(ctx context.Context, arg *SearchUnassignedChannelsParams) ([]*SearchUnassignedChannelsRow, error)
+	//SearchUploaders
+	//
+	//  SELECT uploader, COUNT(*)::bigint AS video_count
+	//  FROM videos
+	//  WHERE media <> 'metadata'
+	//    AND uploader <> ''
+	//    AND (
+	//        NULLIF(btrim($1::text), '') IS NULL
+	//        OR lower(uploader) LIKE lower(btrim($1::text)) || '%'
+	//    )
+	//  GROUP BY uploader
+	//  ORDER BY COUNT(*) DESC, uploader ASC
+	//  LIMIT 50
+	SearchUploaders(ctx context.Context, prefix string) ([]*SearchUploadersRow, error)
 	// SearchVideoComments returns comments matching a text search query, with a
 	// ts_headline highlight. The highlight wraps matches in chr(2)/chr(3) sentinels
 	// (not HTML) so the Go layer can HTML-escape the text first, then swap the
 	// sentinels for <mark> tags safely (see commentfmt.SafeHighlight).
 	//
 	//  SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-	//         c.published_at, c.like_count, c.text, c.created_at,
+	//         c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 	//         ts_headline('simple', COALESCE(c.text, ''), plainto_tsquery('simple', $1::text),
 	//                     'StartSel=' || chr(2) || ',StopSel=' || chr(3) || ',HighlightAll=TRUE')::text AS highlighted,
 	//         COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
@@ -2546,13 +5373,46 @@ type Querier interface {
 	//    FROM hits
 	//    GROUP BY video_id
 	//  )
-	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count
 	//  FROM ranked r
 	//  JOIN videos v ON v.id = r.video_id
 	//  ORDER BY r.rank DESC, v.created_at DESC
 	//  LIMIT $2
 	//  OFFSET $1
 	SearchVideos(ctx context.Context, arg *SearchVideosParams) ([]*Video, error)
+	//SearchVisualEmbeddings
+	//
+	//  SELECT v.id AS video_id,v.title,v.uploader,e.sample_ts,e.frame_ref,(1-(e.embedding <=> $1::text::vector))::float8 AS similarity,s.next_sample,s.interval_seconds,s.start_ts,s.end_ts,s.status
+	//  FROM visual_frame_embeddings e JOIN visual_index_sets s ON s.id=e.set_id JOIN videos v ON v.id=s.video_id LEFT JOIN channels c ON c.id=v.channel_row_id
+	//  WHERE s.model_id=$2 AND (s.active OR NOT EXISTS(SELECT 1 FROM visual_index_sets a WHERE a.video_id=s.video_id AND a.active))
+	//  AND ($3::uuid IS NULL OR v.id=$3)
+	//  AND ($4::uuid IS NULL OR v.channel_row_id=$4)
+	//  AND ($5::uuid IS NULL OR c.creator_id=$5)
+	//  ORDER BY e.embedding <=> $1::text::vector LIMIT $6
+	SearchVisualEmbeddings(ctx context.Context, arg *SearchVisualEmbeddingsParams) ([]*SearchVisualEmbeddingsRow, error)
+	//SearchWikiPages
+	//
+	//  SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at,
+	//         ts_rank(s.search, websearch_to_tsquery('simple', $1))::float8 AS rank
+	//  FROM wiki_pages p
+	//  JOIN wiki_search s ON s.tree = p.tree AND s.slug = p.slug
+	//  WHERE s.search @@ websearch_to_tsquery('simple', $1)
+	//    AND ($2::text = '' OR p.tree = $2)
+	//  ORDER BY rank DESC, p.updated_at DESC
+	//  LIMIT $3
+	SearchWikiPages(ctx context.Context, arg *SearchWikiPagesParams) ([]*SearchWikiPagesRow, error)
+	//SeedRuntimeSetting
+	//
+	//  INSERT INTO runtime_settings(key,value,source) VALUES($1,$2,'environment') ON CONFLICT DO NOTHING
+	SeedRuntimeSetting(ctx context.Context, arg *SeedRuntimeSettingParams) error
+	//SelectFaceChannel
+	//
+	//  INSERT INTO face_index_selections(channel_id,enabled) VALUES($1,$2) ON CONFLICT(channel_id) DO UPDATE SET enabled=EXCLUDED.enabled
+	SelectFaceChannel(ctx context.Context, arg *SelectFaceChannelParams) error
+	//SelectFaceVideo
+	//
+	//  INSERT INTO face_index_selections(video_id,enabled) VALUES($1,$2) ON CONFLICT(video_id) DO UPDATE SET enabled=EXCLUDED.enabled
+	SelectFaceVideo(ctx context.Context, arg *SelectFaceVideoParams) error
 	// SelectUserByEmail selects a user by email from the database
 	//
 	//  SELECT id, user_name, password, email, email_verified, verify_hash, enabled, role, created_at, updated_at, deleted_at, sessions_invalidated_at FROM users WHERE email = $1 AND deleted_at IS NULL
@@ -2567,14 +5427,53 @@ type Querier interface {
 	SelectUserByUserName(ctx context.Context, userName string) (*User, error)
 	// SelectVideoBySrc returns a video by src.
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 	//  FROM videos
 	//  WHERE src = $1
 	SelectVideoBySrc(ctx context.Context, src string) (*Video, error)
+	// Reparent + reorder a block (drag-drop). Caller renormalizes sibling positions.
+	//
+	//  UPDATE show_note_blocks
+	//  SET parent_id = $1, position = $2
+	//  WHERE id = $3
+	SetBlockParentAndPosition(ctx context.Context, arg *SetBlockParentAndPositionParams) error
+	//SetBlockPosition
+	//
+	//  UPDATE show_note_blocks
+	//  SET position = $1
+	//  WHERE id = $2
+	SetBlockPosition(ctx context.Context, arg *SetBlockPositionParams) error
+	//SetCatalogCrawlStatus
+	//
+	//  UPDATE catalog_crawls SET status = $1, last_error = $2,
+	//      retry_at = $3, locked_at = NULL, locked_by = '',
+	//      finished_at = CASE WHEN $1::text IN ('complete', 'cancelled', 'failed') THEN NOW() ELSE finished_at END,
+	//      updated_at = NOW()
+	//  WHERE id = $4
+	SetCatalogCrawlStatus(ctx context.Context, arg *SetCatalogCrawlStatusParams) error
 	// SetChannelCreator assigns (or clears, when creator_id is NULL) a channel's creator.
 	//
 	//  UPDATE channels SET creator_id = $1, updated_at = NOW() WHERE id = $2
 	SetChannelCreator(ctx context.Context, arg *SetChannelCreatorParams) error
+	//SetCompilationPlanState
+	//
+	//  UPDATE compilation_plans SET status = $1,
+	//      stitch_project_id = COALESCE($2, stitch_project_id),
+	//      stitch_job_id = COALESCE($3, stitch_job_id),
+	//      last_error = $4, updated_at = NOW()
+	//  WHERE id = $5
+	SetCompilationPlanState(ctx context.Context, arg *SetCompilationPlanStateParams) error
+	//SetCompilationSegmentDownload
+	//
+	//  UPDATE compilation_plan_segments SET download_job_id = $1,
+	//      failure_state = '', updated_at = NOW()
+	//  WHERE id = $2 AND download_job_id IS NULL
+	SetCompilationSegmentDownload(ctx context.Context, arg *SetCompilationSegmentDownloadParams) error
+	//SetCompilationSegmentFailure
+	//
+	//  UPDATE compilation_plan_segments SET failure_state = $1, updated_at = NOW()
+	//  WHERE id = $2
+	SetCompilationSegmentFailure(ctx context.Context, arg *SetCompilationSegmentFailureParams) error
 	// SetCreatorSuggestionStatus accepts or dismisses a nomination.
 	//
 	//  UPDATE creator_suggestions
@@ -2583,6 +5482,51 @@ type Querier interface {
 	//  WHERE id = $2
 	//    AND status = 'pending'
 	SetCreatorSuggestionStatus(ctx context.Context, arg *SetCreatorSuggestionStatusParams) error
+	//SetDirector
+	//
+	//  UPDATE producer_connections
+	//  SET is_director = TRUE
+	//  WHERE show_note_id = $1 AND user_id = $2
+	SetDirector(ctx context.Context, arg *SetDirectorParams) error
+	//SetInitialCompilationPlanDuration
+	//
+	//  UPDATE compilation_plans SET estimated_duration = $1, updated_at = NOW()
+	//  WHERE id = $2
+	//  RETURNING id, created_by, creator_id, source_query, title, status, revision, estimated_duration, stitch_project_id, stitch_job_id, last_error, created_at, updated_at
+	SetInitialCompilationPlanDuration(ctx context.Context, arg *SetInitialCompilationPlanDurationParams) (*CompilationPlan, error)
+	// SetMLJobPriority reorders a claimable job. Lower runs first.
+	//
+	//  UPDATE ml_jobs
+	//  SET priority = $1,
+	//      updated_at = now()
+	//  WHERE id = $2
+	//    AND status IN ('queued', 'retry_wait', 'waiting_model', 'waiting_assets')
+	SetMLJobPriority(ctx context.Context, arg *SetMLJobPriorityParams) (int64, error)
+	//SetPersonRepresentative
+	//
+	//  UPDATE people p SET representative_id=$1,revision=revision+1
+	//  WHERE p.id=$2 AND p.merged_into IS NULL AND EXISTS(SELECT 1 FROM face_observations f WHERE f.id=$1 AND f.person_id=p.id AND NOT f.dismissed)
+	SetPersonRepresentative(ctx context.Context, arg *SetPersonRepresentativeParams) (int64, error)
+	// SetRunningCatalogCrawlStatus only advances a crawl that is still owned by a
+	// worker. A pause or cancel issued while yt-dlp is running therefore wins.
+	//
+	//  UPDATE catalog_crawls SET status = $1, last_error = $2,
+	//      retry_at = $3, locked_at = NULL, locked_by = '',
+	//      finished_at = CASE WHEN $1::text IN ('complete', 'failed') THEN NOW() ELSE finished_at END,
+	//      updated_at = NOW()
+	//  WHERE id = $4 AND status = 'running'
+	SetRunningCatalogCrawlStatus(ctx context.Context, arg *SetRunningCatalogCrawlStatusParams) error
+	//SetShowNoteRoomMessageEventCursor
+	//
+	//  UPDATE show_note_room_messages
+	//  SET event_cursor = $1
+	//  WHERE id = $2
+	SetShowNoteRoomMessageEventCursor(ctx context.Context, arg *SetShowNoteRoomMessageEventCursorParams) error
+	// Persist the active composited-scene JSON for a live show note.
+	//
+	//  UPDATE show_notes SET scene_state = $1, updated_at = NOW()
+	//  WHERE id = $2
+	SetShowNoteScene(ctx context.Context, arg *SetShowNoteSceneParams) error
 	// SetUserEnabled updates a user's enabled flag
 	//
 	//  UPDATE users
@@ -2605,6 +5549,12 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $3
 	SetVideoChannelAndFormat(ctx context.Context, arg *SetVideoChannelAndFormatParams) error
+	//SetVideoSubtitleState
+	//
+	//  UPDATE videos SET subtitle_state = $1, subtitle_checked_at = NOW(),
+	//      subtitle_last_error = $2, updated_at = NOW()
+	//  WHERE id = $3
+	SetVideoSubtitleState(ctx context.Context, arg *SetVideoSubtitleStateParams) error
 	// SetWatchedChannelChannelID attaches a follow to a first-class channel row.
 	//
 	//  UPDATE watched_channels SET channel_id = $2, updated_at = NOW() WHERE id = $1
@@ -2624,10 +5574,77 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $2 AND btrim(label) = ''
 	SetWatchedChannelLabelIfEmpty(ctx context.Context, arg *SetWatchedChannelLabelIfEmptyParams) error
+	//ShowNoteClipObjectExists
+	//
+	//  SELECT EXISTS (SELECT 1 FROM clips WHERE id = $1)
+	ShowNoteClipObjectExists(ctx context.Context, id pgtype.UUID) (bool, error)
+	//ShowNoteDocumentExists
+	//
+	//  SELECT EXISTS (
+	//      SELECT 1 FROM show_note_documents WHERE show_note_id = $1
+	//  )
+	ShowNoteDocumentExists(ctx context.Context, showNoteID pgtype.UUID) (bool, error)
+	//ShowNoteMarkerObjectExists
+	//
+	//  SELECT EXISTS (SELECT 1 FROM markers WHERE id = $1)
+	ShowNoteMarkerObjectExists(ctx context.Context, id pgtype.UUID) (bool, error)
+	//ShowNoteVideoObjectExists
+	//
+	//  SELECT EXISTS (
+	//      SELECT 1
+	//      FROM videos
+	//      WHERE id = $1
+	//        AND media <> 'metadata'
+	//        AND video_path IS NOT NULL
+	//        AND btrim(video_path) <> ''
+	//  )
+	ShowNoteVideoObjectExists(ctx context.Context, id pgtype.UUID) (bool, error)
+	//SnapshotCompilationSegments
+	//
+	//  INSERT INTO compilation_execution_segments(execution_id,position,video_id,start_ts,end_ts,evidence,rationale)
+	//  SELECT $1,position,video_id,start_ts,end_ts,match_evidence,selection_rationale FROM compilation_plan_segments WHERE plan_id=$2
+	//  ON CONFLICT DO NOTHING
+	SnapshotCompilationSegments(ctx context.Context, arg *SnapshotCompilationSegmentsParams) error
+	//StartAgentToolCall
+	//
+	//  INSERT INTO agent_tool_calls(run_id,call_index,name,arguments) SELECT r.id,$1::integer,$2::text,$3::jsonb FROM agent_runs r WHERE r.id=$4 AND r.lease_owner=$5 AND r.status='running' AND r.lease_until>now() AND NOT r.cancel_requested RETURNING id, run_id, call_index, name, arguments, result, status, created_at
+	StartAgentToolCall(ctx context.Context, arg *StartAgentToolCallParams) (*AgentToolCall, error)
+	//StopRuntimeSettings
+	//
+	//  UPDATE runtime_settings_consumers SET stopped_at=now(), updated_at=now() WHERE service=$1 AND stopped_at IS NULL
+	StopRuntimeSettings(ctx context.Context, service string) error
+	//StoreShowNoteDocumentSnapshot
+	//
+	//  UPDATE show_note_documents
+	//  SET snapshot = $1, snapshot_revision = $2
+	//  WHERE show_note_id = $3
+	StoreShowNoteDocumentSnapshot(ctx context.Context, arg *StoreShowNoteDocumentSnapshotParams) error
+	// SupersedeStaleContextJobs drops queued demand rows whose transcript fingerprint
+	// is no longer current so they cannot run ahead of the live hash.
+	//
+	//  UPDATE ml_jobs
+	//  SET status = 'superseded',
+	//      last_error = 'transcript fingerprint changed',
+	//      locked_at = NULL,
+	//      locked_by = '',
+	//      updated_at = now()
+	//  WHERE video_id = $1
+	//    AND kind = 'context_windows'
+	//    AND transcript_hash <> $2
+	//    AND status IN ('queued', 'paused', 'cancelled', 'retry_wait', 'waiting_model')
+	SupersedeStaleContextJobs(ctx context.Context, arg *SupersedeStaleContextJobsParams) error
 	//TouchAPIToken
 	//
 	//  UPDATE api_tokens SET last_used_at = NOW() WHERE id = $1
 	TouchAPIToken(ctx context.Context, id pgtype.UUID) error
+	//TouchShowNote
+	//
+	//  UPDATE show_notes SET updated_at = NOW() WHERE id = $1
+	TouchShowNote(ctx context.Context, id pgtype.UUID) error
+	//TranscriptRepairPublished
+	//
+	//  SELECT EXISTS(SELECT 1 FROM transcript_repair_backups WHERE job_id=$1)
+	TranscriptRepairPublished(ctx context.Context, jobID pgtype.UUID) (bool, error)
 	// Attempts to acquire a PostgreSQL advisory lock (non-blocking)
 	// Returns true if the lock was acquired, false if it's already held
 	//
@@ -2657,6 +5674,21 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $1
 	UnlockClipExport(ctx context.Context, id pgtype.UUID) error
+	//UnwatchCommenter
+	//
+	//  DELETE FROM commenter_watchlist
+	//  WHERE user_id = $1
+	//    AND commenter_id = $2
+	UnwatchCommenter(ctx context.Context, arg *UnwatchCommenterParams) error
+	// Inline edits to a block's title / cue notes / duration override.
+	//
+	//  UPDATE show_note_blocks
+	//  SET title             = COALESCE($1, title),
+	//      notes             = COALESCE($2, notes),
+	//      duration_override = COALESCE($3, duration_override)
+	//  WHERE id = $4
+	//  RETURNING id, show_note_id, parent_id, block_type, title, notes, video_id, clip_id, position, duration_override, created_at
+	UpdateBlockContent(ctx context.Context, arg *UpdateBlockContentParams) (*ShowNoteBlock, error)
 	//UpdateClip
 	//
 	//  UPDATE clips
@@ -2671,7 +5703,7 @@ type Querier interface {
 	//      filter_stack = COALESCE($8, filter_stack),
 	//      updated_at = NOW()
 	//  WHERE id = $9
-	//  RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+	//  RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 	UpdateClip(ctx context.Context, arg *UpdateClipParams) (*Clip, error)
 	//UpdateClipCrops
 	//
@@ -2720,6 +5752,49 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $2
 	UpdateClipShotList(ctx context.Context, arg *UpdateClipShotListParams) error
+	//UpdateCompilationExecution
+	//
+	//  UPDATE compilation_executions SET status=$1,last_error=$2,stitch_job_id=COALESCE($3,stitch_job_id),stitch_project_id=COALESCE($4,stitch_project_id),next_check=now()+interval '30 seconds',updated_at=now() WHERE id=$5
+	UpdateCompilationExecution(ctx context.Context, arg *UpdateCompilationExecutionParams) error
+	//UpdateConnectionPing
+	//
+	//  UPDATE producer_connections
+	//  SET last_ping = NOW()
+	//  WHERE show_note_id = $1 AND user_id = $2
+	UpdateConnectionPing(ctx context.Context, arg *UpdateConnectionPingParams) error
+	//UpdateContextWindow
+	//
+	//  UPDATE context_windows SET
+	//      override_title = override_title OR title IS DISTINCT FROM $1,
+	//      override_summary = override_summary OR summary IS DISTINCT FROM $2 OR topics IS DISTINCT FROM $3 OR entities IS DISTINCT FROM $4,
+	//      override_bounds = override_bounds OR start_ts IS DISTINCT FROM $5 OR end_ts IS DISTINCT FROM $6,
+	//      start_ts = $5, end_ts = $6, title = $1,
+	//      summary = $2, topics = $3, entities = $4,
+	//      search = context_window_search_vector($1, $2, $3, $4),
+	//      boundary_quality = $7, updated_at = NOW()
+	//  WHERE id = $8
+	//  RETURNING id, video_id, start_ts, end_ts, title, summary, topics, entities, search, origin, source_query, transcript_cue_evidence, transcript_version, boundary_quality, created_by, created_at, updated_at, set_id, ordinal, cue_start, cue_end, generated_start_ts, generated_end_ts, confidence, override_title, override_summary, override_bounds, stale, kind, parent_id, hook, topic_resolved_at
+	UpdateContextWindow(ctx context.Context, arg *UpdateContextWindowParams) (*ContextWindow, error)
+	// UpdateContextWindowBounds snaps a generated window; skipped when override_bounds.
+	//
+	//  UPDATE context_windows
+	//  SET start_ts = $1,
+	//      end_ts = $2,
+	//      cue_start = $3,
+	//      cue_end = $4,
+	//      updated_at = NOW()
+	//  WHERE id = $5
+	//    AND override_bounds = FALSE
+	//    AND stale = FALSE
+	UpdateContextWindowBounds(ctx context.Context, arg *UpdateContextWindowBoundsParams) error
+	//UpdateContextWindowSet
+	//
+	//  UPDATE context_window_sets
+	//  SET status = $1,
+	//      metrics = COALESCE($2::jsonb, metrics),
+	//      updated_at = NOW()
+	//  WHERE id = $3
+	UpdateContextWindowSet(ctx context.Context, arg *UpdateContextWindowSetParams) error
 	// UpdateDownloadJobPID stores the process ID of the running download.
 	//
 	//  UPDATE download_jobs
@@ -2733,6 +5808,16 @@ type Querier interface {
 	//  SET last_used_at = NOW()
 	//  WHERE token = $1
 	UpdateExtensionTokenLastUsed(ctx context.Context, token string) error
+	// UpdateMLJobProgress stores operator-visible progress and refreshes the lease.
+	//
+	//  UPDATE ml_jobs
+	//  SET checkpoint = $1,
+	//      locked_at = NOW(),
+	//      updated_at = NOW()
+	//  WHERE id = $2
+	//    AND lease_token = $3
+	//    AND status = 'processing'
+	UpdateMLJobProgress(ctx context.Context, arg *UpdateMLJobProgressParams) (int64, error)
 	//UpdateMarker
 	//
 	//  UPDATE markers
@@ -2746,24 +5831,46 @@ type Querier interface {
 	//  WHERE id = $7
 	//  RETURNING id, video_id, timestamp, title, description, color, marker_type, duration, created_at, created_by, source, source_ref
 	UpdateMarker(ctx context.Context, arg *UpdateMarkerParams) (*Marker, error)
-	//UpdatePlayerSessionActivity
+	//UpdateModelOperation
 	//
-	//  UPDATE player_sessions
-	//  SET last_activity = NOW()
-	//  WHERE id = $1
-	UpdatePlayerSessionActivity(ctx context.Context, id pgtype.UUID) error
-	//UpdatePlayerSessionState
+	//  UPDATE model_operations SET status=$2,progress=$3,updated_at=now() WHERE id=$1
+	UpdateModelOperation(ctx context.Context, arg *UpdateModelOperationParams) error
+	//UpdatePerson
 	//
-	//  UPDATE player_sessions
-	//  SET state = $1, last_activity = NOW()
-	//  WHERE id = $2
-	UpdatePlayerSessionState(ctx context.Context, arg *UpdatePlayerSessionStateParams) error
-	//UpdatePlayerSessionVideo
+	//  UPDATE people SET name=COALESCE($1,name),hidden=COALESCE($2,hidden),creator_id=COALESCE($3,creator_id),
+	//  representative_id=COALESCE($4,representative_id),revision=revision+1 WHERE id=$5 AND revision=$6 AND merged_into IS NULL RETURNING id, name, creator_id, representative_id, hidden, revision, merged_into, created_at
+	UpdatePerson(ctx context.Context, arg *UpdatePersonParams) (*Person, error)
+	//UpdateShowNote
 	//
-	//  UPDATE player_sessions
-	//  SET current_video_id = $1, last_activity = NOW()
-	//  WHERE id = $2
-	UpdatePlayerSessionVideo(ctx context.Context, arg *UpdatePlayerSessionVideoParams) error
+	//  UPDATE show_notes
+	//  SET title           = COALESCE($1, title),
+	//      description     = COALESCE($2, description),
+	//      is_live         = COALESCE($3, is_live),
+	//      live_started_at = COALESCE($4, live_started_at),
+	//      public_code     = COALESCE($5, public_code),
+	//      updated_at      = NOW()
+	//  WHERE id = $6
+	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+	UpdateShowNote(ctx context.Context, arg *UpdateShowNoteParams) (*ShowNote, error)
+	//UpdateShowNoteDocumentProjection
+	//
+	//  UPDATE show_note_documents
+	//  SET markdown = $1,
+	//      updated_at = NOW()
+	//  WHERE show_note_id = $2
+	//  RETURNING show_note_id, markdown, revision, snapshot, snapshot_revision, updated_at
+	UpdateShowNoteDocumentProjection(ctx context.Context, arg *UpdateShowNoteDocumentProjectionParams) (*ShowNoteDocument, error)
+	//UpdateShowNoteReviewStatus
+	//
+	//  UPDATE show_note_review_threads
+	//  SET status = $1,
+	//      detached = $2,
+	//      closed_at = CASE WHEN $1::text = 'open' THEN NULL ELSE NOW() END,
+	//      closed_by_user_id = CASE WHEN $1::text = 'open' THEN NULL ELSE $3 END,
+	//      updated_at = NOW()
+	//  WHERE id = $4
+	//  RETURNING id, show_note_id, kind, status, actor_kind, actor_user_id, actor_token_id, actor_name, body, summary, base_revision, base_markdown, expected_text, patch, anchor_start, anchor_end, start_line, start_column, end_line, end_column, detached, created_at, updated_at, closed_at, closed_by_user_id
+	UpdateShowNoteReviewStatus(ctx context.Context, arg *UpdateShowNoteReviewStatusParams) (*ShowNoteReviewThread, error)
 	//UpdateStitchJobLastAccessed
 	//
 	//  UPDATE stitch_jobs
@@ -2794,6 +5901,15 @@ type Querier interface {
 	//  WHERE id = $6
 	//    AND created_by = $7
 	UpdateStitchProject(ctx context.Context, arg *UpdateStitchProjectParams) error
+	//UpdateStitchProjectYouTube
+	//
+	//  UPDATE stitch_projects
+	//  SET description = $1,
+	//      tags = $2,
+	//      updated_at = NOW()
+	//  WHERE id = $3
+	//    AND created_by = $4
+	UpdateStitchProjectYouTube(ctx context.Context, arg *UpdateStitchProjectYouTubeParams) error
 	// UpdateUser updates a user in the database
 	//
 	//  UPDATE users
@@ -2819,7 +5935,7 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $3
 	UpdateVideoFileHashAndSize(ctx context.Context, arg *UpdateVideoFileHashAndSizeParams) error
-	// UpdateVideoPath updates the video_path for a video.
+	//UpdateVideoPath
 	//
 	//  UPDATE videos
 	//  SET video_path = $1,
@@ -2850,6 +5966,21 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  WHERE id = $4
 	UpdateWatchedChannelSchedule(ctx context.Context, arg *UpdateWatchedChannelScheduleParams) error
+	//UpdateWikiPage
+	//
+	//  UPDATE wiki_pages
+	//  SET title = $1,
+	//      body = $2,
+	//      revision = revision + 1,
+	//      creator_id = $3,
+	//      channel_id = $4,
+	//      updated_by = $5,
+	//      updated_at = NOW()
+	//  WHERE tree = $6
+	//    AND slug = $7
+	//    AND revision = $8
+	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+	UpdateWikiPage(ctx context.Context, arg *UpdateWikiPageParams) (*WikiPage, error)
 	// UpsertAdminEmails sets admin emails (creates row if missing)
 	//
 	//  INSERT INTO instance_settings (id, registration_enabled, admin_emails, updated_at)
@@ -2893,6 +6024,51 @@ type Querier interface {
 	//      marker_type = EXCLUDED.marker_type,
 	//      duration = EXCLUDED.duration
 	UpsertAutoMarker(ctx context.Context, arg *UpsertAutoMarkerParams) error
+	//UpsertCampaign
+	//
+	//  INSERT INTO campaigns (
+	//      kind,
+	//      simhash,
+	//      normalized_text,
+	//      first_seen,
+	//      last_seen,
+	//      comment_count,
+	//      commenter_count,
+	//      video_count,
+	//      evidence
+	//  ) VALUES (
+	//      $1,
+	//      $2,
+	//      COALESCE($3, ''),
+	//      COALESCE($4, NOW()),
+	//      COALESCE($5, NOW()),
+	//      COALESCE($6, 0),
+	//      COALESCE($7, 0),
+	//      COALESCE($8, 0),
+	//      COALESCE($9::jsonb, '{}'::jsonb)
+	//  )
+	//  ON CONFLICT (simhash)
+	//  WHERE kind = 'copypaste' AND simhash IS NOT NULL
+	//  DO UPDATE SET
+	//      normalized_text = CASE
+	//          WHEN EXCLUDED.normalized_text <> '' THEN EXCLUDED.normalized_text
+	//          ELSE campaigns.normalized_text
+	//      END,
+	//      first_seen = LEAST(campaigns.first_seen, EXCLUDED.first_seen),
+	//      last_seen = GREATEST(campaigns.last_seen, EXCLUDED.last_seen),
+	//      comment_count = GREATEST(campaigns.comment_count, EXCLUDED.comment_count),
+	//      commenter_count = GREATEST(campaigns.commenter_count, EXCLUDED.commenter_count),
+	//      video_count = GREATEST(campaigns.video_count, EXCLUDED.video_count),
+	//      evidence = EXCLUDED.evidence,
+	//      updated_at = NOW()
+	//  RETURNING id, kind, simhash, normalized_text, first_seen, last_seen, comment_count, commenter_count, video_count, evidence, created_at, updated_at
+	UpsertCampaign(ctx context.Context, arg *UpsertCampaignParams) (*Campaign, error)
+	//UpsertCampaignMember
+	//
+	//  INSERT INTO campaign_members (campaign_id, comment_id)
+	//  VALUES ($1, $2)
+	//  ON CONFLICT (campaign_id, comment_id) DO NOTHING
+	UpsertCampaignMember(ctx context.Context, arg *UpsertCampaignMemberParams) error
 	// UpsertChannel inserts or updates a first-class channel row keyed by
 	// platform + identity_key (channel_id / uploader_id / canonical URL).
 	//
@@ -2928,6 +6104,128 @@ type Querier interface {
 	//  SET clip_export_storage_limit_bytes = EXCLUDED.clip_export_storage_limit_bytes,
 	//      updated_at = NOW()
 	UpsertClipExportStorageLimit(ctx context.Context, limitBytes int64) error
+	//UpsertCommentScore
+	//
+	//  INSERT INTO comment_scores (comment_id, model_digest, sentiment, toxicity, labels, simhash, scored_at)
+	//  VALUES (
+	//      $1,
+	//      COALESCE($2, ''),
+	//      $3,
+	//      $4,
+	//      COALESCE($5::jsonb, '{}'::jsonb),
+	//      $6,
+	//      NOW()
+	//  )
+	//  ON CONFLICT (comment_id)
+	//  DO UPDATE SET
+	//      model_digest = EXCLUDED.model_digest,
+	//      sentiment = EXCLUDED.sentiment,
+	//      toxicity = EXCLUDED.toxicity,
+	//      labels = EXCLUDED.labels,
+	//      simhash = EXCLUDED.simhash,
+	//      scored_at = NOW()
+	UpsertCommentScore(ctx context.Context, arg *UpsertCommentScoreParams) error
+	//UpsertCommenterEdge
+	//
+	//  INSERT INTO commenter_edges (from_channel_id, commenter_id, kind, weight, evidence, video_id)
+	//  VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      COALESCE($4, 1),
+	//      COALESCE($5::jsonb, '{}'::jsonb),
+	//      $6
+	//  )
+	//  ON CONFLICT (COALESCE(from_channel_id::text, ''), commenter_id, kind)
+	//  DO UPDATE SET
+	//      weight = EXCLUDED.weight,
+	//      evidence = EXCLUDED.evidence,
+	//      video_id = COALESCE(EXCLUDED.video_id, commenter_edges.video_id),
+	//      updated_at = NOW()
+	UpsertCommenterEdge(ctx context.Context, arg *UpsertCommenterEdgeParams) error
+	//UpsertCommenterLink
+	//
+	//  INSERT INTO commenter_links (a_id, b_id, kind, score, evidence, created_by)
+	//  VALUES (
+	//      LEAST($1::uuid, $2::uuid),
+	//      GREATEST($1::uuid, $2::uuid),
+	//      $3,
+	//      COALESCE($4, 0),
+	//      COALESCE($5::jsonb, '{}'::jsonb),
+	//      $6
+	//  )
+	//  ON CONFLICT (a_id, b_id, kind)
+	//  DO UPDATE SET
+	//      score = EXCLUDED.score,
+	//      evidence = EXCLUDED.evidence,
+	//      created_by = COALESCE(EXCLUDED.created_by, commenter_links.created_by)
+	UpsertCommenterLink(ctx context.Context, arg *UpsertCommenterLinkParams) error
+	// UpsertCommenterNamesForVideo upserts name history for commenters on this video.
+	// n is the full grouped count across all of each commenter's comments.
+	//
+	//  INSERT INTO commenter_names (commenter_id, display_name, first_seen, last_seen, n)
+	//  SELECT
+	//      vc.commenter_id,
+	//      btrim(vc.author) AS display_name,
+	//      MIN(COALESCE(vc.published_at, vc.created_at)) AS first_seen,
+	//      MAX(COALESCE(vc.published_at, vc.created_at)) AS last_seen,
+	//      COUNT(*)::bigint AS n
+	//  FROM video_comments vc
+	//  WHERE vc.commenter_id IN (
+	//      SELECT DISTINCT vc2.commenter_id
+	//      FROM video_comments vc2
+	//      WHERE vc2.video_id = $1
+	//        AND vc2.commenter_id IS NOT NULL
+	//  )
+	//    AND vc.author IS NOT NULL
+	//    AND btrim(vc.author) <> ''
+	//  GROUP BY vc.commenter_id, btrim(vc.author)
+	//  ON CONFLICT (commenter_id, display_name)
+	//  DO UPDATE SET
+	//      first_seen = LEAST(commenter_names.first_seen, EXCLUDED.first_seen),
+	//      last_seen = GREATEST(commenter_names.last_seen, EXCLUDED.last_seen),
+	//      n = EXCLUDED.n
+	UpsertCommenterNamesForVideo(ctx context.Context, videoID pgtype.UUID) error
+	// UpsertCommentersForVideo inserts/updates commenters from a video's comments.
+	// Identity is comment_author_id(author_id, author_url); rows with empty identity are skipped.
+	//
+	//  INSERT INTO commenters (
+	//      source,
+	//      author_id,
+	//      author_url,
+	//      display_name,
+	//      first_seen,
+	//      last_seen,
+	//      comment_count,
+	//      updated_at
+	//  )
+	//  SELECT
+	//      vc.source,
+	//      comment_author_id(vc.author_id, vc.author_url) AS author_id,
+	//      COALESCE(MAX(NULLIF(btrim(COALESCE(vc.author_url, '')), '')), '') AS author_url,
+	//      COALESCE(MAX(NULLIF(btrim(COALESCE(vc.author, '')), '')), '') AS display_name,
+	//      MIN(COALESCE(vc.published_at, vc.created_at)) AS first_seen,
+	//      MAX(COALESCE(vc.published_at, vc.created_at)) AS last_seen,
+	//      0 AS comment_count,
+	//      NOW() AS updated_at
+	//  FROM video_comments vc
+	//  WHERE vc.video_id = $1
+	//    AND comment_author_id(vc.author_id, vc.author_url) IS NOT NULL
+	//  GROUP BY vc.source, comment_author_id(vc.author_id, vc.author_url)
+	//  ON CONFLICT (source, author_id)
+	//  DO UPDATE SET
+	//      author_url = CASE
+	//          WHEN EXCLUDED.author_url <> '' THEN EXCLUDED.author_url
+	//          ELSE commenters.author_url
+	//      END,
+	//      display_name = CASE
+	//          WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name
+	//          ELSE commenters.display_name
+	//      END,
+	//      first_seen = LEAST(commenters.first_seen, EXCLUDED.first_seen),
+	//      last_seen = GREATEST(commenters.last_seen, EXCLUDED.last_seen),
+	//      updated_at = NOW()
+	UpsertCommentersForVideo(ctx context.Context, videoID pgtype.UUID) error
 	// UpsertMaxDownloadHeight sets the global download quality cap in pixels (0 = no cap)
 	//
 	//  INSERT INTO instance_settings (id, registration_enabled, admin_emails, max_download_height, updated_at)
@@ -2936,6 +6234,31 @@ type Querier interface {
 	//  SET max_download_height = EXCLUDED.max_download_height,
 	//      updated_at = NOW()
 	UpsertMaxDownloadHeight(ctx context.Context, maxDownloadHeight int32) error
+	//UpsertOsintFlag
+	//
+	//  INSERT INTO osint_flags (kind, commenter_id, video_id, campaign_id, score, evidence, natural_key)
+	//  VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      $4,
+	//      COALESCE($5, 0),
+	//      COALESCE($6::jsonb, '{}'::jsonb),
+	//      $7
+	//  )
+	//  ON CONFLICT (natural_key) WHERE natural_key IS NOT NULL
+	//  DO UPDATE SET
+	//      score = EXCLUDED.score,
+	//      evidence = EXCLUDED.evidence
+	//  RETURNING id, kind, commenter_id, video_id, campaign_id, score, evidence, created_at, dismissed_at, dismissed_by, natural_key
+	UpsertOsintFlag(ctx context.Context, arg *UpsertOsintFlagParams) (*OsintFlag, error)
+	//UpsertPartialTranscript
+	//
+	//  INSERT INTO video_transcripts(video_id,lang,format,text,search,raw,cues,coverage)
+	//  VALUES($1,$2,'vtt',$3,to_tsvector('simple',$3),'',$4,$5)
+	//  ON CONFLICT(video_id,lang) DO UPDATE SET text=EXCLUDED.text,search=EXCLUDED.search,cues=EXCLUDED.cues,raw='',coverage=EXCLUDED.coverage,updated_at=now()
+	//  WHERE video_transcripts.coverage IS NOT NULL
+	UpsertPartialTranscript(ctx context.Context, arg *UpsertPartialTranscriptParams) error
 	// UpsertPlaybackPosition saves or updates the playback position for a user/video
 	//
 	//  INSERT INTO playback_positions (user_id, video_id, position_seconds, updated_at)
@@ -2953,6 +6276,17 @@ type Querier interface {
 	//  DO UPDATE SET scene = EXCLUDED.scene, updated_at = NOW()
 	//  RETURNING id, producer_id, name, scene, created_at, updated_at
 	UpsertPlayerScenePreset(ctx context.Context, arg *UpsertPlayerScenePresetParams) (*PlayerScenePreset, error)
+	// ============================================================================
+	// Producer connections (live WebRTC presence + director election)
+	// ============================================================================
+	// Register or refresh a host's live connection.
+	//
+	//
+	//  INSERT INTO producer_connections (show_note_id, user_id)
+	//  VALUES ($1, $2)
+	//  ON CONFLICT (show_note_id, user_id) DO UPDATE SET last_ping = NOW()
+	//  RETURNING id, show_note_id, user_id, is_director, connected_at, last_ping
+	UpsertProducerConnection(ctx context.Context, arg *UpsertProducerConnectionParams) (*ProducerConnection, error)
 	// UpsertRegistrationEnabled sets registration_enabled (creates row if missing)
 	//
 	//  INSERT INTO instance_settings (id, registration_enabled, admin_emails, updated_at)
@@ -2962,6 +6296,72 @@ type Querier interface {
 	//      admin_emails = EXCLUDED.admin_emails,
 	//      updated_at = NOW()
 	UpsertRegistrationEnabled(ctx context.Context, arg *UpsertRegistrationEnabledParams) error
+	//UpsertShowNoteReference
+	//
+	//  INSERT INTO show_note_references (
+	//      show_note_id, occurrence_key, ordinal, kind, source_uri, label, context,
+	//      section_path, start_seconds, end_seconds, status, video_id, clip_id,
+	//      marker_id, line_start, line_end, parsed_revision, diagnostic
+	//  ) VALUES (
+	//      $1, $2, $3, $4,
+	//      $5, $6, $7, $8,
+	//      $9, $10, $11, $12,
+	//      $13, $14, $15, $16,
+	//      $17, $18
+	//  )
+	//  ON CONFLICT (show_note_id, occurrence_key) DO UPDATE SET
+	//      ordinal = EXCLUDED.ordinal,
+	//      kind = EXCLUDED.kind,
+	//      source_uri = EXCLUDED.source_uri,
+	//      label = EXCLUDED.label,
+	//      context = EXCLUDED.context,
+	//      section_path = EXCLUDED.section_path,
+	//      start_seconds = EXCLUDED.start_seconds,
+	//      end_seconds = EXCLUDED.end_seconds,
+	//      status = CASE
+	//          WHEN show_note_references.source_uri = EXCLUDED.source_uri
+	//           AND show_note_references.status = 'resolving'
+	//           AND EXCLUDED.status = 'unresolved'
+	//          THEN show_note_references.status ELSE EXCLUDED.status END,
+	//      video_id = CASE
+	//          WHEN show_note_references.source_uri = EXCLUDED.source_uri
+	//           AND show_note_references.status = 'resolving'
+	//           AND EXCLUDED.status = 'unresolved'
+	//          THEN show_note_references.video_id ELSE EXCLUDED.video_id END,
+	//      clip_id = CASE
+	//          WHEN show_note_references.source_uri = EXCLUDED.source_uri
+	//           AND show_note_references.status = 'resolving'
+	//           AND EXCLUDED.status = 'unresolved'
+	//          THEN show_note_references.clip_id ELSE EXCLUDED.clip_id END,
+	//      marker_id = CASE
+	//          WHEN show_note_references.source_uri = EXCLUDED.source_uri
+	//           AND show_note_references.status = 'resolving'
+	//           AND EXCLUDED.status = 'unresolved'
+	//          THEN show_note_references.marker_id ELSE EXCLUDED.marker_id END,
+	//      line_start = EXCLUDED.line_start,
+	//      line_end = EXCLUDED.line_end,
+	//      parsed_revision = EXCLUDED.parsed_revision,
+	//      diagnostic = EXCLUDED.diagnostic,
+	//      updated_at = NOW()
+	//  RETURNING id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at
+	UpsertShowNoteReference(ctx context.Context, arg *UpsertShowNoteReferenceParams) (*ShowNoteReference, error)
+	//UpsertSpeechScore
+	//
+	//  INSERT INTO speech_scores (
+	//      video_id, set_id, start_ts, end_ts, model_digest, sentiment, toxicity, labels, scored_at
+	//  ) VALUES (
+	//      $1,
+	//      $2,
+	//      $3,
+	//      $4,
+	//      COALESCE($5, ''),
+	//      $6,
+	//      $7,
+	//      COALESCE($8::jsonb, '{}'::jsonb),
+	//      NOW()
+	//  )
+	//  RETURNING id, video_id, set_id, start_ts, end_ts, model_digest, sentiment, toxicity, labels, scored_at
+	UpsertSpeechScore(ctx context.Context, arg *UpsertSpeechScoreParams) (*SpeechScore, error)
 	// UpsertTag inserts a tag (keyed by slug) or returns the existing one. The name
 	// is refreshed so the latest casing wins; color is left as-is on conflict.
 	//
@@ -2970,6 +6370,19 @@ type Querier interface {
 	//  ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
 	//  RETURNING id, name, slug, color, created_at, created_by
 	UpsertTag(ctx context.Context, arg *UpsertTagParams) (*Tag, error)
+	//UpsertTopic
+	//
+	//  INSERT INTO topics (slug, title, origin)
+	//  VALUES ($1, $2, $3)
+	//  ON CONFLICT (slug) DO UPDATE SET
+	//      title = CASE WHEN topics.origin = 'wiki' THEN topics.title ELSE EXCLUDED.title END,
+	//      origin = CASE
+	//          WHEN topics.origin = 'wiki' THEN topics.origin
+	//          WHEN EXCLUDED.origin = 'wiki' THEN EXCLUDED.origin
+	//          ELSE topics.origin
+	//      END
+	//  RETURNING slug, title, origin, created_at
+	UpsertTopic(ctx context.Context, arg *UpsertTopicParams) (*Topic, error)
 	//UpsertUserKeybinding
 	//
 	//  INSERT INTO user_keybindings (user_id, action, key)
@@ -3065,6 +6478,7 @@ type Querier interface {
 	//      search = EXCLUDED.search,
 	//      raw = EXCLUDED.raw,
 	//      cues = EXCLUDED.cues,
+	//      coverage = NULL,
 	//      updated_at = NOW()
 	UpsertVideoTranscript(ctx context.Context, arg *UpsertVideoTranscriptParams) error
 	// UsernameTaken checks if a username is already taken
@@ -3075,6 +6489,19 @@ type Querier interface {
 	//      WHERE user_name = $1 AND deleted_at IS NULL
 	//  )
 	UsernameTaken(ctx context.Context, userName string) (bool, error)
+	// WakePendingCompilations makes waiting executions claimable after a download,
+	// stitch, or compilation notification. Idle rows still use next_check backoff
+	// so a single wake cannot spin the same execution.
+	//
+	//  UPDATE compilation_executions SET next_check=now() WHERE status IN ('waiting_media','rendering')
+	WakePendingCompilations(ctx context.Context) error
+	//WatchCommenter
+	//
+	//  INSERT INTO commenter_watchlist (user_id, commenter_id, note)
+	//  VALUES ($1, $2, COALESCE($3, ''))
+	//  ON CONFLICT (user_id, commenter_id)
+	//  DO UPDATE SET note = EXCLUDED.note
+	WatchCommenter(ctx context.Context, arg *WatchCommenterParams) error
 	// insertUser inserts a user into the database
 	// it is intentionally kept private, user creation should be done via
 	// the NewUser helper found in internal/db/user.go

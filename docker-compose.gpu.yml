@@ -1,17 +1,23 @@
-# NVIDIA overlay: whisper.cpp CUDA ingest.
+# NVIDIA overlay: whisper.cpp / Ollama / vision CUDA on rewind-ml.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Set ML_RUNTIME=runtime-cuda and WHISPER_DEVICE=cuda in .env, then `make up`.
+# Or: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 #
-# Requires the NVIDIA Container Toolkit. GGML weights still live in ./bin/models.
+# Requires the NVIDIA Container Toolkit. Weights live in ./bin/models;
+# Ollama/vision binaries live in ./bin/runtime.
 
 services:
-  ingest:
+  rewind-ml:
     build:
       target: runtime-cuda
     environment:
       WHISPER_DEVICE: cuda
-      INGEST_RUNTIME: runtime-cuda
+      ML_RUNTIME: runtime-cuda
+      OLLAMA_LLM_LIBRARY: ${OLLAMA_LLM_LIBRARY:-cuda_v12}
+      VISION_DEVICE: cuda
+      TEXTCLS_DEVICE: cuda
     deploy:
+      replicas: 1
       resources:
         reservations:
           devices:

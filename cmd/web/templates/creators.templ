@@ -3,27 +3,53 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"thirdcoast.systems/rewind/internal/analyze"
+	"thirdcoast.systems/rewind/internal/catalog"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/wiki"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
-templ Creators(list []*db.ListCreatorsRow, suggestions []*db.ListPendingCreatorSuggestionsRow, username string) {
+templ Creators(list []*db.ListCreatorsRow, bundles []*db.ListCreatorBundlesRow, suggestions []*db.ListPendingCreatorSuggestionsRow, username string) {
 	@Layout("Creators", username) {
-		@Container("") {
+		@Container("wide") {
 			<div class="mb-4 flex items-end justify-between gap-3 flex-wrap">
 				<div>
 					<h1 class="page-heading text-xl tracking-tight mb-0.5">Creators</h1>
-					<p class="text-xs font-mono text-white/60">People behind one or more archived channels</p>
+					<p class="text-xs font-mono text-white/60">People behind one or more archived channels. Bundles group people (a show, a network) without merging them.</p>
 				</div>
-				<a href="/creators/new" class="btn-primary btn-sm">
-					<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
-					New creator
-				</a>
+				<div class="flex items-center gap-2">
+					<a href="/creators/bundles/new" class="ghost-btn-sm text-white/70 border-white/30 hover:border-white hover:text-white">
+						New bundle
+					</a>
+					<a href="/creators/new" class="btn-primary btn-sm">
+						<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
+						New creator
+					</a>
+				</div>
 			</div>
+			if len(bundles) > 0 {
+				<div class="mb-6">
+					<h2 class="sub-heading mb-2">Bundles</h2>
+					<div class="entity-card-grid">
+						for _, b := range bundles {
+							if b != nil {
+								<a href={ templ.SafeURL("/creators/bundles/" + b.ID.String()) } class="entity-card">
+									<div class="entity-card-title">{ b.Name }</div>
+									if strings.TrimSpace(b.Notes) != "" {
+										<div class="entity-card-notes">{ b.Notes }</div>
+									}
+									<div class="entity-card-meta">{ format.Itoa64(b.MemberCount) } creators</div>
+								</a>
+							}
+						}
+					</div>
+				</div>
+			}
 			if len(suggestions) > 0 {
 				<div class="mb-6">
 					<h2 class="sub-heading mb-2">Suggested groupings</h2>
@@ -44,17 +70,15 @@ templ Creators(list []*db.ListCreatorsRow, suggestions []*db.ListPendingCreatorS
 					<p class="font-mono text-xs text-white/30 mt-1">Name a person, then search and link their archived channels</p>
 				</div>
 			} else {
-				<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+				<div class="entity-card-grid">
 					for _, cr := range list {
 						if cr != nil {
-							<a href={ templ.SafeURL("/creators/" + cr.ID.String()) } class="p-3 flex items-center justify-between gap-3 hover:bg-white/5 block">
-								<div class="min-w-0">
-									<div class="font-mono text-sm text-white truncate">{ cr.Name }</div>
-									if strings.TrimSpace(cr.Notes) != "" {
-										<div class="font-mono text-xs text-white/40 mt-0.5 truncate">{ cr.Notes }</div>
-									}
-								</div>
-								<div class="font-mono text-xs text-white/50 shrink-0">{ format.Itoa64(cr.ChannelCount) } channels</div>
+							<a href={ templ.SafeURL("/creators/" + cr.ID.String()) } class="entity-card">
+								<div class="entity-card-title">{ cr.Name }</div>
+								if strings.TrimSpace(cr.Notes) != "" {
+									<div class="entity-card-notes">{ cr.Notes }</div>
+								}
+								<div class="entity-card-meta">{ format.Itoa64(cr.ChannelCount) } { channelWord(cr.ChannelCount) }</div>
 							</a>
 						}
 					}
@@ -154,107 +178,249 @@ templ CreatorWizard(username string) {
 	}
 }
 
-templ CreatorView(creator *db.Creator, channels []*db.Channel, edges []*db.ListChannelEdgesForCreatorRow, report analyze.Report, username string) {
+templ CreatorView(creator *db.Creator, channels []*db.Channel, edges []*db.ListChannelEdgesForCreatorRow, report analyze.Report, crawls []*db.ListCatalogCrawlsForCreatorRow, bundles []*db.CreatorBundle, vaultPages []wiki.Page, username string) {
+	{{ catalog := groupCatalogCrawls(crawls) }}
 	@Layout(creator.Name, username) {
-		@Container("") {
-			<div class="mb-4">
-				<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/creators" class="hover:text-white/70">Creators</a> /</p>
-				<div class="flex items-center gap-3 flex-wrap">
-					<h1 class="page-heading text-xl tracking-tight mb-0">{ creator.Name }</h1>
-					@creatorStatusBadge(report.Status)
+		@Container("wide") {
+			<header class="creator-hero">
+				<p class="text-xs font-mono text-white/40 mb-1"><a href="/creators" class="hover:text-white/70">Creators</a> <span class="text-white/20">/</span></p>
+				<div class="creator-hero-top">
+					<div class="min-w-0">
+						<div class="flex items-center gap-3 flex-wrap">
+							<h1 class="page-heading text-xl tracking-tight mb-0">{ creator.Name }</h1>
+							@creatorStatusBadge(report.Status)
+						</div>
+						if strings.TrimSpace(creator.Notes) != "" {
+							<p class="font-mono text-xs text-white/50 mt-2 max-w-2xl">{ creator.Notes }</p>
+						}
+						if len(bundles) > 0 {
+							<p class="font-mono text-xs text-white/50 mt-2">
+								Bundles:
+								for i, b := range bundles {
+									if b != nil {
+										if i > 0 {
+											<span class="text-white/30">· </span>
+										}
+										<a href={ templ.SafeURL("/creators/bundles/" + b.ID.String()) } class="hover:text-white/80">{ b.Name }</a>
+									}
+								}
+							</p>
+						}
+					</div>
+					if creatorHasCatalog(channels) {
+						<div class="creator-actions">
+							<form method="POST" action={ templ.SafeURL("/creators/" + creator.ID.String() + "/catalog") }>
+								<button type="submit" class="btn-primary btn-sm">Index catalog</button>
+							</form>
+							<form method="POST" action={ templ.SafeURL("/creators/" + creator.ID.String() + "/catalog") }>
+								<input type="hidden" name="refresh" value="true"/>
+								<button type="submit" class="ghost-btn-sm">Refresh catalog</button>
+							</form>
+						</div>
+					}
 				</div>
-				if strings.TrimSpace(creator.Notes) != "" {
-					<p class="font-mono text-xs text-white/50 mt-1">{ creator.Notes }</p>
-				}
-			</div>
-			<div class="mb-6">
-				<h2 class="sub-heading mb-2">Autopsy</h2>
-				<p class="font-mono text-xs text-white/40 mb-3">View counts refresh on a schedule; signals improve as metadata updates.</p>
-				if len(report.Signals) == 0 {
-					<p class="font-mono text-xs text-white/40">No signals yet.</p>
-				} else {
-					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
-						for _, sig := range report.Signals {
-							@creatorSignalRow(sig)
-						}
+				<form method="GET" action="/videos" class="creator-search">
+					<input type="hidden" name="creator_id" value={ creator.ID.String() }/>
+					<input type="search" name="q" class="form-input" placeholder={ "Search everything said by " + creator.Name + "…" } aria-label={ "Search " + creator.Name }/>
+					<button type="submit" class="btn-primary btn-sm">Search</button>
+				</form>
+				<div class="creator-stats">
+					<div class="creator-stat">
+						<div class="creator-stat-label">Channels</div>
+						<div class="creator-stat-value">{ strconv.Itoa(len(channels)) }</div>
 					</div>
-				}
-			</div>
-			<div class="mb-6">
-				<h2 class="sub-heading mb-2">Network</h2>
-				<p class="font-mono text-xs text-white/40 mb-3">Mentions and outlinks from these channels’ titles, descriptions, and comments.</p>
-				if len(edges) == 0 {
-					<p class="font-mono text-xs text-white/40">No harvested connections yet. Linking a channel here groups identity — the graph fills as ingest scans archived videos.</p>
-				} else {
-					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
-						for _, e := range edges {
-							if e != nil {
-								@creatorNetworkRow(e)
-							}
-						}
+					<div class="creator-stat">
+						<div class="creator-stat-label">Vault</div>
+						<div class="creator-stat-value">{ strconv.Itoa(len(vaultPages)) }</div>
 					</div>
-				}
-			</div>
-			<div class="mb-6">
-				<h2 class="sub-heading mb-2">Channels</h2>
-				if len(channels) == 0 {
-					<p class="font-mono text-xs text-white/40 mb-3">None linked yet. Search below — matches for this name are suggested automatically.</p>
-				} else {
-					<div class="border-2 border-white/10 divide-y-2 divide-white/10 mb-4">
-						for _, ch := range channels {
-							if ch != nil {
-								<div class="p-3 flex items-center justify-between gap-3">
-									<div class="min-w-0">
-										<div class="flex items-center gap-2 flex-wrap">
-											<span class="badge">{ ch.Platform }</span>
+					<div class="creator-stat">
+						<div class="creator-stat-label">Catalog</div>
+						<div class="creator-stat-value">{ catalogSummary(catalog) }</div>
+					</div>
+					<div class="creator-stat">
+						<div class="creator-stat-label">Network</div>
+						<div class="creator-stat-value">{ strconv.Itoa(len(edges)) }</div>
+					</div>
+				</div>
+			</header>
+			<div class="creator-layout">
+				<div class="min-w-0">
+					@VaultPanel(vaultPages, wiki.TreeCreator, wiki.SlugFromName(creator.Name))
+				</div>
+				<aside class="creator-rail" aria-label="Creator identity">
+					<section class="wiki-box">
+						<h2 class="wiki-box-title">Channels</h2>
+						if len(channels) == 0 {
+							<p class="font-mono text-xs text-white/40">None linked yet. Open “Manage channels” below.</p>
+						} else {
+							<div class="channel-chip-list">
+								for _, ch := range channels {
+									if ch != nil {
+										<div class="channel-chip">
+											<span class="badge shrink-0">{ ch.Platform }</span>
 											if ch.Uploader != "" {
-												<a href={ templ.SafeURL(channelViewURL(ch.Uploader)) } class="font-mono text-sm text-white hover:underline truncate">{ ch.Uploader }</a>
+												<a href={ templ.SafeURL(channelViewURL(ch.Uploader)) } class="font-mono text-xs text-white hover:underline truncate">{ ch.Uploader }</a>
 											} else {
-												<span class="font-mono text-sm text-white/70 truncate">{ ch.IdentityKey }</span>
+												<span class="font-mono text-xs text-white/70 truncate">{ ch.IdentityKey }</span>
 											}
 										</div>
-										if ch.CanonicalURL != "" {
-											<div class="font-mono text-xs text-white/40 mt-1 truncate">{ ch.CanonicalURL }</div>
-										}
-									</div>
-									<form method="POST" action={ templ.SafeURL("/creators/" + creator.ID.String() + "/unlink") } class="shrink-0">
-										<input type="hidden" name="channel_id" value={ ch.ID.String() }/>
-										<button
-											type="submit"
-											class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white"
-											onclick="return confirm('Unlink this channel from this creator?')"
-										>
-											Unlink
-										</button>
-									</form>
-								</div>
-							}
+									}
+								}
+							</div>
 						}
-					</div>
-				}
-				<form
-					method="POST"
-					action={ templ.SafeURL("/creators/" + creator.ID.String() + "/link") }
-					class="border-2 border-white/10 p-4"
-					data-signals={ pickerSignalsJSON(creator.Name) }
-					data-init={ "@get('/api/creators/" + creator.ID.String() + "/channel-search')" }
-				>
-					<h3 class="sub-heading mb-1">Link more channels</h3>
-					<p class="font-mono text-xs text-white/40 mb-3">Search unassigned channels. Suggested matches for this name load first — click to add, then confirm.</p>
-					@ChannelPicker("/api/creators/" + creator.ID.String() + "/channel-search")
-					<div class="mt-3 flex justify-end">
-						<button
-							type="submit"
-							class="btn-primary btn-sm disabled:opacity-30 disabled:pointer-events-none"
-							data-attr:disabled="$selected.length === 0"
-						>
-							<span data-text="$selected.length > 0 ? ('Link ' + $selected.length + ' channel' + ($selected.length === 1 ? '' : 's')) : 'Select channels to link'">Select channels to link</span>
-						</button>
-					</div>
-				</form>
+					</section>
+					if len(catalog) > 0 {
+						<section class="wiki-box">
+							<h2 class="wiki-box-title">Catalog</h2>
+							<p class="font-mono text-xs text-white/40 mb-2">{ catalogSummary(catalog) } feeds across { strconv.Itoa(len(catalog)) } { channelWord(int64(len(catalog))) }.</p>
+							<div class="catalog-groups">
+								for _, g := range catalog {
+									@catalogChannelGroup(g)
+								}
+							</div>
+						</section>
+					}
+				</aside>
 			</div>
+			<details class="fold-section">
+				<summary>
+					<span class="fold-section-title">Autopsy</span>
+					<span class="fold-section-meta">{ strconv.Itoa(len(report.Signals)) } signals · { report.Status }</span>
+				</summary>
+				<div class="fold-section-body">
+					<p class="font-mono text-xs text-white/40 px-3 pt-3">View counts refresh on a schedule; signals improve as metadata updates.</p>
+					if len(report.Signals) == 0 {
+						<p class="font-mono text-xs text-white/40 p-3">No signals yet.</p>
+					} else {
+						<div class="divide-y-2 divide-white/10">
+							for _, sig := range report.Signals {
+								@creatorSignalRow(sig)
+							}
+						</div>
+					}
+				</div>
+			</details>
+			<details class="fold-section">
+				<summary>
+					<span class="fold-section-title">Network</span>
+					<span class="fold-section-meta">{ strconv.Itoa(len(edges)) } connections</span>
+				</summary>
+				<div class="fold-section-body">
+					<p class="font-mono text-xs text-white/40 px-3 pt-3">Mentions and outlinks from these channels’ titles, descriptions, and comments.</p>
+					if len(edges) == 0 {
+						<p class="font-mono text-xs text-white/40 p-3">No harvested connections yet. Linking a channel here groups identity — the graph fills as ingest scans archived videos.</p>
+					} else {
+						<div class="divide-y-2 divide-white/10">
+							for _, e := range edges {
+								if e != nil {
+									@creatorNetworkRow(e)
+								}
+							}
+						</div>
+					}
+				</div>
+			</details>
+			<details class="fold-section">
+				<summary>
+					<span class="fold-section-title">Manage channels</span>
+					<span class="fold-section-meta">{ strconv.Itoa(len(channels)) } linked</span>
+				</summary>
+				<div class="fold-section-body p-3 space-y-4">
+					if len(channels) == 0 {
+						<p class="font-mono text-xs text-white/40">None linked yet. Search below — matches for this name are suggested automatically.</p>
+					} else {
+						<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+							for _, ch := range channels {
+								if ch != nil {
+									<div class="p-3 flex items-center justify-between gap-3">
+										<div class="min-w-0">
+											<div class="flex items-center gap-2 flex-wrap">
+												<span class="badge">{ ch.Platform }</span>
+												if ch.Uploader != "" {
+													<a href={ templ.SafeURL(channelViewURL(ch.Uploader)) } class="font-mono text-sm text-white hover:underline truncate">{ ch.Uploader }</a>
+												} else {
+													<span class="font-mono text-sm text-white/70 truncate">{ ch.IdentityKey }</span>
+												}
+											</div>
+											if ch.CanonicalURL != "" {
+												<div class="font-mono text-xs text-white/40 mt-1 truncate">{ ch.CanonicalURL }</div>
+											}
+										</div>
+										<form method="POST" action={ templ.SafeURL("/creators/" + creator.ID.String() + "/unlink") } class="shrink-0">
+											<input type="hidden" name="channel_id" value={ ch.ID.String() }/>
+											<button
+												type="submit"
+												class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white"
+												onclick="return confirm('Unlink this channel from this creator?')"
+											>
+												Unlink
+											</button>
+										</form>
+									</div>
+								}
+							}
+						</div>
+					}
+					<form
+						method="POST"
+						action={ templ.SafeURL("/creators/" + creator.ID.String() + "/link") }
+						class="border-2 border-white/10 p-4"
+						data-signals={ pickerSignalsJSON(creator.Name) }
+						data-init={ "@get('/api/creators/" + creator.ID.String() + "/channel-search')" }
+					>
+						<h3 class="sub-heading mb-1">Link more channels</h3>
+						<p class="font-mono text-xs text-white/40 mb-3">Search unassigned channels. Suggested matches for this name load first — click to add, then confirm.</p>
+						@ChannelPicker("/api/creators/" + creator.ID.String() + "/channel-search")
+						<div class="mt-3 flex justify-end">
+							<button
+								type="submit"
+								class="btn-primary btn-sm disabled:opacity-30 disabled:pointer-events-none"
+								data-attr:disabled="$selected.length === 0"
+							>
+								<span data-text="$selected.length > 0 ? ('Link ' + $selected.length + ' channel' + ($selected.length === 1 ? '' : 's')) : 'Select channels to link'">Select channels to link</span>
+							</button>
+						</div>
+					</form>
+				</div>
+			</details>
 		}
 	}
+}
+
+type catalogGroup struct {
+	Name     string
+	Crawls   []*db.ListCatalogCrawlsForCreatorRow
+	Complete int
+	Active   int
+	Stuck    int
+}
+
+templ catalogChannelGroup(g catalogGroup) {
+	<details class="catalog-channel" open?={ g.Stuck+g.Active > 0 }>
+		<summary>
+			<div class="min-w-0">
+				<div class="catalog-channel-name">{ g.Name }</div>
+				<div class="catalog-meter" aria-hidden="true">
+					<span style={ catalogMeterStyle(g) }></span>
+				</div>
+			</div>
+			<span class="catalog-channel-meta">{ catalogGroupMeta(g) }</span>
+		</summary>
+		<div class="catalog-feeds">
+			for _, crawl := range g.Crawls {
+				if crawl != nil {
+					<div class={ "catalog-feed", templ.KV("is-complete", crawl.Status == "complete"), templ.KV("is-stuck", crawl.Status == "failed" || crawl.Status == "retry_wait") }>
+						<div class="catalog-feed-kind">{ crawl.FeedKind }</div>
+						<div class="catalog-feed-status">{ crawl.Status }</div>
+						<div class="catalog-feed-counts">{ fmt.Sprintf("%d seen · %d new", crawl.EntriesSeen, crawl.EntriesAdded) }</div>
+						<div class="mt-2">
+							@catalogCrawlActions(crawl.ID.String(), crawl.Status)
+						</div>
+					</div>
+				}
+			}
+		</div>
+	</details>
 }
 
 templ ChannelPicker(searchURL string) {
@@ -489,4 +655,253 @@ func evidenceSnippet(s string, max int) string {
 	}
 	runes := []rune(s)
 	return string(runes[:max]) + "…"
+}
+
+func channelWord(n int64) string {
+	if n == 1 {
+		return "channel"
+	}
+	return "channels"
+}
+
+func feedRank(kind string) int {
+	switch strings.ToLower(kind) {
+	case "streams":
+		return 0
+	case "shorts":
+		return 1
+	case "videos":
+		return 2
+	default:
+		return 9
+	}
+}
+
+func sortCatalogFeeds(crawls []*db.ListCatalogCrawlsForCreatorRow) {
+	for i := 0; i < len(crawls); i++ {
+		for j := i + 1; j < len(crawls); j++ {
+			if crawls[i] == nil || crawls[j] == nil {
+				continue
+			}
+			if feedRank(crawls[j].FeedKind) < feedRank(crawls[i].FeedKind) {
+				crawls[i], crawls[j] = crawls[j], crawls[i]
+			}
+		}
+	}
+}
+
+func groupCatalogCrawls(crawls []*db.ListCatalogCrawlsForCreatorRow) []catalogGroup {
+	idx := map[string]int{}
+	var out []catalogGroup
+	for _, c := range crawls {
+		if c == nil {
+			continue
+		}
+		name := strings.TrimSpace(c.ChannelName)
+		if name == "" {
+			name = c.ChannelID.String()
+		}
+		i, ok := idx[name]
+		if !ok {
+			i = len(out)
+			idx[name] = i
+			out = append(out, catalogGroup{Name: name})
+		}
+		g := &out[i]
+		g.Crawls = append(g.Crawls, c)
+		switch c.Status {
+		case "complete", "cancelled":
+			g.Complete++
+		case "failed", "retry_wait":
+			g.Stuck++
+		default:
+			g.Active++
+		}
+	}
+	for i := range out {
+		sortCatalogFeeds(out[i].Crawls)
+	}
+	return out
+}
+
+func catalogSummary(groups []catalogGroup) string {
+	if len(groups) == 0 {
+		return "—"
+	}
+	var complete, total int
+	for _, g := range groups {
+		total += len(g.Crawls)
+		complete += g.Complete
+	}
+	return fmt.Sprintf("%d/%d", complete, total)
+}
+
+func catalogGroupMeta(g catalogGroup) string {
+	n := len(g.Crawls)
+	switch {
+	case g.Stuck > 0:
+		return fmt.Sprintf("%d/%d done · %d waiting", g.Complete, n, g.Stuck)
+	case g.Active > 0:
+		return fmt.Sprintf("%d/%d done · %d running", g.Complete, n, g.Active)
+	default:
+		return fmt.Sprintf("%d/%d done", g.Complete, n)
+	}
+}
+
+func catalogMeterStyle(g catalogGroup) string {
+	n := len(g.Crawls)
+	if n == 0 {
+		return "width:0%"
+	}
+	return fmt.Sprintf("width:%d%%", g.Complete*100/n)
+}
+
+func creatorHasCatalog(channels []*db.Channel) bool {
+	for _, ch := range channels {
+		if ch == nil || catalog.SkipPlatform(ch.Platform) {
+			continue
+		}
+		if strings.TrimSpace(ch.CanonicalURL) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func creatorInBundle(id string, members []*db.Creator) bool {
+	for _, m := range members {
+		if m != nil && m.ID.String() == id {
+			return true
+		}
+	}
+	return false
+}
+
+templ CreatorBundleWizard(list []*db.ListCreatorsRow, username string) {
+	@Layout("New bundle", username) {
+		@Container("") {
+			<div class="mb-4">
+				<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/creators" class="hover:text-white/70">Creators</a> /</p>
+				<h1 class="page-heading text-xl tracking-tight mb-1">New bundle</h1>
+				<p class="font-mono text-xs text-white/50">Group people without merging them. Luis and Big Jay stay creators; Gas Digital is the bundle.</p>
+			</div>
+			<form method="POST" action="/creators/bundles" class="space-y-4">
+				<div class="border-2 border-white/10 p-4">
+					<div class="flex items-baseline gap-2 mb-3">
+						<span class="font-mono text-xs text-white/30 tabular-nums">01</span>
+						<h2 class="sub-heading mb-0">What is this group?</h2>
+					</div>
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+						<div class="md:col-span-1">
+							<label class="form-label mb-1" for="bundle-name">Name</label>
+							<input
+								id="bundle-name"
+								type="text"
+								name="name"
+								required
+								autocomplete="off"
+								placeholder="Gas Digital"
+								class="form-input"
+							/>
+						</div>
+						<div class="md:col-span-2">
+							<label class="form-label mb-1" for="bundle-notes">Notes</label>
+							<input
+								id="bundle-notes"
+								type="text"
+								name="notes"
+								placeholder="Optional — a show, a network, a crew"
+								class="form-input"
+							/>
+						</div>
+					</div>
+				</div>
+				<div class="border-2 border-white/10 p-4">
+					<div class="flex items-baseline gap-2 mb-1">
+						<span class="font-mono text-xs text-white/30 tabular-nums">02</span>
+						<h2 class="sub-heading mb-0">Who’s in it?</h2>
+					</div>
+					<p class="font-mono text-xs text-white/40 mb-3">Optional. You can add people later.</p>
+					if len(list) == 0 {
+						<p class="font-mono text-xs text-white/40">No creators yet. Name the people first, then bundle them.</p>
+					} else {
+						<div class="divide-y-2 divide-white/10 border-2 border-white/10 max-h-96 overflow-y-auto">
+							for _, cr := range list {
+								if cr != nil {
+									<label class="flex items-center gap-3 p-3 hover:bg-white/5 cursor-pointer">
+										<input type="checkbox" name="creator_id" value={ cr.ID.String() } class="accent-white"/>
+										<div class="min-w-0">
+											<div class="font-mono text-sm text-white truncate">{ cr.Name }</div>
+											<div class="font-mono text-xs text-white/40">{ format.Itoa64(cr.ChannelCount) } channels</div>
+										</div>
+									</label>
+								}
+							}
+						</div>
+					}
+				</div>
+				<div class="flex items-center justify-between gap-3 flex-wrap">
+					<a href="/creators" class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white">Cancel</a>
+					<button type="submit" class="btn-primary btn-sm">Create bundle</button>
+				</div>
+			</form>
+		}
+	}
+}
+
+templ CreatorBundleView(bundle *db.CreatorBundle, members []*db.Creator, all []*db.ListCreatorsRow, username string) {
+	@Layout(bundle.Name, username) {
+		@Container("wide") {
+			<div class="mb-4">
+				<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/creators" class="hover:text-white/70">Creators</a> /</p>
+				<div class="flex items-center gap-3 flex-wrap">
+					<h1 class="page-heading text-xl tracking-tight mb-0">{ bundle.Name }</h1>
+					<span class="badge">bundle</span>
+				</div>
+				if strings.TrimSpace(bundle.Notes) != "" {
+					<p class="font-mono text-xs text-white/50 mt-1">{ bundle.Notes }</p>
+				}
+				<div class="flex items-center gap-2 mt-3 flex-wrap">
+					<a href={ templ.SafeURL("/network?bundle=" + bundle.ID.String()) } class="ghost-btn-sm text-white/70 border-white/30 hover:border-white hover:text-white">
+						View on network
+					</a>
+				</div>
+			</div>
+			<div class="mb-6">
+				<h2 class="sub-heading mb-2">Creators</h2>
+				if len(members) == 0 {
+					<p class="font-mono text-xs text-white/40 mb-3">None yet. Add people below — they stay separate creators.</p>
+				} else {
+					<div class="entity-card-grid mb-4">
+						for _, cr := range members {
+							if cr != nil {
+								<div class="entity-card flex items-center justify-between gap-3">
+									<a href={ templ.SafeURL("/creators/" + cr.ID.String()) } class="entity-card-title hover:underline">{ cr.Name }</a>
+									<form method="POST" action={ templ.SafeURL("/creators/bundles/" + bundle.ID.String() + "/remove") } class="shrink-0">
+										<input type="hidden" name="creator_id" value={ cr.ID.String() }/>
+										<button type="submit" class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white">Remove</button>
+									</form>
+								</div>
+							}
+						}
+					</div>
+				}
+				<form method="POST" action={ templ.SafeURL("/creators/bundles/" + bundle.ID.String() + "/add") } class="border-2 border-white/10 p-4">
+					<h3 class="sub-heading mb-1">Add a creator</h3>
+					<p class="font-mono text-xs text-white/40 mb-3">Bundles group people. They do not merge channels or identity.</p>
+					<div class="flex items-center gap-2 flex-wrap">
+						<select name="creator_id" required class="form-input w-64">
+							<option value="">Select a creator…</option>
+							for _, cr := range all {
+								if cr != nil && !creatorInBundle(cr.ID.String(), members) {
+									<option value={ cr.ID.String() }>{ cr.Name }</option>
+								}
+							}
+						</select>
+						<button type="submit" class="btn-primary btn-sm">Add</button>
+					</div>
+				</form>
+			</div>
+		}
+	}
 }

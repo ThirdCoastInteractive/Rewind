@@ -333,7 +333,7 @@ func GenerateWaveformPeaks(ctx context.Context, input, output string, opts *Wave
 	samplesPerBucket := (opts.SampleRate * opts.BucketMS) / 1000
 
 	// Run ffmpeg to extract raw PCM audio
-	args := []string{
+	args := prepareArgs(ctx, []string{
 		"-hide_banner", "-y",
 		"-i", input,
 		"-vn",      // No video
@@ -342,7 +342,12 @@ func GenerateWaveformPeaks(ctx context.Context, input, output string, opts *Wave
 		"-f", "s16le", // Raw 16-bit little-endian PCM
 		"-acodec", "pcm_s16le",
 		"pipe:1", // Output to stdout
+	})
+	release, err := acquireHostShare(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()

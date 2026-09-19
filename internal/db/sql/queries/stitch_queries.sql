@@ -14,7 +14,7 @@ LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
 -- name: GetClipsForStitch :many
 -- Bulk load clip data for the encoder (timestamps, crops).
-SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack
+SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
 FROM clips c
 WHERE c.id = ANY(sqlc.arg(ids)::uuid[]);
 
@@ -25,7 +25,7 @@ VALUES (sqlc.arg(created_by), sqlc.arg(title), sqlc.arg(format), sqlc.arg(qualit
 RETURNING id;
 
 -- name: GetStitchJob :one
-SELECT id, title, format, quality, segments, global_filters, status, progress_pct,
+SELECT id, created_by, title, format, quality, segments, global_filters, status, progress_pct,
        file_path, size_bytes, last_error, created_at, updated_at
 FROM stitch_jobs
 WHERE id = sqlc.arg(id);
@@ -52,7 +52,7 @@ WHERE id = (
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, created_by, title, format, quality, segments, global_filters;
+RETURNING id, created_by, title, format, quality, segments, global_filters, document_snapshot, project_revision, render_options, render_kind, range_start_us, range_end_us, frame_time_us;
 
 -- name: UpdateStitchJobPID :exec
 UPDATE stitch_jobs
@@ -90,8 +90,19 @@ SET status      = 'error',
     updated_at  = NOW()
 WHERE id = sqlc.arg(id);
 
+-- name: RequeueAllProcessingStitchJobs :exec
+-- Startup recovery: this process died, so every processing row is orphaned.
+UPDATE stitch_jobs
+SET status     = 'queued',
+    locked_at  = NULL,
+    locked_by  = NULL,
+    progress_pct = 0,
+    updated_at = NOW()
+WHERE status = 'processing';
+
 -- name: ResetStuckStitchJobs :exec
--- Reset stitch jobs stuck in processing without recent progress.
+-- Periodic recovery for jobs whose progress heartbeat (updated_at) went stale.
+-- Long chapter encodes can run 40–55 minutes; progress updates refresh updated_at.
 UPDATE stitch_jobs
 SET status     = 'queued',
     locked_at  = NULL,
@@ -99,7 +110,7 @@ SET status     = 'queued',
     progress_pct = 0,
     updated_at = NOW()
 WHERE status = 'processing'
-  AND updated_at < NOW() - INTERVAL '10 minutes';
+  AND updated_at < NOW() - INTERVAL '30 minutes';
 
 -- name: UpdateStitchJobLastAccessed :exec
 UPDATE stitch_jobs
@@ -111,21 +122,88 @@ WHERE id = sqlc.arg(id);
 -- ============================================================================
 
 -- name: ListStitchProjects :many
--- List all stitch projects for a user, newest-updated first.
-SELECT id, title, format, quality, segments, created_at, updated_at
-FROM stitch_projects
-WHERE created_by = sqlc.arg(user_id)
-ORDER BY updated_at DESC;
+-- List stitch projects. user_id NULL = every owner. folder_mode:
+--   all     ignore folder
+--   unfiled folder_id IS NULL
+--   folder  folder_id = folder_id arg
+SELECT p.id, p.title, p.format, p.quality, p.segments, p.created_at, p.updated_at,
+       p.created_by, p.folder_id, u.user_name AS created_by_name,
+       COALESCE(f.name, '') AS folder_name, p.description, p.tags
+FROM stitch_projects p
+JOIN users u ON u.id = p.created_by
+LEFT JOIN stitch_folders f ON f.id = p.folder_id
+WHERE (sqlc.narg(user_id)::uuid IS NULL OR p.created_by = sqlc.narg(user_id))
+  AND (
+    sqlc.arg(folder_mode)::text = 'all'
+    OR (sqlc.arg(folder_mode)::text = 'unfiled' AND p.folder_id IS NULL)
+    OR (sqlc.arg(folder_mode)::text = 'folder' AND p.folder_id = sqlc.narg(folder_id))
+  )
+  AND (sqlc.narg(query)::text IS NULL OR sqlc.narg(query) = '' OR p.title ILIKE '%' || sqlc.narg(query) || '%' OR p.description ILIKE '%' || sqlc.narg(query) || '%')
+ORDER BY p.updated_at DESC;
+
+-- name: ListStitchProjectOwners :many
+SELECT u.id, u.user_name, COUNT(*)::bigint AS project_count
+FROM stitch_projects p
+JOIN users u ON u.id = p.created_by
+WHERE u.deleted_at IS NULL
+GROUP BY u.id, u.user_name
+ORDER BY u.user_name;
+
+-- name: ListStitchFoldersForUser :many
+SELECT f.id, f.created_by, f.parent_id, f.name, f.created_at, f.updated_at,
+       (SELECT COUNT(*)::bigint FROM stitch_projects p WHERE p.folder_id = f.id) AS project_count
+FROM stitch_folders f
+WHERE f.created_by = sqlc.arg(user_id)
+ORDER BY f.name;
+
+-- name: GetStitchFolder :one
+SELECT id, created_by, parent_id, name, created_at, updated_at
+FROM stitch_folders
+WHERE id = sqlc.arg(id);
+
+-- name: CreateStitchFolder :one
+INSERT INTO stitch_folders (created_by, parent_id, name)
+VALUES (sqlc.arg(created_by), sqlc.narg(parent_id), sqlc.arg(name))
+RETURNING *;
+
+-- name: RenameStitchFolder :exec
+UPDATE stitch_folders
+SET name = sqlc.arg(name), updated_at = now()
+WHERE id = sqlc.arg(id) AND created_by = sqlc.arg(created_by);
+
+-- name: DeleteStitchFolder :exec
+DELETE FROM stitch_folders
+WHERE id = sqlc.arg(id) AND created_by = sqlc.arg(created_by);
+
+-- name: MoveStitchProject :exec
+UPDATE stitch_projects
+SET folder_id = sqlc.narg(folder_id), updated_at = now()
+WHERE id = sqlc.arg(id) AND created_by = sqlc.arg(created_by);
 
 -- name: GetStitchProject :one
-SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at
+SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at, description, tags
 FROM stitch_projects
 WHERE id = sqlc.arg(id);
 
+-- name: UpdateStitchProjectYouTube :exec
+UPDATE stitch_projects
+SET description = sqlc.arg(description),
+    tags = sqlc.arg(tags),
+    updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND created_by = sqlc.arg(created_by);
+
 -- name: CreateStitchProject :one
-INSERT INTO stitch_projects (created_by, title)
-VALUES (sqlc.arg(created_by), sqlc.arg(title))
+-- New projects are always canonical documents (editor_enabled is set, never a product switch).
+INSERT INTO stitch_projects (created_by, title, document, document_version, editor_enabled, revision)
+VALUES (sqlc.arg(created_by), sqlc.arg(title), sqlc.arg(document), 1, true, 0)
 RETURNING id;
+
+-- name: CreateCompilationStitchProject :execrows
+-- Deterministic ID per plan revision makes client retries safe.
+INSERT INTO stitch_projects (id, created_by, title)
+VALUES (sqlc.arg(id), sqlc.arg(created_by), sqlc.arg(title))
+ON CONFLICT (id) DO NOTHING;
 
 -- name: UpdateStitchProject :exec
 UPDATE stitch_projects
@@ -181,7 +259,7 @@ SELECT * FROM (
            ''::text AS file_path
     FROM clips c
     JOIN videos v ON c.video_id = v.id
-    WHERE (sqlc.arg(source_filter)::text = '' OR sqlc.arg(source_filter)::text = 'all' OR sqlc.arg(source_filter)::text = 'clip')
+    WHERE (c.created_by = sqlc.arg(owner_id)::uuid) AND (sqlc.arg(source_filter)::text = '' OR sqlc.arg(source_filter)::text = 'all' OR sqlc.arg(source_filter)::text = 'clip')
       AND (sqlc.arg(query)::text = '' OR c.title ILIKE '%' || sqlc.arg(query) || '%' OR v.title ILIKE '%' || sqlc.arg(query) || '%')
 
     UNION ALL
@@ -206,6 +284,32 @@ SELECT * FROM (
 
     UNION ALL
 
+    -- Topic-bound context windows (playable ranges)
+    SELECT 'context'::text AS source_type,
+           cw.id AS source_id,
+           cw.video_id,
+           cw.title,
+           t.title AS parent_title,
+           (cw.end_ts - cw.start_ts)::float8 AS duration,
+           cw.start_ts,
+           cw.end_ts,
+           ''::text AS color,
+           cw.updated_at AS created_at,
+           ''::text AS file_path
+    FROM context_window_topics cwt
+    JOIN context_windows cw ON cw.id = cwt.window_id
+    JOIN topics t ON t.slug = cwt.topic_slug
+    JOIN videos v ON v.id = cw.video_id
+    WHERE NOT cw.stale AND cw.kind = 'window'
+      AND (sqlc.arg(source_filter)::text = '' OR sqlc.arg(source_filter)::text = 'all' OR sqlc.arg(source_filter)::text = 'context')
+      AND sqlc.arg(query)::text <> ''
+      AND (t.slug = sqlc.arg(query)
+           OR t.title ILIKE '%' || sqlc.arg(query) || '%'
+           OR cw.title ILIKE '%' || sqlc.arg(query) || '%'
+           OR v.title ILIKE '%' || sqlc.arg(query) || '%')
+
+    UNION ALL
+
     -- Stitch exports (ready only)
     SELECT 'stitch'::text AS source_type,
            sj.id AS source_id,
@@ -219,7 +323,7 @@ SELECT * FROM (
            sj.created_at,
            sj.file_path
     FROM stitch_jobs sj
-    WHERE sj.status = 'ready' AND sj.file_path != ''
+    WHERE sj.created_by = sqlc.arg(owner_id)::uuid AND sj.status = 'ready' AND sj.file_path != ''
       AND (sqlc.arg(source_filter)::text = '' OR sqlc.arg(source_filter)::text = 'all' OR sqlc.arg(source_filter)::text = 'stitch')
       AND (sqlc.arg(query)::text = '' OR sj.title ILIKE '%' || sqlc.arg(query) || '%')
 ) AS combined
@@ -235,3 +339,78 @@ OFFSET sqlc.arg(off);
 SELECT id, status, file_path, duration_seconds, title
 FROM stitch_jobs
 WHERE id = sqlc.arg(id);
+
+-- name: GetStitchExportStats :one
+SELECT
+    COUNT(*) FILTER (WHERE status = 'queued') AS queued_count,
+    COUNT(*) FILTER (WHERE status = 'processing') AS processing_count,
+    COUNT(*) FILTER (WHERE status = 'ready') AS ready_count,
+    COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+    COALESCE(SUM(size_bytes) FILTER (WHERE status = 'ready'), 0)::bigint AS total_size_bytes
+FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export';
+
+-- name: ListStitchExportsForAdmin :many
+SELECT
+    id,
+    project_id,
+    title,
+    status,
+    format,
+    quality,
+    COALESCE(render_kind, 'export') AS render_kind,
+    file_path,
+    size_bytes,
+    progress_pct,
+    attempts,
+    last_error,
+    created_at
+FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+ORDER BY created_at DESC
+LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
+
+-- name: CountStitchExports :one
+SELECT COUNT(*) FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export';
+
+-- name: ListStitchExportFilesByStatus :many
+SELECT id, file_path FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = sqlc.arg(status);
+
+-- name: DeleteStitchJob :exec
+DELETE FROM stitch_jobs WHERE id = sqlc.arg(id);
+
+-- name: DeleteAllStitchExports :exec
+DELETE FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export';
+
+-- name: DeleteStitchExportsByStatus :exec
+DELETE FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = sqlc.arg(status);
+
+-- name: RequeueStitchJob :exec
+UPDATE stitch_jobs
+SET status = 'queued',
+    file_path = '',
+    size_bytes = 0,
+    locked_at = NULL,
+    locked_by = NULL,
+    progress_pct = 0,
+    started_at = NULL,
+    finished_at = NULL,
+    last_error = 'Requeued by admin',
+    updated_at = NOW()
+WHERE id = sqlc.arg(id);
+
+-- name: RequeueAllErrorStitchExports :exec
+UPDATE stitch_jobs
+SET status = 'queued',
+    locked_at = NULL,
+    locked_by = NULL,
+    progress_pct = 0,
+    last_error = 'Requeued by admin',
+    updated_at = NOW()
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = 'error';
+

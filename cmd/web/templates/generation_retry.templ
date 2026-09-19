@@ -1,0 +1,42 @@
+package templates
+
+import "fmt"
+
+// GenerationRetry lets the viewer correct generation without discarding media.
+templ GenerationRetry(videoID string) {
+	<details class="border border-white/20 p-3 mb-3" data-show="$videoPanelTab == 'context' || $videoPanelTab == 'transcript'" data-signals="{retryMode:'context',retryInstructions:'',repairStart:'',repairEnd:'',generationRetryBusy:false}">
+		<summary class="text-sm cursor-pointer">Try again with guidance</summary>
+		<div class="space-y-3 mt-3 text-xs">
+			<label class="block">
+				What needs another pass?
+				<select class="w-full bg-black border border-white/20 p-2 mt-1" data-bind="retryMode">
+					<option value="context">Regenerate context from the transcript</option>
+					<option value="transcript">Repair transcript from audio, then regenerate context</option>
+				</select>
+			</label>
+			<label class="block">
+				Guidance for the context assistant
+				<textarea rows="3" maxlength="4000" class="w-full bg-black border border-white/20 p-2 mt-1" placeholder="What went wrong? What should the assistant pay attention to?" data-bind="retryInstructions"></textarea>
+			</label>
+			<div data-show="$retryMode == 'transcript'" class="space-y-2">
+				<p>Re-listen to the affected range in fresh chunks. The previous transcript is backed up; speech outside this range is preserved.</p>
+				<div class="flex gap-2">
+					<label class="flex-1">From<input class="w-full bg-black border border-white/20 p-2" placeholder="00:36:00" data-bind="repairStart"/></label>
+					<label class="flex-1">To<input class="w-full bg-black border border-white/20 p-2" placeholder="00:57:00" data-bind="repairEnd"/></label>
+				</div>
+				<p class="text-white/60">Use seconds or HH:MM:SS. Repair up to one hour at a time. Guidance applies to the new context, not to what the audio recognizer hears.</p>
+			</div>
+			<p data-show="$retryMode == 'context'" class="text-white/60">Creates a fresh pass instead of reusing a completed result. If the transcript is wrong, choose audio repair first.</p>
+			<div class="flex gap-2 items-center">
+				<button type="button" class="btn-primary btn-sm disabled:opacity-50" data-indicator:generation-retry-busy data-attr:disabled="$generationRetryBusy" data-on:click={ fmt.Sprintf("@post('/api/videos/%s/generation-retry')", videoID) }>Try again</button>
+				<a href="#video-processing" class="underline">Processing status</a>
+			</div>
+			@GenerationRetryNotice("")
+		</div>
+	</details>
+}
+
+// GenerationRetryNotice gives inline feedback without resetting the user's guidance.
+templ GenerationRetryNotice(message string) {
+	<p id="generation-retry-notice" role="status" class="text-xs">{ message }</p>
+}

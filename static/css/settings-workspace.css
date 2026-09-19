@@ -1,0 +1,63 @@
+/* Shared surface primitives. Start the migration with Settings and the assistant. */
+body:has(.settings-workspace) { background: var(--rw-canvas); }
+.settings-workspace { color: var(--rw-ink); padding: 2rem 0 4rem; }
+.settings-heading { margin-bottom: 2rem; }
+.settings-heading h1 { font-family: system-ui, sans-serif; font-size: 2rem; font-weight: 650; letter-spacing: -.04em; margin: .5rem 0; }
+.settings-heading > p:last-child, .rw-section-heading p, .rw-panel-heading p { color: var(--rw-muted); font-size: .875rem; line-height: 1.6; }
+.rw-eyebrow { color: var(--rw-accent); font-size: .75rem; letter-spacing: .12em; }
+.settings-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 2rem; align-items: start; }
+.settings-nav { display: flex; flex-direction: column; gap: .25rem; position: sticky; top: 4rem; }
+.settings-nav a { padding: .75rem 1rem; border-radius: 0; color: var(--rw-muted); font-size: .875rem; border-left: 2px solid transparent; }
+.settings-nav a:hover, .settings-nav a:focus-visible { background: var(--rw-surface-raised); color: var(--rw-accent); border-left-color: var(--rw-accent); }
+.settings-main { min-width: 0; }
+.settings-section { scroll-margin-top: 4rem; margin-bottom: 2.5rem; }
+#settings-interface, #settings-instance { scroll-margin-top: 4rem; }
+.rw-section-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; margin-bottom: 1.25rem; }
+.rw-section-heading h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: .25rem; }
+.rw-badge { display: inline-flex; flex-shrink: 0; border: 1px solid var(--rw-line); border-radius: 0; padding: .25rem .625rem; font-size: .625rem; color: var(--rw-accent); background: var(--rw-accent-soft); }
+.rw-panel, .settings-workspace #models { background: var(--rw-surface); border: 1px solid var(--rw-line); border-radius: 0; margin-bottom: 1rem; overflow: hidden; }
+.rw-panel-heading { padding: 1.25rem 1.5rem 0; }
+.rw-panel-heading h3 { font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
+.rw-field-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1.25rem 1.5rem; padding: 1.25rem 1.5rem 1.5rem; }
+.rw-field { display: flex; flex-direction: column; gap: .5rem; min-width: 0; font-size: .75rem; color: var(--rw-muted); }
+.rw-field input, .rw-field select { width: 100%; min-width: 0; padding: .625rem .75rem; border: 1px solid var(--rw-line); border-radius: 0; background: var(--rw-field); color: var(--rw-ink); font-size: .875rem; }
+.rw-field input[readonly] { color: var(--rw-muted); background: transparent; }
+.rw-field input:focus, .rw-field select:focus, .settings-workspace :focus-visible, .agent-dock :focus-visible { outline: 2px solid var(--rw-accent); outline-offset: 2px; }
+.rw-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.75rem; font-size: .8125rem; border-bottom: 1px solid var(--rw-line); padding-bottom: .5rem; }
+.rw-switch { appearance: none; flex-shrink: 0; width: 2.5rem; height: 1.5rem; border-radius: 0; border: 1px solid var(--rw-line); background: var(--rw-field); cursor: pointer; position: relative; }
+.rw-switch::after { content: ''; position: absolute; width: 1rem; height: 1rem; left: .1875rem; top: .1875rem; border-radius: 0; background: var(--rw-muted); }
+.rw-switch:checked { background: var(--rw-accent-soft); border-color: var(--rw-accent); }
+.rw-switch:checked::after { left: 1.1875rem; background: var(--rw-accent); }
+.rw-notice { border-left: 3px solid var(--rw-accent); padding: .75rem 1rem; background: var(--rw-accent-soft); font-size: .875rem; }
+.rw-service-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(10rem,1fr)); padding: 1.5rem; gap: 1rem; color: var(--rw-muted); }
+.rw-footnote { padding: 1rem 1.5rem; border-top: 1px solid var(--rw-line); color: var(--rw-muted); font-size: .75rem; line-height: 1.6; }
+.model-install-fields { padding: 0; }
+.rw-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.rw-button { padding: .625rem 1rem; border: 1px solid var(--rw-line); background: var(--rw-surface-raised); border-radius: 0; font-size: .8125rem; }
+.rw-button:hover { border-color: var(--rw-accent); }
+.rw-button-primary { background: var(--rw-accent); color: var(--rw-canvas); border-color: var(--rw-accent); font-weight: 600; }
+.settings-workspace #settings-connections > div { background: var(--rw-surface); border-color: var(--rw-line); border-radius: 0; margin-bottom: 1rem; }
+.settings-workspace :is(input,select,textarea).bg-black, .settings-workspace .bg-black { background-color: var(--rw-field); }
+.settings-workspace :is(input,select,textarea) { accent-color: var(--rw-accent); }
+.agent-dock { color: var(--rw-ink); }
+.agent-launcher { list-style: none; display: flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--rw-line); border-radius: 0; background: var(--rw-surface-raised); color: var(--rw-accent); cursor: pointer; box-shadow: 0 .25rem 1rem #0004; }
+.agent-launcher::-webkit-details-marker { display: none; }
+.agent-launcher:hover { border-color: var(--rw-accent); }
+.agent-open-label, .agent-close-icon { display: none; }
+.agent-dock[open] { width: min(28rem,calc(100vw - 2rem)); background: var(--rw-surface); border: 1px solid var(--rw-line); border-radius: 0; box-shadow: 0 1rem 3rem #0008; }
+.agent-dock[open] .agent-launcher { width: 100%; border: 0; border-bottom: 1px solid var(--rw-line); border-radius: 0; justify-content: start; padding: 0 1rem; gap: .5rem; box-shadow: none; }
+.agent-dock[open] .agent-open-label { display: inline; font-size: .875rem; color: var(--rw-ink); }
+.agent-dock[open] .agent-close-icon { display: inline; margin-left: auto; font-size: 1.5rem; }
+.agent-panel { height: min(75dvh,48rem); }
+.agent-panel textarea { background: var(--rw-field); border-color: var(--rw-line); border-radius: 0; }
+.agent-panel button { border-color: var(--rw-line); border-radius: 0; }
+.agent-panel button:hover { background: var(--rw-accent-soft); }
+@media (max-width: 767px) {
+  .settings-workspace { padding-top: 1rem; }
+  .settings-layout { grid-template-columns: minmax(0,1fr); gap: 1.5rem; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: .5rem; border-bottom: 1px solid var(--rw-line); }
+  .settings-nav a { white-space: nowrap; padding: .5rem .75rem; }
+  .rw-field-grid { grid-template-columns: minmax(0,1fr); padding: 1rem; }
+  .rw-panel-heading { padding: 1rem 1rem 0; }
+  .rw-section-heading { flex-wrap: wrap; }
+}

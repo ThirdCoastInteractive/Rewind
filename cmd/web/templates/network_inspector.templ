@@ -1,0 +1,194 @@
+package templates
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/wiki"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+func networkIdentitySignals(creatorID string) string {
+	b, _ := json.Marshal(map[string]any{"networkCreatorID": creatorID, "networkCreatorName": "", "networkHandles": "", "networkChannelSearch": "", "networkSaving": false})
+	return string(b)
+}
+
+templ NetworkCommenterInspector(c NetworkCommenter) {
+	<div id="network-inspector" class="p-3 overflow-auto space-y-4">
+		<h3 class="font-bold text-lg break-words">{ c.DisplayName }</h3>
+		<p class="text-xs text-white/60">Commenter node. Edge weights and style scores are observations, not proof of a real-world relationship.</p>
+		<dl class="text-xs space-y-1">
+			<div class="flex gap-2"><dt class="text-white/50">Source</dt><dd class="break-all">{ c.Source }</dd></div>
+			<div class="flex gap-2"><dt class="text-white/50">Comments</dt><dd>{ fmt.Sprintf("%d", c.CommentCount) }</dd></div>
+			if c.MeanSentiment != nil {
+				<div class="flex gap-2"><dt class="text-white/50">Mean sentiment</dt><dd>{ fmt.Sprintf("%.2f", *c.MeanSentiment) }</dd></div>
+			}
+			if c.MeanToxicity != nil {
+				<div class="flex gap-2"><dt class="text-white/50">Mean toxicity</dt><dd>{ fmt.Sprintf("%.2f", *c.MeanToxicity) }</dd></div>
+			}
+			if len(c.OpenFlagKinds) > 0 {
+				<div class="flex gap-2"><dt class="text-white/50">Open flags</dt><dd>{ strings.Join(c.OpenFlagKinds, ", ") }</dd></div>
+			} else {
+				<div class="flex gap-2"><dt class="text-white/50">Open flags</dt><dd class="text-white/40">None</dd></div>
+			}
+		</dl>
+		<div class="flex flex-wrap gap-2">
+			<a class="ghost-btn-sm" href={ templ.SafeURL("/investigate/commenters/" + c.ID) }>Open dossier</a>
+			if c.AuthorURL != "" {
+				<a class="ghost-btn-sm" href={ templ.SafeURL(c.AuthorURL) } target="_blank" rel="noopener">Source profile</a>
+			}
+			if c.Watchlisted {
+				<button class="ghost-btn-sm" data-on:click={ fmt.Sprintf("@post('/api/investigate/commenters/%s/unwatch')", c.ID) }>Remove from watchlist</button>
+			} else {
+				<button class="ghost-btn-sm" data-on:click={ fmt.Sprintf("@post('/api/investigate/commenters/%s/watch')", c.ID) }>Add to watchlist</button>
+			}
+		</div>
+	</div>
+}
+
+templ NetworkInspector(node, title, creatorID string, members, channels []*db.ListNetworkChannelsRow, creators []*db.ListCreatorsRow, vaultPages []wiki.Page, homeTree, homeSlug string) {
+	<div id="network-inspector" class="p-3 overflow-auto space-y-4" data-signals={ networkIdentitySignals(creatorID) }>
+		<h3 class="font-bold text-lg break-words">{ title }</h3>
+		<div class="flex flex-wrap gap-2">
+			<button class="ghost-btn-sm" data-on:click={ fmt.Sprintf("$agentOpen = true; $agentPrompt = %s", networkPromptJSON(title, node)) }>Ask assistant</button>
+			if creatorID != "" {
+				<a class="ghost-btn-sm" href={ templ.SafeURL("/creators/" + creatorID) }>Creator workspace</a>
+				if len(members) > 1 {
+					<button class="ghost-btn-sm" data-network-expand-creator={ creatorID }>Expand channels</button>
+				}
+			}
+		</div>
+		@NetworkVault(vaultPages, homeTree, homeSlug)
+		<section class="space-y-2">
+			<h4 class="font-bold text-sm">Accounts &amp; names</h4>
+			if len(members) == 0 {
+				<p class="text-xs text-white/60">No archived accounts yet. Vault pages still apply. Group a channel below to attach one.</p>
+			}
+			for _, ch := range members {
+				<article class="border border-white/20 p-2 text-xs space-y-2">
+					<p class="font-bold break-words">{ ch.Uploader } <span class="text-white/60">{ ch.Platform }</span></p>
+					<p class="break-all text-white/60">{ ch.IdentityKey }</p>
+					<div class="flex flex-wrap gap-2">
+						<button class="underline" data-network-focus={ ch.ID.String() }>Focus</button>
+						if ch.VideoCount > 0 {
+							<a class="underline" href={ templ.SafeURL(channelLibraryURL(ch.Uploader)) }>{ fmt.Sprintf("%d archived videos",ch.VideoCount) }</a>
+						}
+						if ch.CanonicalURL != "" {
+							<a class="underline" href={ templ.SafeURL(ch.CanonicalURL) } target="_blank" rel="noopener">Source profile</a>
+							<a class="underline" href={ templ.SafeURL(channelWatchURL(ch.CanonicalURL, ch.Uploader)) }>Follow</a>
+						}
+						if ch.CreatorID.Valid {
+							<button class="underline" data-on:click={ fmt.Sprintf("@post('/api/network/unlink', {payload:{channel_id:'%s',creator_id:'%s'}})", ch.ID.String(), ch.CreatorID.String()) }>Ungroup</button>
+						}
+					</div>
+				</article>
+			}
+		</section>
+		<section class="space-y-2 border-t border-white/20 pt-3">
+			<h4 class="font-bold text-sm">Group accounts / former X handles</h4>
+			<p class="text-xs text-white/60">Attach accounts to the same creator. Original names, URLs, videos, and connection evidence stay intact.</p>
+			<label class="block text-xs">
+				Existing creator
+				<select class="block w-full bg-black border border-white/30 p-2" data-bind="networkCreatorID">
+					<option value="">Create a creator...</option>
+					for _, cr := range creators {
+						<option value={ cr.ID.String() } selected?={ creatorID==cr.ID.String() }>{ cr.Name }</option>
+					}
+				</select>
+			</label>
+			<label class="block text-xs" data-show="$networkCreatorID === ''">New creator name<input class="block w-full bg-black border border-white/30 p-2" data-bind="networkCreatorName" maxlength="200"/></label>
+			<label class="block text-xs">Find accounts<input class="block w-full bg-black border border-white/30 p-2" type="search" data-bind="networkChannelSearch" placeholder="Name or handle"/></label>
+			<div class="max-h-40 overflow-auto border border-white/20 p-2">
+				for _, ch := range channels {
+					<label class="block text-xs py-1" data-show={ fmt.Sprintf("%s.includes($networkChannelSearch.toLowerCase())", networkLowerLabel(ch)) }>
+						<input type="checkbox" data-network-channel-choice value={ ch.ID.String() } checked?={ networkMember(members,ch.ID.String()) }/>
+						{ ch.Uploader } · { ch.Platform }
+						if ch.CreatorName!="" {
+							<span class="text-white/50">({ ch.CreatorName })</span>
+						}
+					</label>
+				}
+			</div>
+			<label class="block text-xs">Add X profiles or former handles<input class="block w-full bg-black border border-white/30 p-2" data-bind="networkHandles" placeholder="@oldhandle, https://x.com/currenthandle"/></label>
+			<p class="text-xs text-white/50">Only add handles you know belong to this creator. This records identity; it does not crawl or download X.</p>
+			<button class="btn-primary btn-sm" data-indicator:network-saving data-attr:disabled="$networkSaving" data-on:click="@post('/api/network/group', {payload:{creator_id:$networkCreatorID,name:$networkCreatorName,handles:$networkHandles,channel_ids:Array.from(document.querySelectorAll('[data-network-channel-choice]:checked')).map(el=>el.value)}})">Save grouping</button>
+			<p id="network-identity-status" class="text-xs" role="status"></p>
+		</section>
+		if len(members) > 0 {
+			<section class="space-y-2 border-t border-white/20 pt-3">
+				<h4 class="font-bold text-sm">Context &amp; shared topics</h4>
+				<p class="text-xs text-white/60">Shared topics are inferred similarities, separate from explicit network links. Up to 30 recent matches.</p>
+				<input aria-label="Search related context" type="search" class="w-full bg-black border border-white/30 p-2 text-xs" data-bind="networkContextQuery" data-on:input__debounce.300ms={ fmt.Sprintf("@get('/api/network/context?node=%s&q='+encodeURIComponent($networkContextQuery))", node) }/>
+				<div data-on-intersect__once={ fmt.Sprintf("@get('/api/network/context?node=%s')", node) }><div id="network-context-results">Loading context...</div></div>
+			</section>
+		}
+	</div>
+}
+
+templ NetworkVault(pages []wiki.Page, homeTree, homeSlug string) {
+	<section class="space-y-2 border-t border-white/20 pt-3">
+		<div class="flex items-center justify-between gap-2">
+			<h4 class="vault-group-title mb-0">Vault</h4>
+			if homeTree != "" && homeSlug != "" {
+				<a class="ghost-btn-sm" href={ templ.SafeURL(wiki.EditURL(homeTree, homeSlug)) }>Edit encyclopedia</a>
+			}
+		</div>
+		if len(pages) == 0 {
+			<p class="font-mono text-xs text-white/40">No vault pages attached yet. Encyclopedia entries are how pals without their own channels show up here.</p>
+		} else {
+			<div class="space-y-2">
+				for _, p := range pages {
+					@wikiPageCard(p, true)
+				}
+			</div>
+		}
+	</section>
+}
+
+templ NetworkIdentityStatus(message string) {
+	<p id="network-identity-status" class="text-xs" role="status">{ message }</p>
+}
+
+templ NetworkContexts(rows []*db.ListNetworkContextRow) {
+	<div id="network-context-results" class="space-y-3">
+		if len(rows)==0 {
+			<p class="text-xs text-white/60">No matching context windows yet.</p>
+		}
+		for _, row := range rows {
+			<article class="border border-white/20 p-2 space-y-1">
+				<p class="text-xs text-white/50">
+					if row.SelectedChannel {
+						From these accounts
+					} else {
+						Shared topic · inferred
+					}
+				</p>
+				<a class="block text-sm underline" href={ templ.SafeURL(fmt.Sprintf("/videos/%s?t=%.3f", row.VideoID.String(), row.StartTs)) }>{ row.Title }</a>
+				<p class="text-xs">{ row.Uploader } · { format.Duration(row.StartTs) }–{ format.Duration(row.EndTs) }</p>
+				<p class="text-xs text-white/60">{ row.Summary }</p>
+				if !row.SelectedChannel {
+					<p class="text-xs text-white/50">Shared topics: { strings.Join(row.SharedTopics, ", ") }</p>
+				}
+				<a class="text-xs underline" href={ templ.SafeURL(fmt.Sprintf("/videos/%s/cut?context=%s", row.VideoID.String(), row.ID.String())) }>Open range in Cut</a>
+			</article>
+		}
+	</div>
+}
+
+func networkPromptJSON(title, node string) string {
+	b, _ := json.Marshal("Find useful archived videos and context for " + title + ". Network identity: " + node + ". Read wiki_pages_for this creator/channel first. Cite supporting videos and distinguish vault memory, inferred topics, and explicit harvested links.")
+	return string(b)
+}
+func networkLowerLabel(ch *db.ListNetworkChannelsRow) string {
+	b, _ := json.Marshal(strings.ToLower(ch.Uploader + " " + ch.IdentityKey + " " + ch.CreatorName))
+	return string(b)
+}
+func networkMember(members []*db.ListNetworkChannelsRow, id string) bool {
+	for _, ch := range members {
+		if ch.ID.String() == id {
+			return true
+		}
+	}
+	return false
+}

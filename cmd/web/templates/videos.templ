@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -8,6 +9,18 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
+
+func videosSignalsJSON(query, creatorID, uploader string) string {
+	b, _ := json.Marshal(map[string]any{
+		"q": query, "sort": "newest", "duration": "", "uploader": uploader, "uploaderExcluded": false,
+		"creatorId": creatorID, "channelId": "", "tagsText": "", "tags": []string{}, "tagIds": []string{},
+		"selectedVideoIds": []string{}, "bulkTag": "", "bulkDeleteDisk": false,
+		"bulkDeleteActive": false, "bulkDeleteDone": 0, "bulkDeleteTotal": 0, "bulkDeleteSkipped": 0,
+		"bulkDeleteStatus": "", "dateType": "archived", "dateFrom": "", "dateTo": "",
+		"assetFilters": map[string]bool{"context": false, "transcript": false, "thumbnail": false, "preview": false, "waveform": false, "seek": false}, "hasClips": false, "hasMarkers": false, "showAdvanced": false, "page": 1, "pageSize": 48,
+	})
+	return string(b)
+}
 
 // thumbGradient builds CSS gradient from video row fields
 func thumbGradient(row *db.ListVideosPaginatedRow) string {
@@ -31,6 +44,72 @@ func thumbGradientVideo(v *db.Video) string {
 		angle = int(*v.ThumbGradientAngle)
 	}
 	return fmt.Sprintf("linear-gradient(%ddeg, %s 0%%, %s 100%%)", angle, *v.ThumbGradientStart, *v.ThumbGradientEnd)
+}
+
+func searchMatchSourceLabel(source string) string {
+	switch source {
+	case "title":
+		return "Title"
+	case "uploader":
+		return "Uploader"
+	case "transcript":
+		return "Transcript"
+	case "comment":
+		return "Comment"
+	case "description":
+		return "Description"
+	case "tags":
+		return "Tags"
+	case "context_window":
+		return "Context Window"
+	default:
+		return "Match"
+	}
+}
+
+func videoWatchHref(video *db.ListVideosPaginatedRow) templ.SafeURL {
+	if video == nil {
+		return templ.SafeURL("/videos")
+	}
+	path := "/videos/" + video.ID.String()
+	if t := searchMatchSeekSeconds(video); t > 0 {
+		path = fmt.Sprintf("%s?t=%.3f", path, t)
+	}
+	return templ.SafeURL(path)
+}
+
+func searchMatchSeekSeconds(video *db.ListVideosPaginatedRow) float64 {
+	if video == nil {
+		return 0
+	}
+	switch video.SearchMatchSnippetSource {
+	case "transcript", "comment", "context_window":
+		return searchMatchSeekField(video, "SearchMatchStartTs", "SearchMatchTs", "SearchMatchSnippetTs")
+	default:
+		return 0
+	}
+}
+
+func searchMatchSeekField(video *db.ListVideosPaginatedRow, names ...string) float64 {
+	if video == nil {
+		return 0
+	}
+	raw, _ := json.Marshal(video)
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return 0
+	}
+	for _, name := range names {
+		if t, ok := jsonNumber(fields[name]); ok && t > 0 {
+			return t
+		}
+	}
+	return 0
+}
+
+func jsonNumber(v any) (float64, bool) {
+	n, ok := v.(float64)
+	return n, ok
 }
 
 // RecentVideoCard is a compact video card for the home page recent videos section
@@ -79,13 +158,13 @@ templ RecentVideoCard(video *db.Video) {
 	</a>
 }
 
-templ Videos(videos []*db.ListVideosPaginatedRow, username string) {
+templ Videos(videos []*db.ListVideosPaginatedRow, creators []*db.ListCreatorsRow, query string, creatorID string, uploader string, username string) {
 	@Layout("My Videos", username) {
-		@VideosContent(videos)
+		@VideosContent(videos, creators, query, creatorID, uploader)
 	}
 }
 
-templ VideosContent(videos []*db.ListVideosPaginatedRow) {
+templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCreatorsRow, query string, creatorID string, uploader string) {
 	@Container("") {
 		<style>
 			html { overflow-y: scroll; }
@@ -146,34 +225,30 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 				window.markVideosDeleting(list);
 				return true;
 			};
+			// Populate uploader choices only when the filter is used, keeping the
+			// initial page shell independent of the number of channels in the catalog.
+			window.loadUploaderOptions = function(value, immediate) {
+				clearTimeout(window.__rewindUploaderTimer);
+				window.__rewindUploaderTimer = setTimeout(async function() {
+					try {
+						const response = await fetch('/api/videos/uploaders?q=' + encodeURIComponent(value || ''), {credentials: 'same-origin'});
+						if (!response.ok) return;
+						const rows = await response.json();
+						const list = document.getElementById('uploader-options');
+						if (!list) return;
+						list.replaceChildren(...rows.map(function(row) {
+							const option = document.createElement('option');
+							option.value = row.name;
+							option.label = row.videoCount + (row.videoCount === 1 ? ' video' : ' videos');
+							return option;
+						}));
+					} catch (_) {}
+				}, immediate ? 0 : 120);
+			};
 		</script>
 		<div
 			id="videos-page"
-			data-signals="{
-				q: '',
-				sort: 'newest',
-				duration: '',
-				uploader: '',
-				tagsText: '',
-				tags: [],
-				tagIds: [],
-				selectedVideoIds: [],
-				bulkTag: '',
-				bulkDeleteDisk: false,
-				bulkDeleteActive: false,
-				bulkDeleteDone: 0,
-				bulkDeleteTotal: 0,
-				bulkDeleteSkipped: 0,
-				bulkDeleteStatus: '',
-				dateType: 'archived',
-				dateFrom: '',
-				dateTo: '',
-				hasClips: false,
-				hasMarkers: false,
-				showAdvanced: false,
-				page: 1,
-				pageSize: 48
-			}"
+			data-signals={ videosSignalsJSON(query, creatorID, uploader) }
 			data-init="@get('/api/videos/index')"
 		>
 			<div class="mb-6">
@@ -257,11 +332,23 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 				<div class="flex flex-wrap items-center gap-3 mb-3">
 					<input
 						type="text"
-						placeholder="Search titles, uploaders, transcripts…"
+						placeholder="Search or use intitle:, inurl:, incontext:, intranscript:"
+						aria-label="Search archived videos"
+						aria-describedby="video-search-help"
 						class="flex-1 min-w-48 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
 						data-bind="q"
-						data-on:input__debounce.300ms="window.scrollTop(); $page = 1; if ($q && $sort === 'newest') { $sort = 'relevance' }; @get('/api/videos/index')"
+						data-on:input__debounce.450ms="window.scrollTop(); $page = 1; if ($q && $sort === 'newest') { $sort = 'relevance' }; @get('/api/videos/index')"
 					/>
+					<select
+						class="bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5 focus:border-white/40 outline-none cursor-pointer"
+						data-bind="creatorId"
+						data-on:change="window.scrollTop(); $page = 1; @get('/api/videos/index')"
+					>
+						<option value="">All creators</option>
+						for _, creator := range creators {
+							<option value={ creator.ID.String() }>{ creator.Name }</option>
+						}
+					</select>
 					<select
 						class="bg-black border-2 border-white/20 text-sm font-mono px-2 py-1.5 focus:border-white/40 outline-none cursor-pointer"
 						data-bind="sort"
@@ -299,6 +386,11 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 						<span data-text="$showAdvanced ? 'Hide Filters' : 'More Filters'">More Filters</span>
 					</button>
 				</div>
+				<details id="video-search-help" class="text-xs font-mono text-white/60 mb-3">
+					<summary class="cursor-pointer hover:text-white">Search syntax</summary>
+					<p class="mt-2">Search a field with intitle:"interview", inurl:"youtube.com", incontext:"comedy", or intranscript:"Redbar is watching". Also supports indescription: and inuploader:.</p>
+					<p class="mt-1">Combine scopes to require every match. Unquoted scope text continues until the next scope: intranscript:Redbar is watching. Use quotes to end a scope before ordinary search words.</p>
+				</details>
 				<!-- Secondary row: Duration, Uploader, Clear -->
 				<div class="flex flex-wrap items-center gap-3">
 					<select
@@ -311,13 +403,27 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 						<option value="medium">5-30 min</option>
 						<option value="long">&gt;30 min</option>
 					</select>
-					<input
-						type="text"
-						placeholder="Uploader (partial ok)"
-						class="w-40 px-2 py-1.5 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
-						data-bind="uploader"
-						data-on:input__debounce.300ms="window.scrollTop(); $page = 1; @get('/api/videos/index')"
-					/>
+					<div class="flex items-stretch" role="group" aria-label="Uploader filter">
+						<input
+							type="search"
+							list="uploader-options"
+							placeholder="Filter uploaders…"
+							autocomplete="off"
+							class="w-52 px-2 py-1.5 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
+							data-bind="uploader"
+							data-on:focus="window.loadUploaderOptions($uploader, true)"
+							data-on:input__debounce.300ms="window.loadUploaderOptions($uploader, false); window.scrollTop(); $page = 1; @get('/api/videos/index')"
+						/>
+						<datalist id="uploader-options"></datalist>
+						<button
+							type="button"
+							class="px-2 text-xs font-mono uppercase tracking-wider border-y-2 border-r-2 border-white/20 text-white/60 hover:text-white hover:border-white/40"
+							data-class="{'bg-red-500/20': $uploaderExcluded, 'text-red-300': $uploaderExcluded, 'border-red-500/50': $uploaderExcluded}"
+							data-on:click="$uploaderExcluded = !$uploaderExcluded; window.scrollTop(); $page = 1; @get('/api/videos/index')"
+							data-text="$uploaderExcluded ? 'Exclude' : 'Include'"
+							title="Toggle whether this uploader is included or excluded"
+						>Include</button>
+					</div>
 					<input
 						type="text"
 						placeholder="Tags (comma-separated)..."
@@ -346,8 +452,8 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 					<button
 						type="button"
 						class="text-xs font-mono text-white/40 hover:text-white transition-colors"
-						data-show="$q || $duration || $uploader || $tagsText || $hasClips || $hasMarkers"
-						data-on:click="window.scrollTop(); $q = ''; $duration = ''; $uploader = ''; $tagsText = ''; $tags = []; $hasClips = false; $hasMarkers = false; $page = 1; @get('/api/videos/index')"
+						data-show="$q || $duration || $uploader || $tagsText || $hasClips || $hasMarkers || Object.values($assetFilters).some(Boolean) || $creatorId || $channelId || $dateFrom || $dateTo"
+						data-on:click="window.scrollTop(); $q = ''; $duration = ''; $uploader = ''; $uploaderExcluded = false; $tagsText = ''; $tags = []; $hasClips = false; $hasMarkers = false; $assetFilters = {context:false, transcript:false, thumbnail:false, preview:false, waveform:false, seek:false}; $creatorId = ''; $channelId = ''; $dateFrom = ''; $dateTo = ''; $tagIds = []; $page = 1; @get('/api/videos/index')"
 					>
 						@components.Icon("xmark", "mr-1")
 						Clear All
@@ -362,9 +468,26 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 						Select page
 					</button>
 				</div>
+				<div class="flex flex-wrap gap-3 mt-3" role="group" aria-label="Generated asset filters">
+					for _, asset := range []struct{ Key, Label string }{
+                        {"context", "Has context"}, {"transcript", "Has transcript"},
+                        {"thumbnail", "Has thumbnail"}, {"preview", "Has preview"},
+                        {"waveform", "Has waveform"}, {"seek", "Has seek thumbnails"},
+                    } {
+						<label class="flex items-center gap-2 text-xs font-mono text-white/60 cursor-pointer" data-show={ fmt.Sprintf("%t || $showAdvanced || $assetFilters.%s", asset.Key == "context" || asset.Key == "transcript", asset.Key) }>
+							<input
+								type="checkbox"
+								class="w-4 h-4 bg-black border-2 border-white/20"
+								data-bind={ "assetFilters." + asset.Key }
+								data-on:change="$page = 1; @get('/api/videos/index')"
+							/>
+							{ asset.Label }
+						</label>
+					}
+				</div>
 			</div>
 			if videos == nil {
-				<div id="videos-grid" data-init="@get('/api/videos/index')">
+				<div id="videos-grid">
 					@ResponsiveGrid("videos") {
 						for i := 0; i < 24; i++ {
 							@VideoCardSkeleton()
@@ -375,8 +498,49 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow) {
 				@VideosGrid(videos)
 			}
 			<div id="videos-pagination"></div>
+			<div id="catalog-candidates"></div>
 		</div>
 	}
+}
+
+templ CatalogCandidates(videos []*db.ListCatalogCandidatesRow) {
+	<section id="catalog-candidates" class="mt-8">
+		if len(videos) > 0 {
+			<div class="flex items-baseline justify-between gap-3 mb-3">
+				<div>
+					<h2 class="sub-heading">Catalog candidates</h2>
+					<p class="font-mono text-xs text-white/40">Transcript or metadata matches that are not downloaded.</p>
+				</div>
+				<span class="font-mono text-xs text-white/40">{ fmt.Sprintf("%d matches", videos[0].TotalCount) }</span>
+			</div>
+			<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+				for _, video := range videos {
+					<div class="p-3 flex items-center justify-between gap-4" data-catalog-video-id={ video.ID.String() }>
+						<div class="min-w-0">
+							<div class="flex items-center gap-2 flex-wrap">
+								<span class="badge">Not downloaded</span>
+								if video.TranscriptMatch {
+									<span class="badge">Transcript</span>
+								}
+								if video.CommentMatch {
+									<span class="badge">Comment</span>
+								}
+								if video.ContextWindowMatch {
+									<span class="badge">Context Window</span>
+								}
+							</div>
+							<p class="font-mono text-sm text-white mt-1 truncate">{ video.Title }</p>
+							<p class="font-mono text-xs text-white/40 truncate">{ video.Uploader }</p>
+						</div>
+						<form method="POST" action="/archive" class="shrink-0">
+							<input type="hidden" name="url" value={ video.Src }/>
+							<button type="submit" class="btn-primary btn-sm">Archive</button>
+						</form>
+					</div>
+				}
+			</div>
+		}
+	</section>
 }
 
 templ VideosGrid(videos []*db.ListVideosPaginatedRow) {
@@ -408,7 +572,7 @@ templ VideoCard(video *db.ListVideosPaginatedRow) {
 			style={ "background-image: " + thumbGradient(video) + ";" }
 		>
 			<a
-				href={ templ.SafeURL("/videos/" + video.ID.String()) }
+				href={ videoWatchHref(video) }
 				class="absolute inset-0 block"
 				aria-label={ video.Title }
 			>
@@ -458,7 +622,7 @@ templ VideoCard(video *db.ListVideosPaginatedRow) {
 			</button>
 		</div>
 		<div class="video-card-body">
-			<a href={ templ.SafeURL("/videos/" + video.ID.String()) } class="block">
+			<a href={ videoWatchHref(video) } class="block">
 				<h3
 					class="video-card-title"
 					title={ video.Title }
@@ -470,6 +634,42 @@ templ VideoCard(video *db.ListVideosPaginatedRow) {
 				<p class="text-xs font-mono text-white/60 mb-2 truncate" title={ video.Uploader }>
 					{ video.Uploader }
 				</p>
+			}
+			if video.SearchMatchTitle || video.SearchMatchUploader || video.SearchMatchDescription || video.SearchMatchTags || video.SearchMatchComment || video.SearchMatchTranscript || video.SearchMatchContextWindow {
+				<div class="mb-2 border-l-2 border-white/30 pl-2" data-search-match-details>
+					<div class="flex flex-wrap items-center gap-1 mb-1">
+						<span class="text-xs font-mono uppercase tracking-wider text-white/40">Found in</span>
+						if video.SearchMatchTitle {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="title">Title</span>
+						}
+						if video.SearchMatchUploader {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="uploader">Uploader</span>
+						}
+						if video.SearchMatchDescription {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="description">Description</span>
+						}
+						if video.SearchMatchTags {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="tags">Tags</span>
+						}
+						if video.SearchMatchComment {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="comment">Comment</span>
+						}
+						if video.SearchMatchTranscript {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="transcript">Transcript</span>
+						}
+						if video.SearchMatchContextWindow {
+							<span class="px-1 py-0.5 border border-white/20 bg-white/10 text-xs font-mono text-white/80" data-search-match-source="context_window">Context Window</span>
+						}
+					</div>
+					if video.SearchMatchSnippet != "" {
+						<a href={ videoWatchHref(video) } class="block" data-search-match-snippet-link>
+							<p class="text-xs font-mono text-white/60 line-clamp-3" data-search-match-snippet>
+								<span class="text-white/80">{ searchMatchSourceLabel(video.SearchMatchSnippetSource) }:</span>
+								{ " " + video.SearchMatchSnippet }
+							</p>
+						</a>
+					}
+				</div>
 			}
 			<div class="border-t border-white/10 pt-2 mt-2">
 				<div class="meta-row">

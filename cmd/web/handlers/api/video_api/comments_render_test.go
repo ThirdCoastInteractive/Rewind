@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/a-h/templ"
+	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/internal/db"
 )
 
 func renderComp(t *testing.T, comp templ.Component) string {
@@ -35,6 +37,14 @@ func mustNotContain(t *testing.T, html string, subs ...string) {
 			t.Errorf("expected output NOT to contain %q\n--- output ---\n%s", s, html)
 		}
 	}
+}
+
+func TestCommentRow_DossierLink(t *testing.T) {
+	html := renderComp(t, components.CommentRow(components.CommentItem{
+		Author: "alice", CommenterID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Text: "hi",
+	}))
+	mustContain(t, html, "/investigate/commenters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	mustNotContain(t, html, "Approve", "Ban")
 }
 
 // CommentRow must turn inline timestamps into seek buttons.
@@ -140,4 +150,32 @@ func TestCommentRows_EmptyStates(t *testing.T) {
 	// page > 0 must never inject an empty state (append pagination).
 	appended := renderComp(t, components.CommentRows(components.CommentListData{Page: 2}))
 	mustNotContain(t, appended, "No comments")
+}
+
+func TestVideoCard_SearchMatchDetails(t *testing.T) {
+	html := renderComp(t, templates.VideoCard(&db.ListVideosPaginatedRow{
+		Title:                    "A result whose title does not explain the match",
+		Media:                    "file",
+		SearchMatchComment:       true,
+		SearchMatchTranscript:    true,
+		SearchMatchSnippet:       "the host talks about redbar right here",
+		SearchMatchSnippetSource: "transcript",
+	}))
+
+	mustContain(t, html,
+		"data-search-match-details",
+		`data-search-match-source="comment"`,
+		`data-search-match-source="transcript"`,
+		"Transcript:",
+		"the host talks about redbar right here",
+	)
+}
+
+func TestVideoCard_NoSearchDetailsWithoutMatch(t *testing.T) {
+	html := renderComp(t, templates.VideoCard(&db.ListVideosPaginatedRow{
+		Title: "A normal library card",
+		Media: "file",
+	}))
+
+	mustNotContain(t, html, "data-search-match-details", "data-search-match-snippet")
 }

@@ -1,0 +1,68 @@
+package templates
+
+import (
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+// ShowNoteData holds the initial state loaded from a show_notes row for the editor.
+type ShowNoteData struct {
+	ID          string // UUID string
+	Title       string // already escaped for single-quote JS context
+	Description string
+	IsLive      bool
+	ClientID    string // per-page-load id for SSE echo suppression
+	UserID      string
+	Username    string
+	Role        string
+	Code        string
+	SceneB64    string
+	Panel       string
+}
+
+templ ShowNoteEditorPage(data ShowNoteData, username string) {
+	@LayoutFullscreen("Show Notes", username) {
+		@ShowWorkspaceContent(data)
+	}
+}
+
+templ ShowNoteLibraryPage(notes []*db.ListShowNotesForUserRow, username string) {
+	@Layout("Show Notes", username) {
+		@Container("normal") {
+			<div class="mb-8 flex justify-between items-center">
+				<div>
+					<h1 class="text-3xl font-mono uppercase tracking-wider text-white mb-2">Show Notes</h1>
+					<p class="text-white/60">Collaborative content outlines for live shows</p>
+				</div>
+				<form action="/show-notes" method="POST">
+					@components.FormButton("primary", "md", "fa-plus", true) {
+						New Show Note
+					}
+				</form>
+			</div>
+			if len(notes) == 0 {
+				<div class="text-white/40 font-mono">No show notes yet. Create one to get started.</div>
+			} else {
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					for _, n := range notes {
+						<a
+							href={ templ.SafeURL("/show-notes/" + n.ID.String()) }
+							class="block border-2 border-white/10 hover:border-white/30 bg-neutral-900 p-4 transition-colors"
+						>
+							<div class="flex items-center justify-between mb-2 gap-2">
+								<span class="text-lg font-bold text-white truncate">{ n.Title }</span>
+								if n.IsLive {
+									<span class="shrink-0 text-xs font-mono text-red-400 border border-red-400/50 px-1.5 py-0.5">LIVE</span>
+								}
+							</div>
+							if n.Description != "" {
+								<p class="text-sm text-white/50 line-clamp-2">{ n.Description }</p>
+							}
+							<div class="text-xs font-mono text-white/30 mt-2">{ n.UpdatedAt.Time.Format("2006-01-02 15:04") }</div>
+						</a>
+					}
+				</div>
+			}
+		}
+	}
+}

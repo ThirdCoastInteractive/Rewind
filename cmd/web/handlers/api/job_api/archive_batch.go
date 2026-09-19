@@ -17,6 +17,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleArchiveBatch serves POST /jobs/archive, archiving multiple completed download jobs at once.
 func HandleArchiveBatch(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -57,7 +58,7 @@ func HandleArchiveBatch(sm *auth.SessionManager, dbc *db.DatabaseConnection) ech
 			return c.String(500, "failed to archive jobs")
 		}
 
-		return c.JSON(200, map[string]any{"archived": len(jobUUIDs)})
+		return jobActionResponse(c, map[string]any{"archived": len(jobUUIDs)}, fmt.Sprintf("Archived %d jobs. Video files are kept.", len(jobUUIDs)))
 	}
 }
 

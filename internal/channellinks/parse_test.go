@@ -70,10 +70,21 @@ func TestParseMentionFromYouTubeSource(t *testing.T) {
 	}
 }
 
-func TestParseTwitterProfileOutlink(t *testing.T) {
+func TestParseTwitterProfileIsMentionNotOutlink(t *testing.T) {
 	hits := Parse("also https://twitter.com/reservoirfarms today")
-	out := hitsByKind(hits, KindOutlink)
-	if len(out) != 1 || out[0].URL != "https://x.com/reservoirfarms" {
+	if hitsByKind(hits, KindOutlink) != nil {
+		t.Fatalf("x.com/twitter.com profiles must not be outlinks: %+v", hits)
+	}
+	mentions := hitsByKind(hits, KindMention)
+	if len(mentions) != 1 || mentions[0].URL != "https://x.com/reservoirfarms" {
+		t.Fatalf("%+v", hits)
+	}
+}
+
+func TestParseXStatusDetectsHandle(t *testing.T) {
+	hits := Parse("see https://x.com/LuisJGomez/status/1234567890")
+	mentions := hitsByKind(hits, KindMention)
+	if len(mentions) != 1 || mentions[0].URL != "https://x.com/LuisJGomez" {
 		t.Fatalf("%+v", hits)
 	}
 }

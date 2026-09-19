@@ -1,0 +1,290 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+
+	"thirdcoast.systems/rewind/internal/db"
+)
+
+// sceneScript returns the Three.js scene compositor bundle.
+func sceneScript() string {
+	return "/static/dist/three-scene.js"
+}
+
+// liveCue cues a show-note video block onto the program bus (the Video Stage)
+// via the editor's playlist controller.
+func liveCue(noteID, occurrenceKey, videoID, title string, startSeconds, endSeconds float64) string {
+	return fmt.Sprintf("window.__sceneEditor && window.__sceneEditor.cue('%s', '/api/show-notes/%s/content/%s', '%s', '%s', %f, %f)", videoID, noteID, videoID, jsStr(title), occurrenceKey, startSeconds, endSeconds)
+}
+
+// jsStr escapes a string for inclusion inside a single-quoted JS literal.
+func jsStr(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", " ", "\r", "").Replace(s)
+}
+
+// Transport controls drive the selected video source through the scene editor,
+// which applies locally for an instant monitor and persists/broadcasts so
+// viewers stay frame-synced. noteID is unused (the editor knows the note).
+func liveVideoToggle(noteID string) string {
+	return "window.__sceneEditor && window.__sceneEditor.videoToggle()"
+}
+
+func liveVideoSeek(noteID string) string {
+	return "window.__sceneEditor && window.__sceneEditor.videoSeek($videoT)"
+}
+
+func liveVideoMute(noteID string) string {
+	return "window.__sceneEditor && window.__sceneEditor.videoMute()"
+}
+
+func liveVideoVolume(noteID string) string {
+	return "window.__sceneEditor && window.__sceneEditor.videoVolume($videoVolume)"
+}
+
+func liveVideoLoop(noteID string) string {
+	return "window.__sceneEditor && window.__sceneEditor.videoLoop()"
+}
+
+// LiveHostList renders the connected hosts + director, patched by the producer
+// stream (#live-hosts). "Take control" makes the caller the director.
+templ LiveHostList(hosts []*db.ListActiveConnectionsRow, noteID string) {
+	<div id="live-hosts" class="space-y-1">
+		if len(hosts) == 0 {
+			<div class="text-xs text-white/30">No hosts connected yet.</div>
+		} else {
+			for _, h := range hosts {
+				<div class="flex items-center gap-1 text-xs text-white/80">
+					if h.IsDirector {
+						<i class="fa-sharp fa-solid fa-crown text-yellow-400 shrink-0" aria-hidden="true"></i>
+					} else {
+						<i class="fa-sharp fa-solid fa-user text-white/30 shrink-0" aria-hidden="true"></i>
+					}
+					<span class="truncate">{ h.Username }</span>
+					if h.IsDirector {
+						<span class="text-yellow-400/70 text-[10px] uppercase tracking-wider">director</span>
+					}
+				</div>
+			}
+		}
+		<button
+			type="button"
+			class="w-full btn-ghost btn-sm mt-1"
+			data-on:click={ fmt.Sprintf("@post('/api/show-notes/%s/director')", noteID) }
+		>
+			<i class="fa-sharp fa-solid fa-crown mr-1" aria-hidden="true"></i>Take control
+		</button>
+	</div>
+}
+
+// LiveContentSource is a playable program-content option (a show-note video block).
+type LiveContentSource struct {
+	OccurrenceKey string
+	VideoID       string
+	Title         string
+	Kind          string
+	StartSeconds  float64
+	EndSeconds    float64
+}
+
+// LiveContentSourceList renders the show note's video blocks as the playlist /
+// rundown (#live-content-sources). Clicking an item cues it onto the program bus;
+// the now-playing item is highlighted via $programVideoId.
+templ LiveContentSourceList(sources []LiveContentSource, noteID string) {
+	<div id="live-content-sources" class="space-y-0.5">
+		if len(sources) == 0 {
+			<div class="text-xs text-white/30">No video blocks yet — add some in the editor.</div>
+		} else {
+			for i, s := range sources {
+				<button
+					type="button"
+					class="w-full flex items-center gap-1.5 text-left text-xs text-white/70 hover:text-white py-0.5"
+					data-on:click={ liveCue(noteID, s.OccurrenceKey, s.VideoID, s.Title, s.StartSeconds, s.EndSeconds) }
+					data-class={ "{'text-green-400 font-semibold': $programVideoId === '" + s.VideoID + "'}" }
+					data-content-src={ "/api/show-notes/" + noteID + "/content/" + s.VideoID }
+					data-video-id={ s.VideoID }
+					data-occurrence-key={ s.OccurrenceKey }
+					data-start-seconds={ fmt.Sprintf("%f", s.StartSeconds) }
+					data-end-seconds={ fmt.Sprintf("%f", s.EndSeconds) }
+					title={ "Cue: " + s.Title }
+				>
+					<span class="text-white/30 tabular-nums shrink-0 w-4 text-right">{ fmt.Sprintf("%d", i+1) }</span>
+					<span class="truncate flex-1 min-w-0">{ s.Title }</span>
+					if s.StartSeconds > 0 {
+						<span class="text-white/30">{ fmt.Sprintf("%s", formatSeconds(s.StartSeconds)) }</span>
+					}
+					<i class="fa-sharp fa-solid fa-circle-play text-green-400 shrink-0" aria-hidden="true" data-show={ "$programVideoId === '" + s.VideoID + "'" }></i>
+				</button>
+			}
+		}
+	</div>
+}
+
+func formatSeconds(seconds float64) string {
+	total := int(seconds)
+	return fmt.Sprintf("%d:%02d", total/60, total%60)
+}
+
+// LiveScenePresetList renders the producer's saved scene presets (#live-presets).
+templ LiveScenePresetList(presets []*db.PlayerScenePreset, noteID string) {
+	<div id="live-presets" class="space-y-1">
+		if len(presets) == 0 {
+			<div class="text-xs text-white/30">No saved presets.</div>
+		} else {
+			for _, p := range presets {
+				<div class="flex items-center justify-between gap-1 text-xs">
+					<button
+						type="button"
+						class="flex-1 min-w-0 text-left truncate text-white/80 hover:text-white"
+						data-on:click={ fmt.Sprintf("@post('/api/show-notes/%s/scene/presets/%s/apply')", noteID, p.ID.String()) }
+						title={ fmt.Sprintf("Apply: %s", p.Name) }
+					>
+						<i class="fa-sharp fa-solid fa-palette mr-1 text-white/40" aria-hidden="true"></i>{ p.Name }
+					</button>
+					<button
+						type="button"
+						class="text-white/30 hover:text-red-400 shrink-0"
+						data-on:click={ fmt.Sprintf("@delete('/api/show-notes/%s/scene/presets/%s')", noteID, p.ID.String()) }
+						title="Delete preset"
+					>
+						<i class="fa-sharp fa-solid fa-xmark" aria-hidden="true"></i>
+					</button>
+				</div>
+			}
+		}
+	</div>
+}
+
+// LiveData holds the state for the producer live-control page.
+type LiveData struct {
+	ID       string
+	Title    string
+	IsLive   bool
+	Code     string // public viewer code
+	ClientID string
+	SceneB64 string // initial scene_state (base64) for the editor to load
+	UserID   string // this host's user id (stable webcam identity)
+	Username string // this host's display name (webcam label)
+}
+
+// ── SSE-target components (patched by the live stream handlers) ──────────────
+templ LiveSSEStatus(status string, class string) {
+	<div id="live-sse-status" class={ "text-xs font-mono", class }>{ status }</div>
+}
+
+templ LiveViewerCount(n int) {
+	<span id="live-viewer-count" class="text-white">{ fmt.Sprintf("%d", n) }</span>
+}
+
+templ LiveSceneEl(sceneB64 string) {
+	<div id="player-scene" class="hidden" data-scene-b64={ sceneB64 }></div>
+}
+
+templ LiveRemoteKey(remoteKey string) {
+	<div id="live-remote-key" class="hidden" data-remote-key={ remoteKey }></div>
+}
+
+// liveSceneStage renders the flat-WebGL scene canvas + video frame + cam grid
+// overlay. remote-player-background.js renders the background from #player-scene;
+// webrtc-room.js fills #cam-grid with webcam tiles.
+templ liveSceneStage(noteID string) {
+	<canvas id="remote-player-bg-canvas" class="absolute inset-0 w-full h-full"></canvas>
+	<div id="remote-player-video-frame" class="absolute left-1/2 top-1/2 bg-black/40" style="transform: translate(-50%, -50%); width: 90%; height: 90%;"></div>
+	<div id="cam-grid" class="absolute inset-0 grid grid-cols-3 auto-rows-fr gap-1 p-2 pointer-events-none"></div>
+	<div id="scene-loading" class="absolute inset-0 items-center justify-center pointer-events-none z-10" style="display:none">
+		<div class="flex items-center gap-2 text-white/80 text-sm font-mono bg-black/60 px-4 py-2">
+			<i class="fa-sharp fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading content…
+		</div>
+	</div>
+	@LiveSceneEl("")
+	@LiveRemoteKey("")
+}
+
+// liveTransportBar is the producer-only program-video transport overlay
+// (play/pause, scrub, volume/mute, loop). It re-anchors the sync clock and
+// broadcasts on every change so the viewer/OBS output follows. Shown only while
+// program content is loaded. The live position + duration are fed by
+// liveTransportPoll (__rewindScene).
+templ liveTransportBar(noteID string) {
+	<div
+		class="absolute bottom-0 inset-x-0 z-20 flex items-center gap-3 bg-black/70 px-3 py-2 text-white backdrop-blur-sm"
+		data-show="$programOn"
+	>
+		<button type="button" class="btn-ghost btn-sm shrink-0 w-8" data-on:click={ liveVideoToggle(noteID) } title="Play / Pause">
+			<i class="fa-sharp fa-solid" data-class="{'fa-play': $videoPaused, 'fa-pause': !$videoPaused}" aria-hidden="true"></i>
+		</button>
+		<input
+			id="live-seek"
+			type="range"
+			min="0"
+			step="0.1"
+			class="flex-1 min-w-0"
+			data-bind="videoT"
+			data-attr:max="$videoDur || 0"
+			data-on:input__debounce.200ms={ liveVideoSeek(noteID) }
+		/>
+		<span class="shrink-0 text-xs font-mono text-white/70 tabular-nums" data-text="window.__fmtT($videoT) + ' / ' + window.__fmtT($videoDur)"></span>
+		<button type="button" class="btn-ghost btn-sm shrink-0 w-8" data-on:click={ liveVideoMute(noteID) } title="Mute">
+			<i class="fa-sharp fa-solid" data-class="{'fa-volume-high': !$videoMuted, 'fa-volume-xmark': $videoMuted}" aria-hidden="true"></i>
+		</button>
+		<input type="range" min="0" max="1" step="0.05" class="w-20 shrink-0" data-bind="videoVolume" data-on:input__debounce.200ms={ liveVideoVolume(noteID) } title="Volume"/>
+		<button type="button" class="btn-ghost btn-sm shrink-0 w-8" data-on:click={ liveVideoLoop(noteID) } data-class="{'text-green-400': $videoLoop}" title="Loop">
+			<i class="fa-sharp fa-solid fa-repeat" aria-hidden="true"></i>
+		</button>
+	</div>
+}
+
+// liveTransportPoll feeds the transport bar from the live scene: it mirrors the
+// program video's playhead + duration into DataStar signals (skipping videoT
+// while the producer is scrubbing the seek bar) and exposes a m:ss formatter.
+templ liveTransportPoll() {
+	<script>
+		(function () {
+			window.__fmtT = function (s) {
+				s = Math.max(0, Math.floor(s || 0));
+				var m = Math.floor(s / 60), x = s % 60;
+				return m + ':' + (x < 10 ? '0' : '') + x;
+			};
+			function tick() {
+				var core = window.__rewindScene, api = window.__dsAPI;
+				if (core && core.contentInfo && api && api.mergePatch) {
+					var info = core.contentInfo();
+					if (info) {
+						if (window.__sceneEditor && window.__sceneEditor.enforceBounds) window.__sceneEditor.enforceBounds(info.t || 0);
+						var patch = { videoDur: info.dur || 0 };
+						var seek = document.getElementById('live-seek');
+						if (!seek || document.activeElement !== seek) patch.videoT = info.t || 0;
+						api.mergePatch(patch);
+					}
+				}
+				setTimeout(tick, 250);
+			}
+			setTimeout(tick, 600);
+		})();
+	</script>
+}
+
+// ── Public viewer / program output (standalone, OBS-friendly) ────────────────
+templ ShowViewerPage(noteID string, title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="dark">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } — Live</title>
+			<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/main.css") }/>
+		</head>
+		<body class="bg-black text-white font-mono overflow-hidden" data-note-id={ noteID }>
+			<div class="fixed inset-0" data-init={ fmt.Sprintf("@get('/api/show-notes/%s/scene/stream', {openWhenHidden:true})", noteID) }>
+				@liveSceneStage(noteID)
+			</div>
+			<div id="webrtc-room" class="hidden" data-room={ noteID } data-role="viewer"></div>
+			<div class="fixed bottom-3 right-3 z-10 border border-white/10 bg-black/70 px-3 py-2">
+				@LiveSSEStatus("Connecting…", "text-white/60")
+			</div>
+			<script type="module" src="/static/dist/datastar.js"></script>
+			<script src={ versionedAsset(ctx, sceneScript()) }></script>
+			<script src={ versionedAsset(ctx, "/static/dist/webrtc-room.js") }></script>
+		</body>
+	</html>
+}

@@ -2,12 +2,10 @@ package settings_api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/text/cases"
@@ -42,37 +40,11 @@ func HandleSettingsKeybindingsPage(sm *auth.SessionManager, dbc *db.DatabaseConn
 // Helper functions
 func renderSettingsPage(c echo.Context, sm *auth.SessionManager, dbc *db.DatabaseConnection, encMgr *encryption.Manager, sc *db.SettingsCache, userUUID pgtype.UUID, username string, cookiesValue string, message string, mcpToken string) error {
 	ctx := c.Request().Context()
-	var adminSettings *db.InstanceSetting
-
 	user, err := dbc.Queries(ctx).SelectUserByID(ctx, userUUID)
 	if err == nil && user != nil && user.Role == "admin" {
 		c.Set("accessLevel", "admin")
-		ctx2 := context.WithValue(c.Request().Context(), ctxkeys.AccessLevel, "admin")
-		c.SetRequest(c.Request().WithContext(ctx2))
-
-		q := dbc.Queries(ctx)
-		settings, err := q.GetInstanceSettings(ctx)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				settings = &db.InstanceSetting{RegistrationEnabled: true, AdminEmails: []string{}}
-			} else {
-				slog.Error("failed to load instance settings", "error", err)
-				settings = &db.InstanceSetting{RegistrationEnabled: true, AdminEmails: []string{}}
-			}
-		}
-		if settings.AdminEmails == nil {
-			settings.AdminEmails = []string{}
-		}
-
-		// Get storage limit from database
-		limitBytes, err := q.GetClipExportStorageLimit(ctx)
-		if err == nil {
-			settings.ClipExportStorageLimitBytes = limitBytes
-		} else if !db.IsUndefinedColumnErr(err) {
-			slog.Error("failed to load clip export storage limit", "error", err)
-		}
-
-		adminSettings = settings
+		ctx = context.WithValue(ctx, ctxkeys.AccessLevel, "admin")
+		c.SetRequest(c.Request().WithContext(ctx))
 	}
 
 	tokens, err := dbc.Queries(ctx).ListAPITokensByUser(ctx, userUUID)
@@ -80,7 +52,7 @@ func renderSettingsPage(c echo.Context, sm *auth.SessionManager, dbc *db.Databas
 		slog.Error("failed to list api tokens", "error", err)
 		tokens = nil
 	}
-	return templates.Settings(cookiesValue, message, true, username, adminSettings, mcpToken, tokens).Render(ctx, c.Response())
+	return templates.Settings(cookiesValue, message, true, username, mcpToken, tokens).Render(ctx, c.Response())
 }
 
 func generateCookiesFile(encMgr *encryption.Manager, cookies []*db.GetUserCookiesRow) string {

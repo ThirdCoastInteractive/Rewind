@@ -1,0 +1,465 @@
+package crdt
+
+import "encoding/json"
+
+// contentForValue wraps a YMap value into Content. A *Doc becomes a ContentDoc
+// (subdocument embedding, Yjs parity: ymap.set(k, new Y.Doc())); everything else
+// becomes ContentAny.
+func contentForValue(value any) Content {
+	if d, ok := value.(*Doc); ok {
+		return NewContentDoc(d)
+	}
+	// A DETACHED shared type becomes a nested ContentType, so
+	// Set(key, NewTextPrelim()) builds a real Y.Text child rather than a
+	// ContentAny blob. item.integrate links it, assigns its doc and calls
+	// flushPrelim, so nothing further is needed here. An ATTACHED type must be
+	// rejected here rather than fall through: a ContentAny holding a shared
+	// type only fails at encode time — inside Doc.Transact when an OnUpdate
+	// hook triggers commit-time encoding.
+	if st, ok := value.(sharedType); ok {
+		bt := st.baseType()
+		if !bt.detached() {
+			panic("crdt: Set requires a detached type; a shared type attaches once (build a new prelim instead)")
+		}
+		return NewContentType(bt)
+	}
+	return NewContentAny(value)
+}
+
+// mapSub pairs a unique subscription ID with a YMapEvent callback.
+type mapSub struct {
+	id uint64
+	fn func(YMapEvent)
+}
+
+// YMap is a shared key-value store with last-write-wins semantics.
+// It embeds abstractType, which owns the underlying doubly-linked Item list.
+// Every key maps to at most one live Item; concurrent writes to the same key
+// are resolved deterministically: the item with the higher ClientID wins.
+type YMap struct {
+	abstractType
+	subIDGen  uint64
+	observers []mapSub
+	// prelim stages this map's ENTRIES while it is detached, mirroring Yjs's
+	// _prelimContent (a JS Map): Set overwrites in place and Delete removes,
+	// so only surviving entries materialise when the container item
+	// integrates. Materialising eagerly would give children clocks BELOW the
+	// future container item's — an ordering genuine Yjs never produces.
+	// prelimKeys preserves insertion order, which is the order Yjs replays in.
+	prelim     map[string]any
+	prelimKeys []string
+}
+
+// flushPrelim materialises the staged entries in insertion order when the
+// container item integrates. A key set twice emits once, and a key deleted
+// before attach emits not at all — matching what Yjs puts on the wire.
+func (m *YMap) flushPrelim(txn *Transaction) {
+	keys, staged := m.prelimKeys, m.prelim
+	m.prelimKeys, m.prelim = nil, nil
+	for _, k := range keys {
+		m.Set(txn, k, staged[k])
+	}
+}
+
+func (m *YMap) baseType() *abstractType { return &m.abstractType }
+
+// prepareFire snapshots the current observer slice inside the document write
+// lock and returns a closure that fires all snapshotted observers (N-C1).
+//
+// The Keys map (#74 D2, v1.15.0) is computed under the lock so it sees a
+// consistent view of the linked list before the lock is released.
+func (m *YMap) prepareFire(txn *Transaction, keysChanged map[string]struct{}) func() {
+	if len(m.observers) == 0 {
+		return nil
+	}
+	keys := m.computeKeys(txn, keysChanged)
+	snap := make([]mapSub, len(m.observers))
+	copy(snap, m.observers)
+	e := YMapEvent{Target: m, Txn: txn, KeysChanged: keysChanged, Keys: keys}
+	return func() {
+		for _, s := range snap {
+			s.fn(e)
+		}
+	}
+}
+
+// computeKeys derives the per-key KeyChange map (#74 D2) for every key in
+// keysChanged. For each key it walks the items with that ParentSub to
+// determine:
+//   - the pre-transaction winner (most-recent live item before the txn)
+//   - the post-transaction winner (currently live item, or nil)
+//
+// and from the two derives an Action (add / update / delete) plus the
+// pre-transaction value.
+//
+// "Live before the txn" = !isNew && (!Deleted || txn.deleteSet.IsDeleted(item)).
+// That is: existed before this txn AND was not already-tombstoned at the
+// start. Pre-existing items that were already deleted before this txn are
+// ignored.
+func (m *YMap) computeKeys(txn *Transaction, keysChanged map[string]struct{}) map[string]KeyChange {
+	if len(keysChanged) == 0 {
+		return nil
+	}
+	t := &m.abstractType
+	out := make(map[string]KeyChange, len(keysChanged))
+	for key := range keysChanged {
+		var preWinner *Item // most recent item live before the txn
+		var postWinner *Item
+		// Walk items in linked-list (YATA) order, not clock order. For
+		// map-keyed entries the rightmost item with a given ParentSub is the
+		// last-write-wins winner regardless of client, so the LAST matching
+		// item we encounter is the winning candidate — exactly what the
+		// `if preLive` / `if !item.Deleted` reassignments below rely on.
+		for item := t.start; item != nil; item = item.Right {
+			if item.ParentSub == nil || *item.ParentSub != key {
+				continue
+			}
+			beforeClock := txn.beforeState.Clock(item.ID.Client)
+			isNew := item.ID.Clock >= beforeClock
+			// Was live before this txn?
+			deletedInTxn := txn.deleteSet.IsDeleted(item.ID)
+			preLive := !isNew && (!item.Deleted || deletedInTxn)
+			if preLive {
+				preWinner = item
+			}
+			if !item.Deleted {
+				postWinner = item
+			}
+		}
+
+		var change KeyChange
+		switch {
+		case preWinner == nil && postWinner != nil:
+			change.Action = KeyAdded
+		case preWinner != nil && postWinner != nil && preWinner != postWinner:
+			change.Action = KeyUpdated
+			change.OldValue = extractMapValue(preWinner)
+		case preWinner != nil && postWinner == nil:
+			change.Action = KeyDeleted
+			change.OldValue = extractMapValue(preWinner)
+		default:
+			// Either both nil (transient: created+deleted in same txn) or
+			// same item (no real change). Skip — don't emit a Keys entry.
+			continue
+		}
+		out[key] = change
+	}
+	return out
+}
+
+// extractMapValue pulls a single map value out of an item's Content, used
+// when computing KeyChange.OldValue. Matches the unwrap rules in
+// entriesLocked so consumers see consistent shapes.
+func extractMapValue(item *Item) any {
+	switch c := item.Content.(type) {
+	case *ContentAny:
+		if len(c.Vals) > 0 {
+			return c.Vals[0]
+		}
+	case *ContentJSON:
+		if len(c.Vals) > 0 {
+			return c.Vals[0]
+		}
+	case *ContentEmbed:
+		return c.Val
+	case *ContentType:
+		return toJSONValue(c)
+	}
+	return nil
+}
+
+// Set writes value under key. If a live entry already exists for key, it is
+// deleted and the new item becomes the winner.
+//
+// A DETACHED shared type passed as value is staged (or attached, if this map
+// is live) as a nested type. A shared type attaches once: Set panics if the
+// value is already attached, staged under another key of this map, or staged
+// on any other container (#222). Overwriting or deleting a staged entry
+// releases its handle, making it stageable elsewhere.
+func (m *YMap) Set(txn *Transaction, key string, value any) {
+	checkUTF8("YMap.Set", "key", key)
+	checkAnyUTF8("YMap.Set", "value", value)
+
+	t := &m.abstractType
+
+	// Detached: stage the entry (see prelim). Re-setting a key overwrites in
+	// place and keeps its original position, as a JS Map does.
+	if t.detached() {
+		if st, ok := value.(sharedType); ok {
+			// A handle staged on ANOTHER container — or under another key of
+			// THIS map — is spoken for (#222): reject at the call rather than
+			// at the losing container's attach. Same key with the same handle
+			// stays the documented overwrite no-op.
+			for _, k := range m.prelimKeys {
+				if k != key && m.prelim[k] == value {
+					panic("crdt: Set: this type is already staged under another key of this map (a shared type attaches once)")
+				}
+			}
+			claimForStage(t, st.baseType(), "Set")
+		}
+		old, exists := m.prelim[key]
+		if !exists {
+			m.prelimKeys = append(m.prelimKeys, key)
+		}
+		if exists && old != value {
+			// Overwriting displaces the previous value: if it was a staged
+			// handle, it leaves this map and becomes re-stageable.
+			releaseStaged(old)
+		}
+		if m.prelim == nil {
+			m.prelim = make(map[string]any)
+		}
+		m.prelim[key] = value
+		return
+	}
+	if st, ok := value.(sharedType); ok {
+		// Attached path: a handle staged on a detached container must not
+		// integrate here (#222) — its staging container would panic at its own
+		// attach. The one legitimate claim is this map's own flushPrelim
+		// re-entering Set to integrate its staged children.
+		claimForAttach(t, st.baseType(), "Set")
+	}
+
+	// Establish a causal link from the previous value for this key so that
+	// YATA places the new item right after the old one — not at the list head.
+	var left *Item
+	var origin *ID
+	if existing, ok := t.itemMap[key]; ok {
+		left = existing
+		id := existing.ID
+		origin = &id
+	}
+
+	item := &Item{
+		ID:        ID{Client: txn.doc.clientID, Clock: txn.doc.store.NextClock(txn.doc.clientID)},
+		Origin:    origin,
+		Left:      left,
+		Parent:    t,
+		ParentSub: strPtr(key),
+		Content:   contentForValue(value),
+	}
+	item.integrate(txn, 0)
+}
+
+// Delete removes the entry for key if it exists.
+func (m *YMap) Delete(txn *Transaction, key string) {
+	t := &m.abstractType
+	// Detached: drop the staged entry outright, so nothing is emitted for the
+	// key and no tombstone reaches the wire. A later Set re-appends it at the
+	// end, as a JS Map does.
+	if t.detached() {
+		old, exists := m.prelim[key]
+		if !exists {
+			return
+		}
+		// A deleted staged handle leaves this map and becomes re-stageable
+		// (#222); its claim must not outlive its membership.
+		releaseStaged(old)
+		delete(m.prelim, key)
+		for i, k := range m.prelimKeys {
+			if k == key {
+				m.prelimKeys = append(m.prelimKeys[:i:i], m.prelimKeys[i+1:]...)
+				break
+			}
+		}
+		return
+	}
+	if item, ok := t.itemMap[key]; ok && !item.Deleted {
+		item.delete(txn)
+	}
+}
+
+// Get returns the value for key and whether the key exists.
+// Must not be called from inside a Transact callback.
+func (m *YMap) Get(key string) (any, bool) {
+	if doc := m.doc; doc != nil {
+		doc.mu.RLock()
+		defer doc.mu.RUnlock()
+	}
+	if m.detached() {
+		v, ok := m.prelim[key]
+		if !ok {
+			return nil, false
+		}
+		return prelimValueAt(v), true
+	}
+	t := &m.abstractType
+	item, ok := t.itemMap[key]
+	if !ok || item.Deleted {
+		return nil, false
+	}
+	if cd, ok := item.Content.(*ContentDoc); ok {
+		return cd.Doc, cd.Doc != nil
+	}
+	// Expose nested types, mirroring YArray.Get. Without this a key holding a
+	// nested Y.Text/Y.Map/Y.Array reads back as (nil, false) even though the
+	// type is fully materialised and reachable via ToJSON.
+	if ct, ok := item.Content.(*ContentType); ok {
+		return ct.Type.owner, ct.Type.owner != nil
+	}
+	ca, ok := item.Content.(*ContentAny)
+	if !ok || len(ca.Vals) == 0 {
+		return nil, false
+	}
+	return ca.Vals[0], true
+}
+
+// Has reports whether key has a live (non-deleted) entry.
+// Must not be called from inside a Transact callback.
+func (m *YMap) Has(key string) bool {
+	if doc := m.doc; doc != nil {
+		doc.mu.RLock()
+		defer doc.mu.RUnlock()
+	}
+	if m.detached() {
+		_, ok := m.prelim[key]
+		return ok
+	}
+	t := &m.abstractType
+	item, ok := t.itemMap[key]
+	return ok && !item.Deleted
+}
+
+// Keys returns all keys with live entries.
+// Must not be called from inside a Transact callback.
+func (m *YMap) Keys() []string {
+	if doc := m.doc; doc != nil {
+		doc.mu.RLock()
+		defer doc.mu.RUnlock()
+	}
+	if m.detached() {
+		// Insertion order, which is the order these will materialise in.
+		return append(make([]string, 0, len(m.prelimKeys)), m.prelimKeys...)
+	}
+	t := &m.abstractType
+	keys := make([]string, 0)
+	for k, item := range t.itemMap {
+		if !item.Deleted {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+// Entries returns a snapshot of all live key-value pairs. Nested shared
+// types are recursively unwrapped (#75): nested YArray → []any, nested
+// YMap → map[string]any, nested YText → string. Pre-fix these were
+// silently dropped from the output.
+//
+// Must not be called from inside a Transact callback.
+func (m *YMap) Entries() map[string]any {
+	if doc := m.doc; doc != nil {
+		doc.mu.RLock()
+		defer doc.mu.RUnlock()
+	}
+	return m.entriesLocked()
+}
+
+// entriesLocked is the lock-free body of Entries; callers must already
+// hold the doc lock. Used by Entries (top-level) and toJSONValue (during
+// recursive unwrap of nested types).
+func (m *YMap) entriesLocked() map[string]any {
+	if m.detached() {
+		out := make(map[string]any, len(m.prelim))
+		for k, v := range m.prelim {
+			out[k] = prelimJSONValue(v)
+		}
+		return out
+	}
+	t := &m.abstractType
+	out := make(map[string]any, len(t.itemMap))
+	for k, item := range t.itemMap {
+		if item.Deleted {
+			continue
+		}
+		switch c := item.Content.(type) {
+		case *ContentAny:
+			if len(c.Vals) > 0 {
+				out[k] = c.Vals[0]
+			}
+		case *ContentJSON:
+			// ContentJSON is the legacy JSON wire variant (tag wireJSON=2);
+			// functionally equivalent to ContentAny. Without this case,
+			// keys received via JS-peer updates would be silently dropped.
+			if len(c.Vals) > 0 {
+				out[k] = c.Vals[0]
+			}
+		case *ContentEmbed:
+			out[k] = c.Val
+		case *ContentType:
+			out[k] = toJSONValue(c)
+		}
+	}
+	return out
+}
+
+// ForEach calls fn for every live (non-deleted) key-value pair in the map,
+// in an unspecified order. Must not be called from inside a Transact callback.
+func (m *YMap) ForEach(fn func(key string, value any)) {
+	if doc := m.doc; doc != nil {
+		doc.mu.RLock()
+		defer doc.mu.RUnlock()
+	}
+	if m.detached() {
+		// Nested types are skipped, which is what the attached walk below does
+		// — it yields ContentAny values only.
+		for _, k := range m.prelimKeys {
+			v := m.prelim[k]
+			if _, isType := v.(sharedType); isType {
+				continue
+			}
+			fn(k, v)
+		}
+		return
+	}
+	t := &m.abstractType
+	for k, item := range t.itemMap {
+		if item.Deleted {
+			continue
+		}
+		if ca, ok := item.Content.(*ContentAny); ok && len(ca.Vals) > 0 {
+			fn(k, ca.Vals[0])
+		}
+	}
+}
+
+// ToJSON returns the map serialised as a JSON object.
+// Must not be called from inside a Transact callback.
+func (m *YMap) ToJSON() ([]byte, error) {
+	return json.Marshal(m.Entries())
+}
+
+// Observe registers fn to be called after every transaction that modifies this
+// map. Returns an unsubscribe function. Uses ID-based lookup so out-of-order
+// unsubscription removes the correct entry (C5).
+//
+// Acquiring doc.mu.Lock() serialises registration against Transact (N-C1).
+// Do not call Observe from inside a Transact callback — that would deadlock.
+func (m *YMap) Observe(fn func(YMapEvent)) func() {
+	doc := m.doc
+	if doc != nil {
+		doc.mu.Lock()
+		defer doc.mu.Unlock()
+	}
+	m.subIDGen++
+	id := m.subIDGen
+	m.observers = append(m.observers, mapSub{id: id, fn: fn})
+	return func() {
+		if doc := m.doc; doc != nil {
+			doc.mu.Lock()
+			defer doc.mu.Unlock()
+		}
+		for i, s := range m.observers {
+			if s.id == id {
+				m.observers = append(m.observers[:i], m.observers[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+// ObserveDeep registers fn to be called after any transaction that modifies
+// this map or any nested shared type within it. Returns an unsubscribe function.
+func (m *YMap) ObserveDeep(fn func(*Transaction)) func() {
+	return m.observeDeep(fn)
+}

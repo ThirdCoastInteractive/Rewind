@@ -1,3 +1,4 @@
+import { pageTimeout, pageFrame } from './page-scope.js';
 // ============================================================================
 // AudioToolsEngine - Real-time audio visualisation (VU meters, spectrum, scope)
 // ============================================================================
@@ -91,7 +92,7 @@ export class AudioToolsEngine {
   /** Main render tick */
   _tick() {
     if (!this._running) return;
-    this._raf = requestAnimationFrame(() => this._tick());
+    this._raf = pageFrame(() => this._tick());
     this._drawMeter();
     this._drawSpectrum();
     this._drawScope();
@@ -161,7 +162,7 @@ export class AudioToolsEngine {
     if (dbPeakL > -0.5) this._peakClipL = true;
     if (dbPeakR > -0.5) this._peakClipR = true;
     clearTimeout(this._clipClearTimer);
-    this._clipClearTimer = setTimeout(() => { this._peakClipL = false; this._peakClipR = false; }, 2000);
+    this._clipClearTimer = pageTimeout(() => { this._peakClipL = false; this._peakClipR = false; }, 2000);
 
     // Draw two vertical bars
     const barW = Math.floor((W - 16) / 2);
@@ -179,6 +180,12 @@ export class AudioToolsEngine {
       this._smoothRmsL, this._smoothPeakL, this._peakHoldL, this._peakClipL);
     this._drawSingleMeter(ctx, barX2, topY, barW, barH, botY, dbToY, dbToH,
       this._smoothRmsR, this._smoothPeakR, this._peakHoldR, this._peakClipR);
+
+    const lufsEl = document.querySelector('[data-audio-lufs]');
+    if (lufsEl) {
+      const approx = (this._smoothRmsL + this._smoothRmsR) / 2;
+      lufsEl.textContent = Number.isFinite(approx) ? approx.toFixed(0) + ' dBFS' : '-- LUFS';
+    }
 
     // Labels
     ctx.fillStyle = '#666';

@@ -18,7 +18,8 @@ import (
 // stream with full Range-request support (for <video> playback).
 func HandleStitchStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if _, _, err := sm.GetSession(c.Request()); err != nil {
+		_, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
 			return c.String(401, "unauthorized")
 		}
 

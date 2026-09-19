@@ -2,19 +2,20 @@ package content
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/analyze"
+	"thirdcoast.systems/rewind/internal/catalog"
 	"thirdcoast.systems/rewind/internal/channelid"
+	"thirdcoast.systems/rewind/internal/creatorlink"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -37,7 +38,31 @@ func HandleCreatorsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) ech
 			slog.Error("failed to list creator suggestions", "error", err)
 			suggestions = nil
 		}
-		return templates.Creators(list, suggestions, username).Render(ctx, c.Response())
+		bundles, err := q.ListCreatorBundles(ctx)
+		if err != nil {
+			slog.Error("failed to list creator bundles", "error", err)
+			bundles = nil
+		}
+		return templates.Creators(list, bundles, suggestions, username).Render(ctx, c.Response())
+	}
+}
+
+// HandleCreatorCatalog starts or refreshes catalogs for every linked channel.
+func HandleCreatorCatalog(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		userID, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return c.Redirect(302, "/login")
+		}
+		creatorID, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return err
+		}
+		if _, err := catalog.IndexCreator(c.Request().Context(), dbc.Queries(c.Request().Context()), creatorID, userID, c.FormValue("refresh") == "true"); err != nil {
+			slog.Error("failed to create creator catalog crawls", "error", err, "creator_id", creatorID)
+			return echo.NewHTTPError(500, "could not start creator catalog")
+		}
+		return c.Redirect(302, "/creators/"+creatorID.String())
 	}
 }
 
@@ -107,7 +132,148 @@ func HandleCreatorViewPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 			edges = elist
 		}
 		report := buildCreatorReport(ctx, q, channels)
-		return templates.CreatorView(creator, channels, edges, report, username).Render(ctx, c.Response())
+		crawls, err := q.ListCatalogCrawlsForCreator(ctx, id)
+		if err != nil {
+			slog.Error("failed to list creator catalog crawls", "error", err, "creator_id", id)
+			crawls = nil
+		}
+		bundles, err := q.ListBundlesForCreator(ctx, id)
+		if err != nil {
+			slog.Error("failed to list creator bundles", "error", err, "creator_id", id)
+			bundles = nil
+		}
+		vaultPages, _ := wikiStore(dbc).PagesForCreator(ctx, id)
+		vaultPages = decorateWikiPages(vaultPages, wikiClipLookup(ctx, dbc))
+		return templates.CreatorView(creator, channels, edges, report, crawls, bundles, vaultPages, username).Render(ctx, c.Response())
+	}
+}
+
+// HandleCreatorBundleWizardPage serves GET /creators/bundles/new.
+func HandleCreatorBundleWizardPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		_, username, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return c.Redirect(302, "/login")
+		}
+		list, err := dbc.Queries(c.Request().Context()).ListCreators(c.Request().Context())
+		if err != nil {
+			slog.Error("failed to list creators for bundle wizard", "error", err)
+			list = nil
+		}
+		return templates.CreatorBundleWizard(list, username).Render(c.Request().Context(), c.Response())
+	}
+}
+
+// HandleCreatorBundleCreate serves POST /creators/bundles.
+func HandleCreatorBundleCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if _, _, err := common.RequireSessionUser(c, sm); err != nil {
+			return c.Redirect(302, "/login")
+		}
+		name := strings.TrimSpace(c.FormValue("name"))
+		if name == "" {
+			return c.Redirect(302, "/creators/bundles/new")
+		}
+		notes := strings.TrimSpace(c.FormValue("notes"))
+		var notesArg *string
+		if notes != "" {
+			notesArg = &notes
+		}
+		ctx := c.Request().Context()
+		q := dbc.Queries(ctx)
+		bundle, err := q.CreateCreatorBundle(ctx, &db.CreateCreatorBundleParams{Name: name, Notes: notesArg})
+		if err != nil {
+			slog.Error("failed to create creator bundle", "error", err)
+			return echo.NewHTTPError(500, "could not create bundle")
+		}
+		_ = c.Request().ParseForm()
+		for _, raw := range c.Request().PostForm["creator_id"] {
+			var id pgtype.UUID
+			if err := id.Scan(strings.TrimSpace(raw)); err == nil && id.Valid {
+				if err := q.AddCreatorBundleMember(ctx, &db.AddCreatorBundleMemberParams{BundleID: bundle.ID, CreatorID: id}); err != nil {
+					slog.Error("failed to add bundle member", "error", err)
+				}
+			}
+		}
+		return c.Redirect(302, "/creators/bundles/"+bundle.ID.String())
+	}
+}
+
+// HandleCreatorBundleViewPage serves GET /creators/bundles/:id.
+func HandleCreatorBundleViewPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		_, username, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return c.Redirect(302, "/login")
+		}
+		id, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return c.Redirect(302, "/creators")
+		}
+		ctx := c.Request().Context()
+		q := dbc.Queries(ctx)
+		bundle, err := q.GetCreatorBundle(ctx, id)
+		if err != nil {
+			return c.Redirect(302, "/creators")
+		}
+		members, err := q.ListCreatorBundleMembers(ctx, id)
+		if err != nil {
+			slog.Error("failed to list bundle members", "error", err)
+			members = nil
+		}
+		all, err := q.ListCreators(ctx)
+		if err != nil {
+			all = nil
+		}
+		return templates.CreatorBundleView(bundle, members, all, username).Render(ctx, c.Response())
+	}
+}
+
+// HandleCreatorBundleAddMember serves POST /creators/bundles/:id/add.
+func HandleCreatorBundleAddMember(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if _, _, err := common.RequireSessionUser(c, sm); err != nil {
+			return c.Redirect(302, "/login")
+		}
+		bundleID, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return c.Redirect(302, "/creators")
+		}
+		var creatorID pgtype.UUID
+		if err := creatorID.Scan(strings.TrimSpace(c.FormValue("creator_id"))); err != nil || !creatorID.Valid {
+			return echo.NewHTTPError(400, "select a creator")
+		}
+		ctx := c.Request().Context()
+		q := dbc.Queries(ctx)
+		if _, err := q.GetCreatorBundle(ctx, bundleID); err != nil {
+			return c.Redirect(302, "/creators")
+		}
+		if err := q.AddCreatorBundleMember(ctx, &db.AddCreatorBundleMemberParams{BundleID: bundleID, CreatorID: creatorID}); err != nil {
+			slog.Error("failed to add bundle member", "error", err)
+		}
+		return c.Redirect(302, "/creators/bundles/"+bundleID.String())
+	}
+}
+
+// HandleCreatorBundleRemoveMember serves POST /creators/bundles/:id/remove.
+func HandleCreatorBundleRemoveMember(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if _, _, err := common.RequireSessionUser(c, sm); err != nil {
+			return c.Redirect(302, "/login")
+		}
+		bundleID, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return c.Redirect(302, "/creators")
+		}
+		var creatorID pgtype.UUID
+		if err := creatorID.Scan(strings.TrimSpace(c.FormValue("creator_id"))); err != nil || !creatorID.Valid {
+			return echo.NewHTTPError(400, "select a creator")
+		}
+		ctx := c.Request().Context()
+		if err := dbc.Queries(ctx).RemoveCreatorBundleMember(ctx, &db.RemoveCreatorBundleMemberParams{BundleID: bundleID, CreatorID: creatorID}); err != nil {
+			slog.Error("failed to remove bundle member", "error", err)
+		}
+		return c.Redirect(302, "/creators/bundles/"+bundleID.String())
 	}
 }
 
@@ -193,61 +359,12 @@ func HandleCreatorSuggestionAccept(sm *auth.SessionManager, dbc *db.DatabaseConn
 			return c.Redirect(302, "/creators")
 		}
 		ctx := c.Request().Context()
-		q := dbc.Queries(ctx)
-		sug, err := q.GetCreatorSuggestion(ctx, id)
-		if err != nil || sug == nil || sug.Status != "pending" {
-			return c.Redirect(302, "/creators")
-		}
-		members, err := q.ListCreatorSuggestionMembers(ctx, sug.ID)
+		creatorID, err := creatorlink.Accept(ctx, dbc.Queries(ctx), id)
 		if err != nil {
-			slog.Error("failed to list suggestion members", "error", err, "suggestion_id", sug.ID)
+			slog.Error("failed to accept creator suggestion", "error", err, "suggestion_id", id)
 			return c.Redirect(302, "/creators")
 		}
-		ids := make([]pgtype.UUID, 0, len(members))
-		for _, ch := range members {
-			if ch != nil && ch.ID.Valid {
-				ids = append(ids, ch.ID)
-			}
-		}
-		var creatorID pgtype.UUID
-		switch sug.Kind {
-		case "add":
-			if !sug.CreatorID.Valid {
-				slog.Error("add suggestion missing creator", "suggestion_id", sug.ID)
-				return c.Redirect(302, "/creators")
-			}
-			if _, err := q.GetCreator(ctx, sug.CreatorID); err != nil {
-				slog.Error("add suggestion creator missing", "error", err, "creator_id", sug.CreatorID)
-				return c.Redirect(302, "/creators")
-			}
-			creatorID = sug.CreatorID
-		case "new":
-			created, err := createCreatorFromSuggestion(ctx, q, sug)
-			if err != nil {
-				slog.Error("failed to create creator from suggestion", "error", err, "suggestion_id", sug.ID)
-				return c.Redirect(302, "/creators")
-			}
-			creatorID = created.ID
-		default:
-			slog.Error("unknown creator suggestion kind", "kind", sug.Kind, "suggestion_id", sug.ID)
-			return c.Redirect(302, "/creators")
-		}
-		if len(ids) > 0 {
-			if err := q.LinkChannelsToCreator(ctx, &db.LinkChannelsToCreatorParams{
-				CreatorID: creatorID,
-				Ids:       ids,
-			}); err != nil {
-				slog.Error("failed to link suggestion channels", "error", err, "suggestion_id", sug.ID, "creator_id", creatorID)
-				return c.Redirect(302, "/creators")
-			}
-		}
-		if err := q.SetCreatorSuggestionStatus(ctx, &db.SetCreatorSuggestionStatusParams{
-			Status: "accepted",
-			ID:     sug.ID,
-		}); err != nil {
-			slog.Error("failed to accept creator suggestion", "error", err, "suggestion_id", sug.ID)
-		}
-		return c.Redirect(302, "/creators/"+creatorID.String())
+		return c.Redirect(302, "/creators/"+uuid.UUID(creatorID.Bytes).String())
 	}
 }
 
@@ -262,35 +379,11 @@ func HandleCreatorSuggestionDismiss(sm *auth.SessionManager, dbc *db.DatabaseCon
 			return c.Redirect(302, "/creators")
 		}
 		ctx := c.Request().Context()
-		if err := dbc.Queries(ctx).SetCreatorSuggestionStatus(ctx, &db.SetCreatorSuggestionStatusParams{
-			Status: "dismissed",
-			ID:     id,
-		}); err != nil {
+		if err := creatorlink.Dismiss(ctx, dbc.Queries(ctx), id); err != nil {
 			slog.Error("failed to dismiss creator suggestion", "error", err, "suggestion_id", id)
 		}
 		return c.Redirect(302, "/creators")
 	}
-}
-
-func createCreatorFromSuggestion(ctx context.Context, q *db.Queries, sug *db.CreatorSuggestion) (*db.Creator, error) {
-	name := strings.TrimSpace(sug.ProposedName)
-	if name == "" {
-		name = "Untitled creator"
-	}
-	if existing, err := q.GetCreatorByNameCI(ctx, name); err == nil && existing != nil {
-		return existing, nil
-	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-	notes := strings.TrimSpace(sug.Reason)
-	var notesArg *string
-	if notes != "" {
-		notesArg = &notes
-	}
-	return q.CreateCreator(ctx, &db.CreateCreatorParams{
-		Name:  name,
-		Notes: notesArg,
-	})
 }
 
 func parseChannelIDList(raw string) []pgtype.UUID {

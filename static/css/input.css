@@ -3,11 +3,130 @@
 @import "./filter-controls.css";
 @import "./timeline.css";
 @import "./scrub-field.css";
-@import "./stitch.css";
+@import "./settings-workspace.css";
+@import "./themes.css";
+@import "./navigation.css";
+@import "./wiki.css";
+@import "./investigate.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Collaborative Markdown show workspace. */
+.show-workspace {
+  --workspace-gap: 0.5rem;
+  background: var(--rw-field);
+}
+
+.show-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 0.8fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--workspace-gap);
+  min-height: 0;
+  flex: 1;
+}
+
+.show-workspace[data-current-layout="planning"] .show-workspace-grid {
+  grid-template-columns: minmax(0, 4.5fr) minmax(0, 1fr);
+}
+
+.workspace-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgb(var(--rw-ink-rgb) / 0.14);
+  background: var(--rw-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-panel[hidden] { display: none !important; }
+
+.workspace-panel-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2rem;
+  padding: .35rem .55rem;
+  border-bottom: 1px solid rgb(var(--rw-ink-rgb) / 0.1);
+  color: rgb(var(--rw-ink-rgb) / 0.62);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.workspace-panel-header a { margin-left: auto; color: rgb(var(--rw-ink-rgb) / .38); }
+.workspace-panel-header a:hover { color: white; }
+
+.show-workspace [data-layout].is-active {
+  border-color: rgb(74 222 128 / .65);
+  color: rgb(74 222 128);
+  background: rgb(74 222 128 / .08);
+}
+
+.show-workspace-editor,
+.show-workspace-editor .cm-editor,
+.show-workspace-editor .cm-scroller { height: 100%; }
+
+.show-workspace-editor .cm-editor {
+  background: var(--rw-field);
+  color: rgb(var(--rw-ink-rgb) / .9);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 15px;
+}
+
+.show-workspace-editor .cm-content { padding: 2rem max(1rem, calc((100% - 52rem) / 2)); caret-color: var(--rw-ink); }
+.show-workspace-editor .cm-gutters { display: none; }
+.show-workspace-editor .cm-activeLine { background: rgb(var(--rw-ink-rgb) / .035); }
+.show-workspace-editor .cm-selectionBackground { background: rgb(59 130 246 / .35) !important; }
+.show-workspace-editor .sn-reference-link { color: rgb(253 230 138) !important; text-decoration: underline; text-decoration-color: rgb(250 204 21 / .55); text-underline-offset: .15em; }
+.show-workspace-editor .sn-comment-highlight { background: rgb(250 204 21 / .16); border-bottom: 1px solid rgb(250 204 21 / .65); }
+.show-workspace-editor .sn-heading { font-family: Tomorrow, ui-monospace, monospace; font-weight: 700; color: var(--rw-ink); }
+.show-workspace-editor .sn-heading-1 { font-size: 1.85rem; line-height: 2.5rem; }
+.show-workspace-editor .sn-heading-2 { font-size: 1.45rem; line-height: 2rem; }
+.show-workspace-editor .sn-heading-3 { font-size: 1.2rem; line-height: 1.75rem; }
+
+.sn-media-card {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: .35rem 0 .8rem 1.1rem;
+  padding: .55rem;
+  border: 1px solid rgb(var(--rw-ink-rgb) / .14);
+  background: var(--rw-field);
+  border-radius: .25rem;
+}
+.sn-media-card.has-diagnostic { border-color: rgb(251 191 36 / .55); background: rgb(120 53 15 / .12); }
+
+.sn-media-thumb { width: 3rem; height: 2.2rem; display: grid; place-items: center; background: var(--rw-raised); color: rgb(var(--rw-ink-rgb) / .45); }
+.sn-media-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.sn-media-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+.sn-media-copy span { color: rgb(var(--rw-ink-rgb) / .42); font-size: .66rem; }
+.sn-media-actions a, .sn-media-actions button { border: 1px solid rgb(var(--rw-ink-rgb) / .2); padding: .25rem .45rem; font-size: .65rem; }
+.sn-media-actions a:hover, .sn-media-actions button:hover { border-color: rgb(var(--rw-ink-rgb) / .55); }
+.sn-media-actions button:disabled { cursor: wait; color: rgb(var(--rw-ink-rgb) / .45); border-color: rgb(var(--rw-ink-rgb) / .12); }
+
+.sn-room-message { padding: .65rem; border-bottom: 1px solid rgb(var(--rw-ink-rgb) / .08); }
+.sn-room-message header { color: rgb(var(--rw-ink-rgb) / .7); font-size: .7rem; font-weight: 700; }
+.sn-room-message time { float: right; color: rgb(var(--rw-ink-rgb) / .28); font-weight: 400; }
+.sn-room-message p { margin-top: .25rem; white-space: pre-wrap; color: rgb(var(--rw-ink-rgb) / .72); font-size: .78rem; }
+
+.sn-review-thread { padding: .7rem; border-bottom: 1px solid rgb(var(--rw-ink-rgb) / .1); }
+.sn-review-thread header { display: flex; align-items: center; gap: .5rem; font-size: .72rem; }
+.sn-review-thread header span { margin-left: auto; color: rgb(var(--rw-ink-rgb) / .35); text-transform: uppercase; }
+.sn-review-thread p { margin-top: .4rem; color: rgb(var(--rw-ink-rgb) / .7); font-size: .75rem; white-space: pre-wrap; }
+.sn-review-thread pre { max-height: 16rem; margin-top: .5rem; overflow: auto; border: 1px solid rgb(var(--rw-ink-rgb) / .1); background: var(--rw-field); padding: .5rem; color: rgb(var(--rw-ink-rgb) / .65); font-size: .68rem; white-space: pre; }
+.sn-review-thread footer { display: flex; gap: .35rem; margin-top: .55rem; }
+.sn-review-replies { margin-top: .5rem; padding-left: .5rem; border-left: 2px solid rgb(var(--rw-ink-rgb) / .1); }
+.sn-review-replies p { margin-top: .25rem; font-size: .7rem; color: rgb(var(--rw-ink-rgb) / .6); }
+.sn-review-replies strong { margin-right: .25rem; color: rgb(var(--rw-ink-rgb) / .8); }
+
+@media (max-width: 900px) {
+  .show-workspace-grid,
+  .show-workspace[data-current-layout="planning"] .show-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* Floating <details> dropdowns: prevent open content from expanding parent */
 details.dropdown-menu {
@@ -76,3 +195,14 @@ details.dropdown-menu > :not(summary) {
     overflow: hidden;
   }
 }
+/* Persisted account preference augments the operating system's motion setting. */
+body[data-reduced-motion="true"] *,
+body[data-reduced-motion="true"] *::before,
+body[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@import "./themes.css";

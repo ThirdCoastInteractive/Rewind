@@ -185,7 +185,8 @@
 
   .nav-link {
     @apply font-mono text-xs uppercase tracking-wider px-2 py-1.5 transition-colors
-           border-2 border-transparent text-white/60 hover:text-white hover:border-white/20;
+           border-2 border-transparent text-white/60 hover:text-white hover:border-white/20
+           whitespace-nowrap inline-flex items-center;
   }
 
   .nav-link-mobile {

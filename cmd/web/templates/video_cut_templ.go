@@ -90,7 +90,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(video.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 20, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 20, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -103,20 +103,20 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.5f", video.Info.GetFPS()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 21, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 21, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" data-signals=\"{_localClipBankOpen: true, _localInspectorOpen: true, _localFiltersOpen: false, _localMulticamOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}\" data-init=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" data-signals=\"{_localClipBankOpen: true, _localContextOpen: false, _localInspectorOpen: true, _localFiltersOpen: false, _localMulticamOpen: false, _localExportOpen: true, _localAutoSave: false, _filterStack: [], _selectedClipId: '', _clipDirty: false, _clipStartTs: 0, _clipEndTs: 0, _createClipStart: 0, _createClipEnd: 0, clipColor: ''}\" data-init=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 23, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 23, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -168,13 +168,13 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = CutClipInspector().Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"p-2 space-y-2\"><div data-cut-context-list class=\"space-y-1\"><p class=\"font-mono text-xs text-white/40\">Loading…</p></div><input type=\"text\" class=\"form-input\" placeholder=\"Context title…\" data-cut-context-title><div class=\"flex flex-wrap gap-1\"><button type=\"button\" class=\"btn-primary btn-sm\" data-cut-context-create>Save new</button> <button type=\"button\" class=\"ghost-btn-sm\" data-cut-context-update disabled>Update range</button> <button type=\"button\" class=\"ghost-btn-sm text-red-400\" data-cut-context-delete disabled>Delete</button></div><p class=\"font-mono text-xs text-white/40\">Selecting a window loads its range. Creating a clip remains a separate action.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.SidebarPanel("INSPECTOR", "_localInspectorOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.SidebarPanel("CONTEXT WINDOWS", "_localContextOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -190,7 +190,29 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"p-2\">")
+			templ_7745c5c3_Err = CutClipInspector().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = components.SidebarPanel("INSPECTOR", "_localInspectorOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"p-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -198,17 +220,17 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.SidebarPanel("COLOR / FILTERS", "_localFiltersOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.SidebarPanel("COLOR / FILTERS", "_localFiltersOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -226,11 +248,11 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.SidebarPanel("MULTICAM", "_localMulticamOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.SidebarPanel("MULTICAM", "_localMulticamOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -248,11 +270,11 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.SidebarPanel("EXPORT", "_localExportOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.SidebarPanel("EXPORT", "_localExportOpen").Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"mt-auto shrink-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"mt-auto shrink-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -260,7 +282,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div><!-- RIGHT: video + tools + timelines - pure flex, no overflow hiding --><div class=\"flex-1 min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden\"><!-- Video player: only flex-1 child, shrinks when tools appear --><div class=\"flex-1 min-h-0 flex flex-col\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><!-- RIGHT: video + tools + timelines - pure flex, no overflow hiding --><div class=\"flex-1 min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden\"><!-- Video player: only flex-1 child, shrinks when tools appear --><div class=\"flex-1 min-h-0 flex flex-col\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -268,7 +290,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"shrink-0 flex justify-center\"><div class=\"inline-flex items-center gap-2 px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"shrink-0 flex justify-center\"><div class=\"inline-flex items-center gap-2 px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -292,7 +314,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"w-px h-6 bg-white/20\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"w-px h-6 bg-white/20\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -300,7 +322,59 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"w-px h-6 bg-white/20\"></div><div class=\"text-sm text-white/80 font-mono tabular-nums text-right\" data-cut-transport-time>00:00:00.000 / 00:00:00.000</div></div></div></div><!-- Audio tools: flat - 1 div, 3 canvases, no sub-wrappers --><div id=\"audio-tools-container\" class=\"hidden shrink-0 h-24 flex gap-1 border-2 border-white/10 bg-neutral-900 p-1\" data-audio-tools><canvas class=\"w-10 border border-white/10 bg-neutral-950\" data-audio-meter title=\"Levels\" width=\"56\" height=\"120\"></canvas><canvas class=\"flex-1 min-w-0 border border-white/10 bg-neutral-950\" data-audio-spectrum title=\"Spectrum\" width=\"400\" height=\"120\"></canvas><canvas class=\"w-32 border border-white/10 bg-neutral-950\" data-audio-scope title=\"Scope\" width=\"192\" height=\"120\"></canvas></div><!-- Overview timeline: fixed height --><div class=\"shrink-0 h-10\"><div class=\"section-label\">OVERVIEW</div><div class=\"relative h-6 border-2 border-white/10 bg-neutral-950 overflow-hidden\" data-cut-overview><div class=\"absolute inset-0\" data-cut-overview-layer></div></div></div><!-- Work area: fixed height, NOT flex-1 --><div class=\"shrink-0 h-32\"><div class=\"section-label\">WORK AREA</div><div class=\"relative border-2 border-white/10 bg-neutral-950 overflow-hidden\" style=\"height: calc(100% - 1.25rem);\" data-cut-work><div class=\"absolute inset-0\" data-cut-work-layer></div></div></div><!-- Button bar --><div class=\"shrink-0 flex items-center gap-1 flex-wrap\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"w-px h-6 bg-white/20\"></div><div class=\"text-sm text-white/80 font-mono tabular-nums text-right\" data-cut-transport-time>00:00:00.000 / 00:00:00.000</div></div></div></div><!-- Audio tools: meters + loudness actions for quiet dialogue --><div id=\"audio-tools-container\" class=\"hidden shrink-0 flex flex-col gap-1 border-2 border-white/10 bg-neutral-900 p-1\" data-audio-tools><div class=\"h-24 flex gap-1\"><canvas class=\"w-10 border border-white/10 bg-neutral-950\" data-audio-meter title=\"Levels\" width=\"56\" height=\"120\"></canvas><canvas class=\"flex-1 min-w-0 border border-white/10 bg-neutral-950\" data-audio-spectrum title=\"Spectrum\" width=\"400\" height=\"120\"></canvas><canvas class=\"w-32 border border-white/10 bg-neutral-950\" data-audio-scope title=\"Scope\" width=\"192\" height=\"120\"></canvas></div><div class=\"flex items-center gap-2 flex-wrap px-1 py-1 border-t border-white/10\"><span class=\"text-[10px] font-mono text-white/50 tabular-nums min-w-16\" data-audio-lufs title=\"Approximate loudness from the meter\">-- LUFS</span> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Two-pass loudnorm to -14 LUFS on export. Use this for quiet podcasts.\" data-on:click=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(filters.FilterAddExprWithParams("normalize", "{mode:'loudnorm',target:'-14'}", filters.CutFilterConfig(video.ID)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 96, Col: 136}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\">Normalize -14</button> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Louder speech target\" data-on:click=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(filters.FilterAddExprWithParams("normalize", "{mode:'loudnorm',target:'-12'}", filters.CutFilterConfig(video.ID)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 102, Col: 136}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">Normalize -12</button> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Fixed +6 dB gain\" data-on:click=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var15 string
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(filters.FilterAddExprWithParams("volume", "{gain:'2'}", filters.CutFilterConfig(video.ID)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 108, Col: 113}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">+6 dB</button> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Broadcast compressor\" data-on:click=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(filters.FilterAddExprWithParams("compressor", "{threshold:'-24',ratio:'6',attack:'10',release:'300'}", filters.CutFilterConfig(video.ID)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 114, Col: 160}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">Compress</button> <span class=\"text-[10px] font-mono text-white/30\">Adds to COLOR / FILTERS · applied on export</span></div></div><!-- Overview timeline: fixed height --><div class=\"shrink-0 h-10\"><div class=\"section-label\">OVERVIEW</div><div class=\"relative h-6 border-2 border-white/10 bg-neutral-950 overflow-hidden\" data-cut-overview><div class=\"absolute inset-0\" data-cut-overview-layer></div></div></div><!-- Work area: fixed height, NOT flex-1 --><div class=\"shrink-0 h-32\"><div class=\"section-label\">WORK AREA</div><div class=\"relative border-2 border-white/10 bg-neutral-950 overflow-hidden\" style=\"height: calc(100% - 1.25rem);\" data-cut-work><div class=\"absolute inset-0\" data-cut-work-layer></div></div></div><!-- Button bar --><div class=\"shrink-0 flex items-center gap-1 flex-wrap\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -328,7 +402,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"grow\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"grow\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -344,7 +418,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"w-px h-6 bg-white/10\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"w-px h-6 bg-white/10\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -360,7 +434,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"w-px h-6 bg-white/10\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"w-px h-6 bg-white/10\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -388,7 +462,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button type=\"button\" class=\"btn btn-sm\" data-class=\"{'bg-amber-400/20 text-amber-400 border-amber-400/40': $_localAutoSave, 'bg-black text-white/40 border-white/10 hover:border-white/30': !$_localAutoSave}\" data-on:click=\"$_localAutoSave = !$_localAutoSave\" title=\"Toggle autosave\">AUTOSAVE</button>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<button type=\"button\" class=\"btn btn-sm\" data-class=\"{'bg-amber-400/20 text-amber-400 border-amber-400/40': $_localAutoSave, 'bg-black text-white/40 border-white/10 hover:border-white/30': !$_localAutoSave}\" data-on:click=\"$_localAutoSave = !$_localAutoSave\" title=\"Toggle autosave\">AUTOSAVE</button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -396,46 +470,46 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"text-xs text-white/40 font-mono tabular-nums\" data-cut-range></div></div></div></div><div class=\"hidden\"><!-- Signal → JS bridges (replaces setInterval polling) --><div data-on-signal-patch=\"window.cutEditor?.clipBank?.handleSignalPatch()\"></div><div data-effect=\"window.cutEditor?.applyFilterStack($_filterStack)\"></div><div data-effect=\"window.cutEditor?.onClipColorChange($clipColor)\"></div><div data-effect=\"window.cutEditor?.onAutosaveCheck($_clipDirty, $_localAutoSave, $_selectedClipId)\"></div><input type=\"hidden\" data-bind=\"_createClipStart\" data-cut-create-start> <input type=\"hidden\" data-bind=\"_createClipEnd\" data-cut-create-end> <button type=\"button\" data-cut-create-submit data-on:click=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div class=\"text-xs text-white/40 font-mono tabular-nums\" data-cut-range></div></div></div></div><div class=\"hidden\"><!-- Signal → JS bridges (replaces setInterval polling) --><div data-on-signal-patch=\"window.cutEditor?.clipBank?.handleSignalPatch()\"></div><div data-effect=\"window.cutEditor?.applyFilterStack($_filterStack)\"></div><div data-effect=\"window.cutEditor?.onClipColorChange($clipColor)\"></div><div data-effect=\"window.cutEditor?.onAutosaveCheck($_clipDirty, $_localAutoSave, $_selectedClipId)\"></div><input type=\"hidden\" data-bind=\"_createClipStart\" data-cut-create-start> <input type=\"hidden\" data-bind=\"_createClipEnd\" data-cut-create-end> <button type=\"button\" data-cut-create-submit data-on:click=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID))
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {start_ts: $_createClipStart, end_ts: $_createClipEnd, title: '', description: '', color: '', tags: []}})", video.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 145, Col: 190}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 187, Col: 190}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"></button> <button type=\"button\" data-cut-autosave-trigger data-on:click=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("if ($_selectedClipId) { @put('/api/clips/' + $_selectedClipId, {filterSignals:{exclude:/^$/}}) }"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 150, Col: 131}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"></button> <button type=\"button\" data-cut-autosave-trigger data-on:click=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"></button></div></div><link rel=\"stylesheet\" href=\"")
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("if ($_selectedClipId) { @put('/api/clips/' + $_selectedClipId, {filterSignals:{exclude:/^$/}}) }"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 192, Col: 131}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var14 templ.SafeURL
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(versionedAsset(ctx, "/static/dist/video-player.css"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 154, Col: 83}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"></button></div></div><link rel=\"stylesheet\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\">")
+		var templ_7745c5c3_Var19 templ.SafeURL
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(versionedAsset(ctx, "/static/dist/video-player.css"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 196, Col: 83}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -443,33 +517,33 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/video-player.js"))
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/video-player.js"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 156, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 198, Col: 66}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"></script><script src=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/cut-page.js"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/video_cut.templ`, Line: 157, Col: 62}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"></script><script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"></script>")
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/cut-page.js"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `video_cut.templ`, Line: 199, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"></script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

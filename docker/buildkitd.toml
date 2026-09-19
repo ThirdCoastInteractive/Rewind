@@ -1,0 +1,12 @@
+# Dedicated local development cache. Does not change Docker Engine or CI policy.
+[worker.oci]
+  gc = true
+  max-parallelism = 4
+
+  # CUDA compiler, Whisper, Ollama and vision layers exceed Desktop's 20GB default.
+  # Retain useful layers until space pressure, without an age-only eviction rule.
+  [[worker.oci.gcpolicy]]
+    all = true
+    reservedSpace = "48GB"
+    maxUsedSpace = "64GB"
+    minFreeSpace = "20GB"

@@ -1,0 +1,102 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+type TopicChip struct {
+	Slug  string
+	Title string
+}
+
+type TopicNeighbor struct {
+	VideoID    string
+	Title      string
+	VideoTitle string
+	Uploader   string
+	Start      float64
+	WebPath    string
+	TopicTitle string
+}
+
+templ WatchContextWindows(videoID string, rows []*db.ListContextWindowsForVideoRow, topicChips map[string][]TopicChip, neighbors []TopicNeighbor) {
+	<div id="context-window-results" class="space-y-3 max-h-96 overflow-auto">
+		<p class="text-xs text-white/50" role="status">{ contextListStatus(rows) }</p>
+		if len(rows) == 0 {
+			<p class="text-sm text-white/60">No matching context. Try another search, or use Generate context above. Processing status shows queued work and errors.</p>
+			<a class="text-xs underline" href={ templ.SafeURL("/videos/" + videoID + "/cut") }>Open Cut</a>
+		}
+		for _, row := range rows {
+			if row.Kind != "short" {
+				<article
+					class="border border-white/20 p-3 space-y-2"
+					data-range-start={ fmt.Sprintf("%.3f", row.StartTs) }
+					data-range-end={ fmt.Sprintf("%.3f", row.EndTs) }
+				>
+					<button type="button" class="text-left w-full hover:underline" data-context-seek={ fmt.Sprintf("%.3f", row.StartTs) } title="Seek to this context">
+						<span class="block text-xs text-white/60">{ format.Duration(row.StartTs) } – { format.Duration(row.EndTs) }</span>
+						<span class="block font-bold text-sm">{ row.Title }</span>
+					</button>
+					if row.Summary != "" {
+						<p class="text-xs text-white/70">{ row.Summary }</p>
+					}
+					if chips := topicChips[row.ID.String()]; len(chips) > 0 {
+						<div class="flex flex-wrap gap-1">
+							for _, chip := range chips {
+								<a class="text-[10px] font-mono uppercase tracking-wider text-white/70 bg-white/5 px-1.5 py-0.5" href={ templ.SafeURL("/wiki/topic/" + chip.Slug) }>{ chip.Title }</a>
+							}
+						</div>
+					}
+					if row.EvidenceStale {
+						<p class="text-xs text-amber-300">Transcript changed. Review these boundaries before clipping.</p>
+					}
+					<div class="flex flex-wrap gap-2 items-center">
+						<div id={ "context-clip-" + row.ID.String() } data-ignore-morph>
+							<button type="button" class="btn-primary btn-sm" data-indicator:context-clipping data-attr:disabled="$contextClipping" data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {context_window_id: '%s'}})", videoID, row.ID.String()) }>Create clip</button>
+						</div>
+						<a class="text-xs underline" href={ templ.SafeURL(fmt.Sprintf("/videos/%s/cut?context=%s", videoID, row.ID.String())) }>Adjust in Cut</a>
+					</div>
+					for _, sh := range rows {
+						if contextShortBelongsTo(sh, row) {
+							<div
+								class="border-l-2 border-cyan-400/50 pl-3 py-1 space-y-1"
+								data-range-start={ fmt.Sprintf("%.3f", sh.StartTs) }
+								data-range-end={ fmt.Sprintf("%.3f", sh.EndTs) }
+							>
+								<button type="button" class="text-left w-full hover:underline" data-context-seek={ fmt.Sprintf("%.3f", sh.StartTs) } title="Seek to this short">
+									<span class="block text-[10px] font-mono text-cyan-300/80 uppercase tracking-wider">Short · { format.Duration(sh.StartTs) } – { format.Duration(sh.EndTs) }</span>
+									<span class="block text-sm">{ sh.Title }</span>
+								</button>
+								if sh.Hook != "" {
+									<p class="text-xs text-white/50 italic">{ sh.Hook }</p>
+								}
+								<div id={ "context-clip-" + sh.ID.String() } data-ignore-morph>
+									<button type="button" class="ghost-btn-sm" data-indicator:context-clipping data-attr:disabled="$contextClipping" data-on:click={ fmt.Sprintf("@post('/api/videos/%s/clips', {payload: {context_window_id: '%s'}})", videoID, sh.ID.String()) }>Clip short</button>
+								</div>
+							</div>
+						}
+					}
+				</article>
+			}
+		}
+		if len(neighbors) > 0 {
+			<div class="border-t border-white/10 pt-3 space-y-2">
+				<p class="text-[10px] font-mono uppercase tracking-wider text-white/40">Also on this topic · inferred</p>
+				for _, n := range neighbors {
+					<a class="block text-xs hover:underline" href={ templ.SafeURL(n.WebPath) }>
+						<span class="text-white/80">{ n.Title }</span>
+						<span class="block text-white/40">{ n.Uploader } · { n.TopicTitle }</span>
+					</a>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ ContextClipCreated(windowID, videoID, clipID string) {
+	<div id={ "context-clip-" + windowID } data-ignore-morph role="status" class="text-xs">
+		Clip created · <a class="underline" href={ templ.SafeURL("/videos/" + videoID + "/cut?clip=" + clipID) }>Edit clip</a>
+	</div>
+}

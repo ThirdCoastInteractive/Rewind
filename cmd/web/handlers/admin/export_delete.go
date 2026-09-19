@@ -10,37 +10,43 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
-// HandleAdminExportDelete serves DELETE /admin/exports/:id, removing a single export record and its file.
+// HandleAdminExportDelete serves DELETE /admin/exports/:id, removing a rendered export file and row.
 func HandleAdminExportDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
 
-		exportID := c.Param("id")
 		var exportUUID pgtype.UUID
-		if err := exportUUID.Scan(exportID); err != nil {
+		if err := exportUUID.Scan(c.Param("id")); err != nil {
 			return c.String(400, "invalid export id")
 		}
 
-		// Get file path first
+		if exportKind(c) == "stitch" {
+			job, err := q.GetStitchJob(ctx, exportUUID)
+			if err != nil {
+				return c.String(404, "export not found")
+			}
+			if job.FilePath != "" {
+				_ = os.Remove(job.FilePath)
+			}
+			if err := q.DeleteStitchJob(ctx, exportUUID); err != nil {
+				slog.Error("failed to delete stitch export", "error", err, "id", c.Param("id"))
+				return c.String(500, "failed to delete export")
+			}
+			return c.String(200, "deleted")
+		}
+
 		exp, err := q.GetClipExportByID(ctx, exportUUID)
 		if err != nil {
 			return c.String(404, "export not found")
 		}
-
-		// Delete file if exists
 		if exp.FilePath != "" {
 			_ = os.Remove(exp.FilePath)
 		}
-
-		// Delete DB record
 		if err := q.DeleteClipExport(ctx, exportUUID); err != nil {
-			slog.Error("failed to delete export", "error", err, "id", exportID)
+			slog.Error("failed to delete clip export", "error", err, "id", c.Param("id"))
 			return c.String(500, "failed to delete export")
 		}
-
 		return c.String(200, "deleted")
 	}
 }
-
-// HandleAdminExportRequeue requeues a single export.

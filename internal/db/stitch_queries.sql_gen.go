@@ -12,6 +12,76 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
 
+const countStitchExports = `-- name: CountStitchExports :one
+SELECT COUNT(*) FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+`
+
+// CountStitchExports
+//
+//	SELECT COUNT(*) FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+func (q *Queries) CountStitchExports(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countStitchExports)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createCompilationStitchProject = `-- name: CreateCompilationStitchProject :execrows
+INSERT INTO stitch_projects (id, created_by, title)
+VALUES ($1, $2, $3)
+ON CONFLICT (id) DO NOTHING
+`
+
+type CreateCompilationStitchProjectParams struct {
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+	Title     string      `db:"title" json:"Title"`
+}
+
+// Deterministic ID per plan revision makes client retries safe.
+//
+//	INSERT INTO stitch_projects (id, created_by, title)
+//	VALUES ($1, $2, $3)
+//	ON CONFLICT (id) DO NOTHING
+func (q *Queries) CreateCompilationStitchProject(ctx context.Context, arg *CreateCompilationStitchProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createCompilationStitchProject, arg.ID, arg.CreatedBy, arg.Title)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const createStitchFolder = `-- name: CreateStitchFolder :one
+INSERT INTO stitch_folders (created_by, parent_id, name)
+VALUES ($1, $2, $3)
+RETURNING id, created_by, parent_id, name, created_at, updated_at
+`
+
+type CreateStitchFolderParams struct {
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+	ParentID  pgtype.UUID `db:"parent_id" json:"ParentID"`
+	Name      string      `db:"name" json:"Name"`
+}
+
+// CreateStitchFolder
+//
+//	INSERT INTO stitch_folders (created_by, parent_id, name)
+//	VALUES ($1, $2, $3)
+//	RETURNING id, created_by, parent_id, name, created_at, updated_at
+func (q *Queries) CreateStitchFolder(ctx context.Context, arg *CreateStitchFolderParams) (*StitchFolder, error) {
+	row := q.db.QueryRow(ctx, createStitchFolder, arg.CreatedBy, arg.ParentID, arg.Name)
+	var i StitchFolder
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.ParentID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const createStitchJob = `-- name: CreateStitchJob :one
 INSERT INTO stitch_jobs (created_by, title, format, quality, segments, global_filters, project_id)
 VALUES ($1, $2, $3, $4,
@@ -51,26 +121,86 @@ func (q *Queries) CreateStitchJob(ctx context.Context, arg *CreateStitchJobParam
 }
 
 const createStitchProject = `-- name: CreateStitchProject :one
-INSERT INTO stitch_projects (created_by, title)
-VALUES ($1, $2)
+INSERT INTO stitch_projects (created_by, title, document, document_version, editor_enabled, revision)
+VALUES ($1, $2, $3, 1, true, 0)
 RETURNING id
 `
 
 type CreateStitchProjectParams struct {
 	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
 	Title     string      `db:"title" json:"Title"`
+	Document  []byte      `db:"document" json:"Document"`
 }
 
-// CreateStitchProject
+// New projects are always canonical documents (editor_enabled is set, never a product switch).
 //
-//	INSERT INTO stitch_projects (created_by, title)
-//	VALUES ($1, $2)
+//	INSERT INTO stitch_projects (created_by, title, document, document_version, editor_enabled, revision)
+//	VALUES ($1, $2, $3, 1, true, 0)
 //	RETURNING id
 func (q *Queries) CreateStitchProject(ctx context.Context, arg *CreateStitchProjectParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createStitchProject, arg.CreatedBy, arg.Title)
+	row := q.db.QueryRow(ctx, createStitchProject, arg.CreatedBy, arg.Title, arg.Document)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const deleteAllStitchExports = `-- name: DeleteAllStitchExports :exec
+DELETE FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+`
+
+// DeleteAllStitchExports
+//
+//	DELETE FROM stitch_jobs WHERE COALESCE(render_kind, 'export') = 'export'
+func (q *Queries) DeleteAllStitchExports(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllStitchExports)
+	return err
+}
+
+const deleteStitchExportsByStatus = `-- name: DeleteStitchExportsByStatus :exec
+DELETE FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = $1
+`
+
+// DeleteStitchExportsByStatus
+//
+//	DELETE FROM stitch_jobs
+//	WHERE COALESCE(render_kind, 'export') = 'export'
+//	  AND status = $1
+func (q *Queries) DeleteStitchExportsByStatus(ctx context.Context, status ExportStatus) error {
+	_, err := q.db.Exec(ctx, deleteStitchExportsByStatus, status)
+	return err
+}
+
+const deleteStitchFolder = `-- name: DeleteStitchFolder :exec
+DELETE FROM stitch_folders
+WHERE id = $1 AND created_by = $2
+`
+
+type DeleteStitchFolderParams struct {
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+}
+
+// DeleteStitchFolder
+//
+//	DELETE FROM stitch_folders
+//	WHERE id = $1 AND created_by = $2
+func (q *Queries) DeleteStitchFolder(ctx context.Context, arg *DeleteStitchFolderParams) error {
+	_, err := q.db.Exec(ctx, deleteStitchFolder, arg.ID, arg.CreatedBy)
+	return err
+}
+
+const deleteStitchJob = `-- name: DeleteStitchJob :exec
+DELETE FROM stitch_jobs WHERE id = $1
+`
+
+// DeleteStitchJob
+//
+//	DELETE FROM stitch_jobs WHERE id = $1
+func (q *Queries) DeleteStitchJob(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteStitchJob, id)
+	return err
 }
 
 const deleteStitchProject = `-- name: DeleteStitchProject :exec
@@ -110,17 +240,24 @@ WHERE id = (
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, created_by, title, format, quality, segments, global_filters
+RETURNING id, created_by, title, format, quality, segments, global_filters, document_snapshot, project_revision, render_options, render_kind, range_start_us, range_end_us, frame_time_us
 `
 
 type FindAndLockPendingStitchJobRow struct {
-	ID            pgtype.UUID `db:"id" json:"ID"`
-	CreatedBy     pgtype.UUID `db:"created_by" json:"CreatedBy"`
-	Title         string      `db:"title" json:"Title"`
-	Format        string      `db:"format" json:"Format"`
-	Quality       string      `db:"quality" json:"Quality"`
-	Segments      []byte      `db:"segments" json:"Segments"`
-	GlobalFilters []byte      `db:"global_filters" json:"GlobalFilters"`
+	ID               pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy        pgtype.UUID `db:"created_by" json:"CreatedBy"`
+	Title            string      `db:"title" json:"Title"`
+	Format           string      `db:"format" json:"Format"`
+	Quality          string      `db:"quality" json:"Quality"`
+	Segments         []byte      `db:"segments" json:"Segments"`
+	GlobalFilters    []byte      `db:"global_filters" json:"GlobalFilters"`
+	DocumentSnapshot []byte      `db:"document_snapshot" json:"DocumentSnapshot"`
+	ProjectRevision  *int64      `db:"project_revision" json:"ProjectRevision"`
+	RenderOptions    []byte      `db:"render_options" json:"RenderOptions"`
+	RenderKind       string      `db:"render_kind" json:"RenderKind"`
+	RangeStartUs     *int64      `db:"range_start_us" json:"RangeStartUs"`
+	RangeEndUs       *int64      `db:"range_end_us" json:"RangeEndUs"`
+	FrameTimeUs      *int64      `db:"frame_time_us" json:"FrameTimeUs"`
 }
 
 // Atomically claim the oldest queued stitch job for processing.
@@ -140,7 +277,7 @@ type FindAndLockPendingStitchJobRow struct {
 //	    LIMIT 1
 //	    FOR UPDATE SKIP LOCKED
 //	)
-//	RETURNING id, created_by, title, format, quality, segments, global_filters
+//	RETURNING id, created_by, title, format, quality, segments, global_filters, document_snapshot, project_revision, render_options, render_kind, range_start_us, range_end_us, frame_time_us
 func (q *Queries) FindAndLockPendingStitchJob(ctx context.Context, lockedBy *string) (*FindAndLockPendingStitchJobRow, error) {
 	row := q.db.QueryRow(ctx, findAndLockPendingStitchJob, lockedBy)
 	var i FindAndLockPendingStitchJobRow
@@ -152,6 +289,13 @@ func (q *Queries) FindAndLockPendingStitchJob(ctx context.Context, lockedBy *str
 		&i.Quality,
 		&i.Segments,
 		&i.GlobalFilters,
+		&i.DocumentSnapshot,
+		&i.ProjectRevision,
+		&i.RenderOptions,
+		&i.RenderKind,
+		&i.RangeStartUs,
+		&i.RangeEndUs,
+		&i.FrameTimeUs,
 	)
 	return &i, err
 }
@@ -238,7 +382,7 @@ func (q *Queries) FinishStitchJobReady(ctx context.Context, arg *FinishStitchJob
 }
 
 const getClipsForStitch = `-- name: GetClipsForStitch :many
-SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack
+SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
 FROM clips c
 WHERE c.id = ANY($1::uuid[])
 `
@@ -251,11 +395,12 @@ type GetClipsForStitchRow struct {
 	Duration    float64         `db:"duration" json:"Duration"`
 	Crops       crops.CropArray `db:"crops" json:"Crops"`
 	FilterStack []byte          `db:"filter_stack" json:"FilterStack"`
+	ShotList    crops.ShotList  `db:"shot_list" json:"ShotList"`
 }
 
 // Bulk load clip data for the encoder (timestamps, crops).
 //
-//	SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack
+//	SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
 //	FROM clips c
 //	WHERE c.id = ANY($1::uuid[])
 func (q *Queries) GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*GetClipsForStitchRow, error) {
@@ -275,6 +420,7 @@ func (q *Queries) GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*
 			&i.Duration,
 			&i.Crops,
 			&i.FilterStack,
+			&i.ShotList,
 		); err != nil {
 			return nil, err
 		}
@@ -318,8 +464,75 @@ func (q *Queries) GetStitchExportFile(ctx context.Context, id pgtype.UUID) (*Get
 	return &i, err
 }
 
+const getStitchExportStats = `-- name: GetStitchExportStats :one
+SELECT
+    COUNT(*) FILTER (WHERE status = 'queued') AS queued_count,
+    COUNT(*) FILTER (WHERE status = 'processing') AS processing_count,
+    COUNT(*) FILTER (WHERE status = 'ready') AS ready_count,
+    COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+    COALESCE(SUM(size_bytes) FILTER (WHERE status = 'ready'), 0)::bigint AS total_size_bytes
+FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+`
+
+type GetStitchExportStatsRow struct {
+	QueuedCount     int64 `db:"queued_count" json:"QueuedCount"`
+	ProcessingCount int64 `db:"processing_count" json:"ProcessingCount"`
+	ReadyCount      int64 `db:"ready_count" json:"ReadyCount"`
+	ErrorCount      int64 `db:"error_count" json:"ErrorCount"`
+	TotalSizeBytes  int64 `db:"total_size_bytes" json:"TotalSizeBytes"`
+}
+
+// GetStitchExportStats
+//
+//	SELECT
+//	    COUNT(*) FILTER (WHERE status = 'queued') AS queued_count,
+//	    COUNT(*) FILTER (WHERE status = 'processing') AS processing_count,
+//	    COUNT(*) FILTER (WHERE status = 'ready') AS ready_count,
+//	    COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+//	    COALESCE(SUM(size_bytes) FILTER (WHERE status = 'ready'), 0)::bigint AS total_size_bytes
+//	FROM stitch_jobs
+//	WHERE COALESCE(render_kind, 'export') = 'export'
+func (q *Queries) GetStitchExportStats(ctx context.Context) (*GetStitchExportStatsRow, error) {
+	row := q.db.QueryRow(ctx, getStitchExportStats)
+	var i GetStitchExportStatsRow
+	err := row.Scan(
+		&i.QueuedCount,
+		&i.ProcessingCount,
+		&i.ReadyCount,
+		&i.ErrorCount,
+		&i.TotalSizeBytes,
+	)
+	return &i, err
+}
+
+const getStitchFolder = `-- name: GetStitchFolder :one
+SELECT id, created_by, parent_id, name, created_at, updated_at
+FROM stitch_folders
+WHERE id = $1
+`
+
+// GetStitchFolder
+//
+//	SELECT id, created_by, parent_id, name, created_at, updated_at
+//	FROM stitch_folders
+//	WHERE id = $1
+func (q *Queries) GetStitchFolder(ctx context.Context, id pgtype.UUID) (*StitchFolder, error) {
+	row := q.db.QueryRow(ctx, getStitchFolder, id)
+	var i StitchFolder
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.ParentID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return &i, err
+}
+
 const getStitchJob = `-- name: GetStitchJob :one
-SELECT id, title, format, quality, segments, global_filters, status, progress_pct,
+SELECT id, created_by, title, format, quality, segments, global_filters, status, progress_pct,
        file_path, size_bytes, last_error, created_at, updated_at
 FROM stitch_jobs
 WHERE id = $1
@@ -327,6 +540,7 @@ WHERE id = $1
 
 type GetStitchJobRow struct {
 	ID            pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy     pgtype.UUID        `db:"created_by" json:"CreatedBy"`
 	Title         string             `db:"title" json:"Title"`
 	Format        string             `db:"format" json:"Format"`
 	Quality       string             `db:"quality" json:"Quality"`
@@ -343,7 +557,7 @@ type GetStitchJobRow struct {
 
 // GetStitchJob
 //
-//	SELECT id, title, format, quality, segments, global_filters, status, progress_pct,
+//	SELECT id, created_by, title, format, quality, segments, global_filters, status, progress_pct,
 //	       file_path, size_bytes, last_error, created_at, updated_at
 //	FROM stitch_jobs
 //	WHERE id = $1
@@ -352,6 +566,7 @@ func (q *Queries) GetStitchJob(ctx context.Context, id pgtype.UUID) (*GetStitchJ
 	var i GetStitchJobRow
 	err := row.Scan(
 		&i.ID,
+		&i.CreatedBy,
 		&i.Title,
 		&i.Format,
 		&i.Quality,
@@ -401,19 +616,33 @@ func (q *Queries) GetStitchJobStatus(ctx context.Context, id pgtype.UUID) (*GetS
 }
 
 const getStitchProject = `-- name: GetStitchProject :one
-SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at
+SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at, description, tags
 FROM stitch_projects
 WHERE id = $1
 `
 
+type GetStitchProjectRow struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy     pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	Title         string             `db:"title" json:"Title"`
+	Format        string             `db:"format" json:"Format"`
+	Quality       string             `db:"quality" json:"Quality"`
+	Segments      []byte             `db:"segments" json:"Segments"`
+	GlobalFilters []byte             `db:"global_filters" json:"GlobalFilters"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Description   string             `db:"description" json:"Description"`
+	Tags          []string           `db:"tags" json:"Tags"`
+}
+
 // GetStitchProject
 //
-//	SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at
+//	SELECT id, created_by, title, format, quality, segments, global_filters, created_at, updated_at, description, tags
 //	FROM stitch_projects
 //	WHERE id = $1
-func (q *Queries) GetStitchProject(ctx context.Context, id pgtype.UUID) (*StitchProject, error) {
+func (q *Queries) GetStitchProject(ctx context.Context, id pgtype.UUID) (*GetStitchProjectRow, error) {
 	row := q.db.QueryRow(ctx, getStitchProject, id)
-	var i StitchProject
+	var i GetStitchProjectRow
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedBy,
@@ -424,6 +653,8 @@ func (q *Queries) GetStitchProject(ctx context.Context, id pgtype.UUID) (*Stitch
 		&i.GlobalFilters,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Description,
+		&i.Tags,
 	)
 	return &i, err
 }
@@ -468,6 +699,191 @@ func (q *Queries) LatestStitchJobPerProject(ctx context.Context, projectIds []pg
 			&i.ProgressPct,
 			&i.FilePath,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStitchExportFilesByStatus = `-- name: ListStitchExportFilesByStatus :many
+SELECT id, file_path FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = $1
+`
+
+type ListStitchExportFilesByStatusRow struct {
+	ID       pgtype.UUID `db:"id" json:"ID"`
+	FilePath string      `db:"file_path" json:"FilePath"`
+}
+
+// ListStitchExportFilesByStatus
+//
+//	SELECT id, file_path FROM stitch_jobs
+//	WHERE COALESCE(render_kind, 'export') = 'export'
+//	  AND status = $1
+func (q *Queries) ListStitchExportFilesByStatus(ctx context.Context, status ExportStatus) ([]*ListStitchExportFilesByStatusRow, error) {
+	rows, err := q.db.Query(ctx, listStitchExportFilesByStatus, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListStitchExportFilesByStatusRow
+	for rows.Next() {
+		var i ListStitchExportFilesByStatusRow
+		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStitchExportsForAdmin = `-- name: ListStitchExportsForAdmin :many
+SELECT
+    id,
+    project_id,
+    title,
+    status,
+    format,
+    quality,
+    COALESCE(render_kind, 'export') AS render_kind,
+    file_path,
+    size_bytes,
+    progress_pct,
+    attempts,
+    last_error,
+    created_at
+FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListStitchExportsForAdminParams struct {
+	Off int32 `db:"off" json:"Off"`
+	Lim int32 `db:"lim" json:"Lim"`
+}
+
+type ListStitchExportsForAdminRow struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	ProjectID   pgtype.UUID        `db:"project_id" json:"ProjectID"`
+	Title       string             `db:"title" json:"Title"`
+	Status      ExportStatus       `db:"status" json:"Status"`
+	Format      string             `db:"format" json:"Format"`
+	Quality     string             `db:"quality" json:"Quality"`
+	RenderKind  string             `db:"render_kind" json:"RenderKind"`
+	FilePath    string             `db:"file_path" json:"FilePath"`
+	SizeBytes   int64              `db:"size_bytes" json:"SizeBytes"`
+	ProgressPct int32              `db:"progress_pct" json:"ProgressPct"`
+	Attempts    int32              `db:"attempts" json:"Attempts"`
+	LastError   *string            `db:"last_error" json:"LastError"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+// ListStitchExportsForAdmin
+//
+//	SELECT
+//	    id,
+//	    project_id,
+//	    title,
+//	    status,
+//	    format,
+//	    quality,
+//	    COALESCE(render_kind, 'export') AS render_kind,
+//	    file_path,
+//	    size_bytes,
+//	    progress_pct,
+//	    attempts,
+//	    last_error,
+//	    created_at
+//	FROM stitch_jobs
+//	WHERE COALESCE(render_kind, 'export') = 'export'
+//	ORDER BY created_at DESC
+//	LIMIT $2 OFFSET $1
+func (q *Queries) ListStitchExportsForAdmin(ctx context.Context, arg *ListStitchExportsForAdminParams) ([]*ListStitchExportsForAdminRow, error) {
+	rows, err := q.db.Query(ctx, listStitchExportsForAdmin, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListStitchExportsForAdminRow
+	for rows.Next() {
+		var i ListStitchExportsForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Status,
+			&i.Format,
+			&i.Quality,
+			&i.RenderKind,
+			&i.FilePath,
+			&i.SizeBytes,
+			&i.ProgressPct,
+			&i.Attempts,
+			&i.LastError,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStitchFoldersForUser = `-- name: ListStitchFoldersForUser :many
+SELECT f.id, f.created_by, f.parent_id, f.name, f.created_at, f.updated_at,
+       (SELECT COUNT(*)::bigint FROM stitch_projects p WHERE p.folder_id = f.id) AS project_count
+FROM stitch_folders f
+WHERE f.created_by = $1
+ORDER BY f.name
+`
+
+type ListStitchFoldersForUserRow struct {
+	ID           pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy    pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	ParentID     pgtype.UUID        `db:"parent_id" json:"ParentID"`
+	Name         string             `db:"name" json:"Name"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	ProjectCount int64              `db:"project_count" json:"ProjectCount"`
+}
+
+// ListStitchFoldersForUser
+//
+//	SELECT f.id, f.created_by, f.parent_id, f.name, f.created_at, f.updated_at,
+//	       (SELECT COUNT(*)::bigint FROM stitch_projects p WHERE p.folder_id = f.id) AS project_count
+//	FROM stitch_folders f
+//	WHERE f.created_by = $1
+//	ORDER BY f.name
+func (q *Queries) ListStitchFoldersForUser(ctx context.Context, userID pgtype.UUID) ([]*ListStitchFoldersForUserRow, error) {
+	rows, err := q.db.Query(ctx, listStitchFoldersForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListStitchFoldersForUserRow
+	for rows.Next() {
+		var i ListStitchFoldersForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedBy,
+			&i.ParentID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectCount,
 		); err != nil {
 			return nil, err
 		}
@@ -536,35 +952,121 @@ func (q *Queries) ListStitchJobsByProject(ctx context.Context, projectID pgtype.
 	return items, nil
 }
 
-const listStitchProjects = `-- name: ListStitchProjects :many
-
-SELECT id, title, format, quality, segments, created_at, updated_at
-FROM stitch_projects
-WHERE created_by = $1
-ORDER BY updated_at DESC
+const listStitchProjectOwners = `-- name: ListStitchProjectOwners :many
+SELECT u.id, u.user_name, COUNT(*)::bigint AS project_count
+FROM stitch_projects p
+JOIN users u ON u.id = p.created_by
+WHERE u.deleted_at IS NULL
+GROUP BY u.id, u.user_name
+ORDER BY u.user_name
 `
 
+type ListStitchProjectOwnersRow struct {
+	ID           pgtype.UUID `db:"id" json:"ID"`
+	UserName     string      `db:"user_name" json:"UserName"`
+	ProjectCount int64       `db:"project_count" json:"ProjectCount"`
+}
+
+// ListStitchProjectOwners
+//
+//	SELECT u.id, u.user_name, COUNT(*)::bigint AS project_count
+//	FROM stitch_projects p
+//	JOIN users u ON u.id = p.created_by
+//	WHERE u.deleted_at IS NULL
+//	GROUP BY u.id, u.user_name
+//	ORDER BY u.user_name
+func (q *Queries) ListStitchProjectOwners(ctx context.Context) ([]*ListStitchProjectOwnersRow, error) {
+	rows, err := q.db.Query(ctx, listStitchProjectOwners)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListStitchProjectOwnersRow
+	for rows.Next() {
+		var i ListStitchProjectOwnersRow
+		if err := rows.Scan(&i.ID, &i.UserName, &i.ProjectCount); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStitchProjects = `-- name: ListStitchProjects :many
+
+SELECT p.id, p.title, p.format, p.quality, p.segments, p.created_at, p.updated_at,
+       p.created_by, p.folder_id, u.user_name AS created_by_name,
+       COALESCE(f.name, '') AS folder_name, p.description, p.tags
+FROM stitch_projects p
+JOIN users u ON u.id = p.created_by
+LEFT JOIN stitch_folders f ON f.id = p.folder_id
+WHERE ($1::uuid IS NULL OR p.created_by = $1)
+  AND (
+    $2::text = 'all'
+    OR ($2::text = 'unfiled' AND p.folder_id IS NULL)
+    OR ($2::text = 'folder' AND p.folder_id = $3)
+  )
+  AND ($4::text IS NULL OR $4 = '' OR p.title ILIKE '%' || $4 || '%' OR p.description ILIKE '%' || $4 || '%')
+ORDER BY p.updated_at DESC
+`
+
+type ListStitchProjectsParams struct {
+	UserID     pgtype.UUID `db:"user_id" json:"UserID"`
+	FolderMode string      `db:"folder_mode" json:"FolderMode"`
+	FolderID   pgtype.UUID `db:"folder_id" json:"FolderID"`
+	Query      *string     `db:"query" json:"Query"`
+}
+
 type ListStitchProjectsRow struct {
-	ID        pgtype.UUID        `db:"id" json:"ID"`
-	Title     string             `db:"title" json:"Title"`
-	Format    string             `db:"format" json:"Format"`
-	Quality   string             `db:"quality" json:"Quality"`
-	Segments  []byte             `db:"segments" json:"Segments"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
-	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	Title         string             `db:"title" json:"Title"`
+	Format        string             `db:"format" json:"Format"`
+	Quality       string             `db:"quality" json:"Quality"`
+	Segments      []byte             `db:"segments" json:"Segments"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	CreatedBy     pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	FolderID      pgtype.UUID        `db:"folder_id" json:"FolderID"`
+	CreatedByName string             `db:"created_by_name" json:"CreatedByName"`
+	FolderName    string             `db:"folder_name" json:"FolderName"`
+	Description   string             `db:"description" json:"Description"`
+	Tags          []string           `db:"tags" json:"Tags"`
 }
 
 // ============================================================================
 // Stitch projects (persistent editor state)
 // ============================================================================
-// List all stitch projects for a user, newest-updated first.
+// List stitch projects. user_id NULL = every owner. folder_mode:
 //
-//	SELECT id, title, format, quality, segments, created_at, updated_at
-//	FROM stitch_projects
-//	WHERE created_by = $1
-//	ORDER BY updated_at DESC
-func (q *Queries) ListStitchProjects(ctx context.Context, userID pgtype.UUID) ([]*ListStitchProjectsRow, error) {
-	rows, err := q.db.Query(ctx, listStitchProjects, userID)
+//	 all     ignore folder
+//	 unfiled folder_id IS NULL
+//	 folder  folder_id = folder_id arg
+//
+//
+//	SELECT p.id, p.title, p.format, p.quality, p.segments, p.created_at, p.updated_at,
+//	       p.created_by, p.folder_id, u.user_name AS created_by_name,
+//	       COALESCE(f.name, '') AS folder_name, p.description, p.tags
+//	FROM stitch_projects p
+//	JOIN users u ON u.id = p.created_by
+//	LEFT JOIN stitch_folders f ON f.id = p.folder_id
+//	WHERE ($1::uuid IS NULL OR p.created_by = $1)
+//	  AND (
+//	    $2::text = 'all'
+//	    OR ($2::text = 'unfiled' AND p.folder_id IS NULL)
+//	    OR ($2::text = 'folder' AND p.folder_id = $3)
+//	  )
+//	  AND ($4::text IS NULL OR $4 = '' OR p.title ILIKE '%' || $4 || '%' OR p.description ILIKE '%' || $4 || '%')
+//	ORDER BY p.updated_at DESC
+func (q *Queries) ListStitchProjects(ctx context.Context, arg *ListStitchProjectsParams) ([]*ListStitchProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listStitchProjects,
+		arg.UserID,
+		arg.FolderMode,
+		arg.FolderID,
+		arg.Query,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -580,6 +1082,12 @@ func (q *Queries) ListStitchProjects(ctx context.Context, userID pgtype.UUID) ([
 			&i.Segments,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedBy,
+			&i.FolderID,
+			&i.CreatedByName,
+			&i.FolderName,
+			&i.Description,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -591,7 +1099,79 @@ func (q *Queries) ListStitchProjects(ctx context.Context, userID pgtype.UUID) ([
 	return items, nil
 }
 
-const resetStuckStitchJobs = `-- name: ResetStuckStitchJobs :exec
+const moveStitchProject = `-- name: MoveStitchProject :exec
+UPDATE stitch_projects
+SET folder_id = $1, updated_at = now()
+WHERE id = $2 AND created_by = $3
+`
+
+type MoveStitchProjectParams struct {
+	FolderID  pgtype.UUID `db:"folder_id" json:"FolderID"`
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+}
+
+// MoveStitchProject
+//
+//	UPDATE stitch_projects
+//	SET folder_id = $1, updated_at = now()
+//	WHERE id = $2 AND created_by = $3
+func (q *Queries) MoveStitchProject(ctx context.Context, arg *MoveStitchProjectParams) error {
+	_, err := q.db.Exec(ctx, moveStitchProject, arg.FolderID, arg.ID, arg.CreatedBy)
+	return err
+}
+
+const renameStitchFolder = `-- name: RenameStitchFolder :exec
+UPDATE stitch_folders
+SET name = $1, updated_at = now()
+WHERE id = $2 AND created_by = $3
+`
+
+type RenameStitchFolderParams struct {
+	Name      string      `db:"name" json:"Name"`
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+}
+
+// RenameStitchFolder
+//
+//	UPDATE stitch_folders
+//	SET name = $1, updated_at = now()
+//	WHERE id = $2 AND created_by = $3
+func (q *Queries) RenameStitchFolder(ctx context.Context, arg *RenameStitchFolderParams) error {
+	_, err := q.db.Exec(ctx, renameStitchFolder, arg.Name, arg.ID, arg.CreatedBy)
+	return err
+}
+
+const requeueAllErrorStitchExports = `-- name: RequeueAllErrorStitchExports :exec
+UPDATE stitch_jobs
+SET status = 'queued',
+    locked_at = NULL,
+    locked_by = NULL,
+    progress_pct = 0,
+    last_error = 'Requeued by admin',
+    updated_at = NOW()
+WHERE COALESCE(render_kind, 'export') = 'export'
+  AND status = 'error'
+`
+
+// RequeueAllErrorStitchExports
+//
+//	UPDATE stitch_jobs
+//	SET status = 'queued',
+//	    locked_at = NULL,
+//	    locked_by = NULL,
+//	    progress_pct = 0,
+//	    last_error = 'Requeued by admin',
+//	    updated_at = NOW()
+//	WHERE COALESCE(render_kind, 'export') = 'export'
+//	  AND status = 'error'
+func (q *Queries) RequeueAllErrorStitchExports(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, requeueAllErrorStitchExports)
+	return err
+}
+
+const requeueAllProcessingStitchJobs = `-- name: RequeueAllProcessingStitchJobs :exec
 UPDATE stitch_jobs
 SET status     = 'queued',
     locked_at  = NULL,
@@ -599,10 +1179,9 @@ SET status     = 'queued',
     progress_pct = 0,
     updated_at = NOW()
 WHERE status = 'processing'
-  AND updated_at < NOW() - INTERVAL '10 minutes'
 `
 
-// Reset stitch jobs stuck in processing without recent progress.
+// Startup recovery: this process died, so every processing row is orphaned.
 //
 //	UPDATE stitch_jobs
 //	SET status     = 'queued',
@@ -611,7 +1190,67 @@ WHERE status = 'processing'
 //	    progress_pct = 0,
 //	    updated_at = NOW()
 //	WHERE status = 'processing'
-//	  AND updated_at < NOW() - INTERVAL '10 minutes'
+func (q *Queries) RequeueAllProcessingStitchJobs(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, requeueAllProcessingStitchJobs)
+	return err
+}
+
+const requeueStitchJob = `-- name: RequeueStitchJob :exec
+UPDATE stitch_jobs
+SET status = 'queued',
+    file_path = '',
+    size_bytes = 0,
+    locked_at = NULL,
+    locked_by = NULL,
+    progress_pct = 0,
+    started_at = NULL,
+    finished_at = NULL,
+    last_error = 'Requeued by admin',
+    updated_at = NOW()
+WHERE id = $1
+`
+
+// RequeueStitchJob
+//
+//	UPDATE stitch_jobs
+//	SET status = 'queued',
+//	    file_path = '',
+//	    size_bytes = 0,
+//	    locked_at = NULL,
+//	    locked_by = NULL,
+//	    progress_pct = 0,
+//	    started_at = NULL,
+//	    finished_at = NULL,
+//	    last_error = 'Requeued by admin',
+//	    updated_at = NOW()
+//	WHERE id = $1
+func (q *Queries) RequeueStitchJob(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, requeueStitchJob, id)
+	return err
+}
+
+const resetStuckStitchJobs = `-- name: ResetStuckStitchJobs :exec
+UPDATE stitch_jobs
+SET status     = 'queued',
+    locked_at  = NULL,
+    locked_by  = NULL,
+    progress_pct = 0,
+    updated_at = NOW()
+WHERE status = 'processing'
+  AND updated_at < NOW() - INTERVAL '30 minutes'
+`
+
+// Periodic recovery for jobs whose progress heartbeat (updated_at) went stale.
+// Long chapter encodes can run 40–55 minutes; progress updates refresh updated_at.
+//
+//	UPDATE stitch_jobs
+//	SET status     = 'queued',
+//	    locked_at  = NULL,
+//	    locked_by  = NULL,
+//	    progress_pct = 0,
+//	    updated_at = NOW()
+//	WHERE status = 'processing'
+//	  AND updated_at < NOW() - INTERVAL '30 minutes'
 func (q *Queries) ResetStuckStitchJobs(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, resetStuckStitchJobs)
 	return err
@@ -715,8 +1354,8 @@ SELECT source_type, source_id, video_id, title, parent_title, duration, start_ts
            ''::text AS file_path
     FROM clips c
     JOIN videos v ON c.video_id = v.id
-    WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'clip')
-      AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%' OR v.title ILIKE '%' || $2 || '%')
+    WHERE (c.created_by = $1::uuid) AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'clip')
+      AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%' OR v.title ILIKE '%' || $3 || '%')
 
     UNION ALL
 
@@ -733,10 +1372,36 @@ SELECT source_type, source_id, video_id, title, parent_title, duration, start_ts
            v.created_at,
            ''::text AS file_path
     FROM videos v
-    WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'video')
-      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('simple', $2)
-           OR strpos(lower(v.title), lower($2)) > 0
-           OR strpos(lower(v.uploader), lower($2)) > 0)
+    WHERE ($2::text = '' OR $2::text = 'all' OR $2::text = 'video')
+      AND ($3::text = '' OR v.search @@ websearch_to_tsquery('simple', $3)
+           OR strpos(lower(v.title), lower($3)) > 0
+           OR strpos(lower(v.uploader), lower($3)) > 0)
+
+    UNION ALL
+
+    -- Topic-bound context windows (playable ranges)
+    SELECT 'context'::text AS source_type,
+           cw.id AS source_id,
+           cw.video_id,
+           cw.title,
+           t.title AS parent_title,
+           (cw.end_ts - cw.start_ts)::float8 AS duration,
+           cw.start_ts,
+           cw.end_ts,
+           ''::text AS color,
+           cw.updated_at AS created_at,
+           ''::text AS file_path
+    FROM context_window_topics cwt
+    JOIN context_windows cw ON cw.id = cwt.window_id
+    JOIN topics t ON t.slug = cwt.topic_slug
+    JOIN videos v ON v.id = cw.video_id
+    WHERE NOT cw.stale AND cw.kind = 'window'
+      AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'context')
+      AND $3::text <> ''
+      AND (t.slug = $3
+           OR t.title ILIKE '%' || $3 || '%'
+           OR cw.title ILIKE '%' || $3 || '%'
+           OR v.title ILIKE '%' || $3 || '%')
 
     UNION ALL
 
@@ -753,24 +1418,25 @@ SELECT source_type, source_id, video_id, title, parent_title, duration, start_ts
            sj.created_at,
            sj.file_path
     FROM stitch_jobs sj
-    WHERE sj.status = 'ready' AND sj.file_path != ''
-      AND ($1::text = '' OR $1::text = 'all' OR $1::text = 'stitch')
-      AND ($2::text = '' OR sj.title ILIKE '%' || $2 || '%')
+    WHERE sj.created_by = $1::uuid AND sj.status = 'ready' AND sj.file_path != ''
+      AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'stitch')
+      AND ($3::text = '' OR sj.title ILIKE '%' || $3 || '%')
 ) AS combined
 ORDER BY
-    CASE WHEN $3::text = 'alpha'    THEN combined.title    END ASC,
-    CASE WHEN $3::text = 'duration' THEN combined.duration END DESC,
+    CASE WHEN $4::text = 'alpha'    THEN combined.title    END ASC,
+    CASE WHEN $4::text = 'duration' THEN combined.duration END DESC,
     combined.created_at DESC
-LIMIT $5
-OFFSET $4
+LIMIT $6
+OFFSET $5
 `
 
 type SearchSourcesForStitchParams struct {
-	SourceFilter string `db:"source_filter" json:"SourceFilter"`
-	Query        string `db:"query" json:"Query"`
-	SortBy       string `db:"sort_by" json:"SortBy"`
-	Off          int32  `db:"off" json:"Off"`
-	Lim          int32  `db:"lim" json:"Lim"`
+	OwnerID      pgtype.UUID `db:"owner_id" json:"OwnerID"`
+	SourceFilter string      `db:"source_filter" json:"SourceFilter"`
+	Query        string      `db:"query" json:"Query"`
+	SortBy       string      `db:"sort_by" json:"SortBy"`
+	Off          int32       `db:"off" json:"Off"`
+	Lim          int32       `db:"lim" json:"Lim"`
 }
 
 type SearchSourcesForStitchRow struct {
@@ -808,8 +1474,8 @@ type SearchSourcesForStitchRow struct {
 //	           ''::text AS file_path
 //	    FROM clips c
 //	    JOIN videos v ON c.video_id = v.id
-//	    WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'clip')
-//	      AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%' OR v.title ILIKE '%' || $2 || '%')
+//	    WHERE (c.created_by = $1::uuid) AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'clip')
+//	      AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%' OR v.title ILIKE '%' || $3 || '%')
 //
 //	    UNION ALL
 //
@@ -826,10 +1492,36 @@ type SearchSourcesForStitchRow struct {
 //	           v.created_at,
 //	           ''::text AS file_path
 //	    FROM videos v
-//	    WHERE ($1::text = '' OR $1::text = 'all' OR $1::text = 'video')
-//	      AND ($2::text = '' OR v.search @@ websearch_to_tsquery('simple', $2)
-//	           OR strpos(lower(v.title), lower($2)) > 0
-//	           OR strpos(lower(v.uploader), lower($2)) > 0)
+//	    WHERE ($2::text = '' OR $2::text = 'all' OR $2::text = 'video')
+//	      AND ($3::text = '' OR v.search @@ websearch_to_tsquery('simple', $3)
+//	           OR strpos(lower(v.title), lower($3)) > 0
+//	           OR strpos(lower(v.uploader), lower($3)) > 0)
+//
+//	    UNION ALL
+//
+//	    -- Topic-bound context windows (playable ranges)
+//	    SELECT 'context'::text AS source_type,
+//	           cw.id AS source_id,
+//	           cw.video_id,
+//	           cw.title,
+//	           t.title AS parent_title,
+//	           (cw.end_ts - cw.start_ts)::float8 AS duration,
+//	           cw.start_ts,
+//	           cw.end_ts,
+//	           ''::text AS color,
+//	           cw.updated_at AS created_at,
+//	           ''::text AS file_path
+//	    FROM context_window_topics cwt
+//	    JOIN context_windows cw ON cw.id = cwt.window_id
+//	    JOIN topics t ON t.slug = cwt.topic_slug
+//	    JOIN videos v ON v.id = cw.video_id
+//	    WHERE NOT cw.stale AND cw.kind = 'window'
+//	      AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'context')
+//	      AND $3::text <> ''
+//	      AND (t.slug = $3
+//	           OR t.title ILIKE '%' || $3 || '%'
+//	           OR cw.title ILIKE '%' || $3 || '%'
+//	           OR v.title ILIKE '%' || $3 || '%')
 //
 //	    UNION ALL
 //
@@ -846,18 +1538,19 @@ type SearchSourcesForStitchRow struct {
 //	           sj.created_at,
 //	           sj.file_path
 //	    FROM stitch_jobs sj
-//	    WHERE sj.status = 'ready' AND sj.file_path != ''
-//	      AND ($1::text = '' OR $1::text = 'all' OR $1::text = 'stitch')
-//	      AND ($2::text = '' OR sj.title ILIKE '%' || $2 || '%')
+//	    WHERE sj.created_by = $1::uuid AND sj.status = 'ready' AND sj.file_path != ''
+//	      AND ($2::text = '' OR $2::text = 'all' OR $2::text = 'stitch')
+//	      AND ($3::text = '' OR sj.title ILIKE '%' || $3 || '%')
 //	) AS combined
 //	ORDER BY
-//	    CASE WHEN $3::text = 'alpha'    THEN combined.title    END ASC,
-//	    CASE WHEN $3::text = 'duration' THEN combined.duration END DESC,
+//	    CASE WHEN $4::text = 'alpha'    THEN combined.title    END ASC,
+//	    CASE WHEN $4::text = 'duration' THEN combined.duration END DESC,
 //	    combined.created_at DESC
-//	LIMIT $5
-//	OFFSET $4
+//	LIMIT $6
+//	OFFSET $5
 func (q *Queries) SearchSourcesForStitch(ctx context.Context, arg *SearchSourcesForStitchParams) ([]*SearchSourcesForStitchRow, error) {
 	rows, err := q.db.Query(ctx, searchSourcesForStitch,
+		arg.OwnerID,
 		arg.SourceFilter,
 		arg.Query,
 		arg.SortBy,
@@ -994,6 +1687,40 @@ func (q *Queries) UpdateStitchProject(ctx context.Context, arg *UpdateStitchProj
 		arg.GlobalFilters,
 		arg.ID,
 		arg.UserID,
+	)
+	return err
+}
+
+const updateStitchProjectYouTube = `-- name: UpdateStitchProjectYouTube :exec
+UPDATE stitch_projects
+SET description = $1,
+    tags = $2,
+    updated_at = NOW()
+WHERE id = $3
+  AND created_by = $4
+`
+
+type UpdateStitchProjectYouTubeParams struct {
+	Description string      `db:"description" json:"Description"`
+	Tags        []string    `db:"tags" json:"Tags"`
+	ID          pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy   pgtype.UUID `db:"created_by" json:"CreatedBy"`
+}
+
+// UpdateStitchProjectYouTube
+//
+//	UPDATE stitch_projects
+//	SET description = $1,
+//	    tags = $2,
+//	    updated_at = NOW()
+//	WHERE id = $3
+//	  AND created_by = $4
+func (q *Queries) UpdateStitchProjectYouTube(ctx context.Context, arg *UpdateStitchProjectYouTubeParams) error {
+	_, err := q.db.Exec(ctx, updateStitchProjectYouTube,
+		arg.Description,
+		arg.Tags,
+		arg.ID,
+		arg.CreatedBy,
 	)
 	return err
 }

@@ -329,6 +329,110 @@ type APIToken struct {
 	RevokedAt  pgtype.Timestamptz `db:"revoked_at" json:"RevokedAt"`
 }
 
+type AgentConversation struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	UserID    pgtype.UUID        `db:"user_id" json:"UserID"`
+	Title     string             `db:"title" json:"Title"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type AgentDelegatedMessage struct {
+	UserID      pgtype.UUID        `db:"user_id" json:"UserID"`
+	MessageID   string             `db:"message_id" json:"MessageID"`
+	RequestHash string             `db:"request_hash" json:"RequestHash"`
+	RunID       pgtype.UUID        `db:"run_id" json:"RunID"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type AgentEvent struct {
+	ID        int64              `db:"id" json:"ID"`
+	RunID     pgtype.UUID        `db:"run_id" json:"RunID"`
+	Kind      string             `db:"kind" json:"Kind"`
+	Data      []byte             `db:"data" json:"Data"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type AgentRun struct {
+	ID                       pgtype.UUID        `db:"id" json:"ID"`
+	ConversationID           pgtype.UUID        `db:"conversation_id" json:"ConversationID"`
+	UserID                   pgtype.UUID        `db:"user_id" json:"UserID"`
+	Status                   string             `db:"status" json:"Status"`
+	Runtime                  string             `db:"runtime" json:"Runtime"`
+	ProviderSessionID        string             `db:"provider_session_id" json:"ProviderSessionID"`
+	ProviderRunID            string             `db:"provider_run_id" json:"ProviderRunID"`
+	PendingRequest           []byte             `db:"pending_request" json:"PendingRequest"`
+	Artifacts                []byte             `db:"artifacts" json:"Artifacts"`
+	CancellationAcknowledged bool               `db:"cancellation_acknowledged" json:"CancellationAcknowledged"`
+	Messages                 []byte             `db:"messages" json:"Messages"`
+	Settings                 []byte             `db:"settings" json:"Settings"`
+	ModelDigest              string             `db:"model_digest" json:"ModelDigest"`
+	Calls                    int32              `db:"calls" json:"Calls"`
+	CancelRequested          bool               `db:"cancel_requested" json:"CancelRequested"`
+	LeaseOwner               string             `db:"lease_owner" json:"LeaseOwner"`
+	LeaseUntil               pgtype.Timestamptz `db:"lease_until" json:"LeaseUntil"`
+	LastError                string             `db:"last_error" json:"LastError"`
+	CreatedAt                pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt                pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type AgentToolCall struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	RunID     pgtype.UUID        `db:"run_id" json:"RunID"`
+	CallIndex int32              `db:"call_index" json:"CallIndex"`
+	Name      string             `db:"name" json:"Name"`
+	Arguments []byte             `db:"arguments" json:"Arguments"`
+	Result    []byte             `db:"result" json:"Result"`
+	Status    string             `db:"status" json:"Status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type Campaign struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	Kind           string             `db:"kind" json:"Kind"`
+	Simhash        *int64             `db:"simhash" json:"Simhash"`
+	NormalizedText string             `db:"normalized_text" json:"NormalizedText"`
+	FirstSeen      pgtype.Timestamptz `db:"first_seen" json:"FirstSeen"`
+	LastSeen       pgtype.Timestamptz `db:"last_seen" json:"LastSeen"`
+	CommentCount   int64              `db:"comment_count" json:"CommentCount"`
+	CommenterCount int64              `db:"commenter_count" json:"CommenterCount"`
+	VideoCount     int64              `db:"video_count" json:"VideoCount"`
+	Evidence       []byte             `db:"evidence" json:"Evidence"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type CampaignMember struct {
+	CampaignID  pgtype.UUID `db:"campaign_id" json:"CampaignID"`
+	CommentID   pgtype.UUID `db:"comment_id" json:"CommentID"`
+	CommenterID pgtype.UUID `db:"commenter_id" json:"CommenterID"`
+}
+
+type CatalogCrawl struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	ChannelID      pgtype.UUID        `db:"channel_id" json:"ChannelID"`
+	RequestedBy    pgtype.UUID        `db:"requested_by" json:"RequestedBy"`
+	FeedURL        string             `db:"feed_url" json:"FeedUrl"`
+	FeedKind       string             `db:"feed_kind" json:"FeedKind"`
+	Platform       string             `db:"platform" json:"Platform"`
+	NextPageIndex  int32              `db:"next_page_index" json:"NextPageIndex"`
+	PageSize       int32              `db:"page_size" json:"PageSize"`
+	OverlapSize    int32              `db:"overlap_size" json:"OverlapSize"`
+	Status         string             `db:"status" json:"Status"`
+	Attempts       int32              `db:"attempts" json:"Attempts"`
+	RetryAt        pgtype.Timestamptz `db:"retry_at" json:"RetryAt"`
+	EntriesSeen    int64              `db:"entries_seen" json:"EntriesSeen"`
+	EntriesAdded   int64              `db:"entries_added" json:"EntriesAdded"`
+	EntriesUpdated int64              `db:"entries_updated" json:"EntriesUpdated"`
+	LastError      string             `db:"last_error" json:"LastError"`
+	Refresh        bool               `db:"refresh" json:"Refresh"`
+	LockedAt       pgtype.Timestamptz `db:"locked_at" json:"LockedAt"`
+	LockedBy       string             `db:"locked_by" json:"LockedBy"`
+	FinishedAt     pgtype.Timestamptz `db:"finished_at" json:"FinishedAt"`
+}
+
 type Channel struct {
 	ID           pgtype.UUID        `db:"id" json:"ID"`
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
@@ -371,6 +475,8 @@ type Clip struct {
 	Crops       crops.CropArray    `db:"crops" json:"Crops"`
 	FilterStack []byte             `db:"filter_stack" json:"FilterStack"`
 	ShotList    crops.ShotList     `db:"shot_list" json:"ShotList"`
+	Source      string             `db:"source" json:"Source"`
+	SourceRef   string             `db:"source_ref" json:"SourceRef"`
 }
 
 type ClipExport struct {
@@ -395,6 +501,129 @@ type ClipExport struct {
 	ProgressPct    int32              `db:"progress_pct" json:"ProgressPct"`
 	Pid            *int32             `db:"pid" json:"Pid"`
 	Spec           []byte             `db:"spec" json:"Spec"`
+}
+
+type CommentScore struct {
+	CommentID   pgtype.UUID        `db:"comment_id" json:"CommentID"`
+	ModelDigest string             `db:"model_digest" json:"ModelDigest"`
+	Sentiment   *float64           `db:"sentiment" json:"Sentiment"`
+	Toxicity    *float64           `db:"toxicity" json:"Toxicity"`
+	Labels      []byte             `db:"labels" json:"Labels"`
+	Simhash     *int64             `db:"simhash" json:"Simhash"`
+	ScoredAt    pgtype.Timestamptz `db:"scored_at" json:"ScoredAt"`
+}
+
+type Commenter struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Source        string             `db:"source" json:"Source"`
+	AuthorID      string             `db:"author_id" json:"AuthorID"`
+	AuthorURL     string             `db:"author_url" json:"AuthorUrl"`
+	DisplayName   string             `db:"display_name" json:"DisplayName"`
+	FirstSeen     pgtype.Timestamptz `db:"first_seen" json:"FirstSeen"`
+	LastSeen      pgtype.Timestamptz `db:"last_seen" json:"LastSeen"`
+	CommentCount  int64              `db:"comment_count" json:"CommentCount"`
+	ChannelID     pgtype.UUID        `db:"channel_id" json:"ChannelID"`
+	StyleFeatures []byte             `db:"style_features" json:"StyleFeatures"`
+	StyleN        int32              `db:"style_n" json:"StyleN"`
+	Simhash       *int64             `db:"simhash" json:"Simhash"`
+}
+
+type CommenterEdge struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	FromChannelID pgtype.UUID        `db:"from_channel_id" json:"FromChannelID"`
+	CommenterID   pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
+	Kind          string             `db:"kind" json:"Kind"`
+	Weight        float64            `db:"weight" json:"Weight"`
+	Evidence      []byte             `db:"evidence" json:"Evidence"`
+	VideoID       pgtype.UUID        `db:"video_id" json:"VideoID"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type CommenterLink struct {
+	AID       pgtype.UUID        `db:"a_id" json:"AID"`
+	BID       pgtype.UUID        `db:"b_id" json:"BID"`
+	Kind      string             `db:"kind" json:"Kind"`
+	Score     float64            `db:"score" json:"Score"`
+	Evidence  []byte             `db:"evidence" json:"Evidence"`
+	CreatedBy pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type CommenterName struct {
+	CommenterID pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
+	DisplayName string             `db:"display_name" json:"DisplayName"`
+	FirstSeen   pgtype.Timestamptz `db:"first_seen" json:"FirstSeen"`
+	LastSeen    pgtype.Timestamptz `db:"last_seen" json:"LastSeen"`
+	N           int64              `db:"n" json:"N"`
+}
+
+type CommenterWatchlist struct {
+	UserID      pgtype.UUID        `db:"user_id" json:"UserID"`
+	CommenterID pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
+	Note        string             `db:"note" json:"Note"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type CompilationExecution struct {
+	ID              pgtype.UUID        `db:"id" json:"ID"`
+	PlanID          pgtype.UUID        `db:"plan_id" json:"PlanID"`
+	Revision        int32              `db:"revision" json:"Revision"`
+	CreatedBy       pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	Title           string             `db:"title" json:"Title"`
+	Status          string             `db:"status" json:"Status"`
+	StitchProjectID pgtype.UUID        `db:"stitch_project_id" json:"StitchProjectID"`
+	StitchJobID     pgtype.UUID        `db:"stitch_job_id" json:"StitchJobID"`
+	LastError       string             `db:"last_error" json:"LastError"`
+	NextCheck       pgtype.Timestamptz `db:"next_check" json:"NextCheck"`
+	CreatedAt       pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt       pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type CompilationExecutionSegment struct {
+	ExecutionID   pgtype.UUID `db:"execution_id" json:"ExecutionID"`
+	Position      int32       `db:"position" json:"Position"`
+	VideoID       pgtype.UUID `db:"video_id" json:"VideoID"`
+	StartTs       float64     `db:"start_ts" json:"StartTs"`
+	EndTs         float64     `db:"end_ts" json:"EndTs"`
+	Evidence      []byte      `db:"evidence" json:"Evidence"`
+	Rationale     string      `db:"rationale" json:"Rationale"`
+	DownloadJobID pgtype.UUID `db:"download_job_id" json:"DownloadJobID"`
+}
+
+type CompilationPlan struct {
+	ID                pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy         pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	CreatorID         pgtype.UUID        `db:"creator_id" json:"CreatorID"`
+	SourceQuery       string             `db:"source_query" json:"SourceQuery"`
+	Title             string             `db:"title" json:"Title"`
+	Status            string             `db:"status" json:"Status"`
+	Revision          int32              `db:"revision" json:"Revision"`
+	EstimatedDuration float64            `db:"estimated_duration" json:"EstimatedDuration"`
+	StitchProjectID   pgtype.UUID        `db:"stitch_project_id" json:"StitchProjectID"`
+	StitchJobID       pgtype.UUID        `db:"stitch_job_id" json:"StitchJobID"`
+	LastError         string             `db:"last_error" json:"LastError"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt         pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type CompilationPlanSegment struct {
+	ID                 pgtype.UUID        `db:"id" json:"ID"`
+	PlanID             pgtype.UUID        `db:"plan_id" json:"PlanID"`
+	Position           int32              `db:"position" json:"Position"`
+	VideoID            pgtype.UUID        `db:"video_id" json:"VideoID"`
+	StartTs            float64            `db:"start_ts" json:"StartTs"`
+	EndTs              float64            `db:"end_ts" json:"EndTs"`
+	ContextWindowID    pgtype.UUID        `db:"context_window_id" json:"ContextWindowID"`
+	MatchEvidence      []byte             `db:"match_evidence" json:"MatchEvidence"`
+	SelectionRationale string             `db:"selection_rationale" json:"SelectionRationale"`
+	MediaReady         bool               `db:"media_ready" json:"MediaReady"`
+	FailureState       string             `db:"failure_state" json:"FailureState"`
+	DownloadJobID      pgtype.UUID        `db:"download_job_id" json:"DownloadJobID"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
 }
 
 type ComposeJob struct {
@@ -435,6 +664,66 @@ type ComposeProject struct {
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
 }
 
+type ContextWindow struct {
+	ID                    pgtype.UUID        `db:"id" json:"ID"`
+	VideoID               pgtype.UUID        `db:"video_id" json:"VideoID"`
+	StartTs               float64            `db:"start_ts" json:"StartTs"`
+	EndTs                 float64            `db:"end_ts" json:"EndTs"`
+	Title                 string             `db:"title" json:"Title"`
+	Summary               string             `db:"summary" json:"Summary"`
+	Topics                []string           `db:"topics" json:"Topics"`
+	Entities              []string           `db:"entities" json:"Entities"`
+	Search                string             `db:"search" json:"Search"`
+	Origin                string             `db:"origin" json:"Origin"`
+	SourceQuery           string             `db:"source_query" json:"SourceQuery"`
+	TranscriptCueEvidence []byte             `db:"transcript_cue_evidence" json:"TranscriptCueEvidence"`
+	TranscriptVersion     int64              `db:"transcript_version" json:"TranscriptVersion"`
+	BoundaryQuality       string             `db:"boundary_quality" json:"BoundaryQuality"`
+	CreatedBy             pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	CreatedAt             pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt             pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	SetID                 pgtype.UUID        `db:"set_id" json:"SetID"`
+	Ordinal               int32              `db:"ordinal" json:"Ordinal"`
+	CueStart              int32              `db:"cue_start" json:"CueStart"`
+	CueEnd                int32              `db:"cue_end" json:"CueEnd"`
+	GeneratedStartTs      *float64           `db:"generated_start_ts" json:"GeneratedStartTs"`
+	GeneratedEndTs        *float64           `db:"generated_end_ts" json:"GeneratedEndTs"`
+	Confidence            *float64           `db:"confidence" json:"Confidence"`
+	OverrideTitle         bool               `db:"override_title" json:"OverrideTitle"`
+	OverrideSummary       bool               `db:"override_summary" json:"OverrideSummary"`
+	OverrideBounds        bool               `db:"override_bounds" json:"OverrideBounds"`
+	Stale                 bool               `db:"stale" json:"Stale"`
+	Kind                  string             `db:"kind" json:"Kind"`
+	ParentID              pgtype.UUID        `db:"parent_id" json:"ParentID"`
+	Hook                  string             `db:"hook" json:"Hook"`
+	TopicResolvedAt       pgtype.Timestamptz `db:"topic_resolved_at" json:"TopicResolvedAt"`
+}
+
+type ContextWindowChunk struct {
+	SetID   pgtype.UUID `db:"set_id" json:"SetID"`
+	Ordinal int32       `db:"ordinal" json:"Ordinal"`
+	Output  []byte      `db:"output" json:"Output"`
+}
+
+type ContextWindowSet struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	VideoID        pgtype.UUID        `db:"video_id" json:"VideoID"`
+	TranscriptHash string             `db:"transcript_hash" json:"TranscriptHash"`
+	ModelDigest    string             `db:"model_digest" json:"ModelDigest"`
+	PromptVersion  string             `db:"prompt_version" json:"PromptVersion"`
+	Status         string             `db:"status" json:"Status"`
+	Metrics        []byte             `db:"metrics" json:"Metrics"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type ContextWindowTopic struct {
+	WindowID  pgtype.UUID `db:"window_id" json:"WindowID"`
+	TopicSlug string      `db:"topic_slug" json:"TopicSlug"`
+	Raw       string      `db:"raw" json:"Raw"`
+	MatchKind string      `db:"match_kind" json:"MatchKind"`
+}
+
 type Cookie struct {
 	ID         pgtype.UUID            `db:"id" json:"ID"`
 	UserID     pgtype.UUID            `db:"user_id" json:"UserID"`
@@ -456,6 +745,20 @@ type Creator struct {
 	Name      string             `db:"name" json:"Name"`
 	Notes     string             `db:"notes" json:"Notes"`
 	Search    string             `db:"search" json:"Search"`
+}
+
+type CreatorBundle struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Name      string             `db:"name" json:"Name"`
+	Notes     string             `db:"notes" json:"Notes"`
+	Search    string             `db:"search" json:"Search"`
+}
+
+type CreatorBundleMember struct {
+	BundleID  pgtype.UUID `db:"bundle_id" json:"BundleID"`
+	CreatorID pgtype.UUID `db:"creator_id" json:"CreatorID"`
 }
 
 type CreatorSuggestion struct {
@@ -499,6 +802,17 @@ type DownloadJob struct {
 	BatchLabel   *string            `db:"batch_label" json:"BatchLabel"`
 	BatchTotal   *int32             `db:"batch_total" json:"BatchTotal"`
 	WatchID      pgtype.UUID        `db:"watch_id" json:"WatchID"`
+	DedupeKey    *string            `db:"dedupe_key" json:"DedupeKey"`
+}
+
+type EmbeddingModel struct {
+	ID         string             `db:"id" json:"ID"`
+	Name       string             `db:"name" json:"Name"`
+	Revision   string             `db:"revision" json:"Revision"`
+	Recipe     string             `db:"recipe" json:"Recipe"`
+	Dimensions int32              `db:"dimensions" json:"Dimensions"`
+	License    string             `db:"license" json:"License"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 }
 
 type ExtensionToken struct {
@@ -509,6 +823,57 @@ type ExtensionToken struct {
 	LastUsedAt pgtype.Timestamptz `db:"last_used_at" json:"LastUsedAt"`
 	ExpiresAt  pgtype.Timestamptz `db:"expires_at" json:"ExpiresAt"`
 	Revoked    bool               `db:"revoked" json:"Revoked"`
+}
+
+type FaceCorrection struct {
+	VideoID          pgtype.UUID        `db:"video_id" json:"VideoID"`
+	AssetFingerprint string             `db:"asset_fingerprint" json:"AssetFingerprint"`
+	SampleTs         float64            `db:"sample_ts" json:"SampleTs"`
+	Box              []byte             `db:"box" json:"Box"`
+	PersonID         pgtype.UUID        `db:"person_id" json:"PersonID"`
+	Dismissed        bool               `db:"dismissed" json:"Dismissed"`
+	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type FaceIndexSelection struct {
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	VideoID   pgtype.UUID `db:"video_id" json:"VideoID"`
+	ChannelID pgtype.UUID `db:"channel_id" json:"ChannelID"`
+	Enabled   bool        `db:"enabled" json:"Enabled"`
+}
+
+type FaceIndexSet struct {
+	ID               pgtype.UUID        `db:"id" json:"ID"`
+	VideoID          pgtype.UUID        `db:"video_id" json:"VideoID"`
+	ModelID          string             `db:"model_id" json:"ModelID"`
+	AssetFingerprint string             `db:"asset_fingerprint" json:"AssetFingerprint"`
+	IntervalSeconds  float64            `db:"interval_seconds" json:"IntervalSeconds"`
+	StartTs          float64            `db:"start_ts" json:"StartTs"`
+	EndTs            float64            `db:"end_ts" json:"EndTs"`
+	Status           string             `db:"status" json:"Status"`
+	Active           bool               `db:"active" json:"Active"`
+	NextSample       int32              `db:"next_sample" json:"NextSample"`
+	Error            string             `db:"error" json:"Error"`
+	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type FaceObservation struct {
+	ID                pgtype.UUID        `db:"id" json:"ID"`
+	SetID             pgtype.UUID        `db:"set_id" json:"SetID"`
+	SampleIndex       int32              `db:"sample_index" json:"SampleIndex"`
+	FaceIndex         int32              `db:"face_index" json:"FaceIndex"`
+	SampleTs          float64            `db:"sample_ts" json:"SampleTs"`
+	FrameRef          string             `db:"frame_ref" json:"FrameRef"`
+	Width             int32              `db:"width" json:"Width"`
+	Height            int32              `db:"height" json:"Height"`
+	Box               []byte             `db:"box" json:"Box"`
+	Score             float64            `db:"score" json:"Score"`
+	Eligible          bool               `db:"eligible" json:"Eligible"`
+	Embedding         string             `db:"embedding" json:"Embedding"`
+	PersonID          pgtype.UUID        `db:"person_id" json:"PersonID"`
+	Assignment        string             `db:"assignment" json:"Assignment"`
+	Dismissed         bool               `db:"dismissed" json:"Dismissed"`
+	GroupingCheckedAt pgtype.Timestamptz `db:"grouping_checked_at" json:"GroupingCheckedAt"`
 }
 
 type IngestJob struct {
@@ -533,6 +898,13 @@ type InstanceSetting struct {
 	MaxDownloadHeight           int32              `db:"max_download_height" json:"MaxDownloadHeight"`
 }
 
+type JobConfiguration struct {
+	Kind      string             `db:"kind" json:"Kind"`
+	JobID     pgtype.UUID        `db:"job_id" json:"JobID"`
+	Snapshot  []byte             `db:"snapshot" json:"Snapshot"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
 type Marker struct {
 	ID          pgtype.UUID        `db:"id" json:"ID"`
 	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
@@ -546,6 +918,78 @@ type Marker struct {
 	CreatedBy   pgtype.UUID        `db:"created_by" json:"CreatedBy"`
 	Source      string             `db:"source" json:"Source"`
 	SourceRef   string             `db:"source_ref" json:"SourceRef"`
+}
+
+type MlJob struct {
+	ID                pgtype.UUID        `db:"id" json:"ID"`
+	VideoID           pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Kind              string             `db:"kind" json:"Kind"`
+	Status            string             `db:"status" json:"Status"`
+	Priority          int32              `db:"priority" json:"Priority"`
+	TranscriptHash    string             `db:"transcript_hash" json:"TranscriptHash"`
+	ModelDigest       string             `db:"model_digest" json:"ModelDigest"`
+	PromptVersion     string             `db:"prompt_version" json:"PromptVersion"`
+	Attempts          int32              `db:"attempts" json:"Attempts"`
+	LastError         string             `db:"last_error" json:"LastError"`
+	LockedAt          pgtype.Timestamptz `db:"locked_at" json:"LockedAt"`
+	LockedBy          string             `db:"locked_by" json:"LockedBy"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt         pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	FailureCount      int32              `db:"failure_count" json:"FailureCount"`
+	LeaseToken        pgtype.UUID        `db:"lease_token" json:"LeaseToken"`
+	RetryAt           pgtype.Timestamptz `db:"retry_at" json:"RetryAt"`
+	Checkpoint        []byte             `db:"checkpoint" json:"Checkpoint"`
+	RangeStart        *float64           `db:"range_start" json:"RangeStart"`
+	RangeEnd          *float64           `db:"range_end" json:"RangeEnd"`
+	RetryInstructions string             `db:"retry_instructions" json:"RetryInstructions"`
+	RepairTranscript  bool               `db:"repair_transcript" json:"RepairTranscript"`
+}
+
+type MlRuntimeHealth struct {
+	Kind       string             `db:"kind" json:"Kind"`
+	Failures   int32              `db:"failures" json:"Failures"`
+	RetryAt    pgtype.Timestamptz `db:"retry_at" json:"RetryAt"`
+	LastError  string             `db:"last_error" json:"LastError"`
+	VerifiedAt pgtype.Timestamptz `db:"verified_at" json:"VerifiedAt"`
+	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type ModelOperation struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	UserID    pgtype.UUID        `db:"user_id" json:"UserID"`
+	Runtime   string             `db:"runtime" json:"Runtime"`
+	Model     string             `db:"model" json:"Model"`
+	Action    string             `db:"action" json:"Action"`
+	Status    string             `db:"status" json:"Status"`
+	Progress  []byte             `db:"progress" json:"Progress"`
+	Options   []byte             `db:"options" json:"Options"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type OsintFlag struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	Kind        string             `db:"kind" json:"Kind"`
+	CommenterID pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
+	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
+	CampaignID  pgtype.UUID        `db:"campaign_id" json:"CampaignID"`
+	Score       float64            `db:"score" json:"Score"`
+	Evidence    []byte             `db:"evidence" json:"Evidence"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	DismissedAt pgtype.Timestamptz `db:"dismissed_at" json:"DismissedAt"`
+	DismissedBy pgtype.UUID        `db:"dismissed_by" json:"DismissedBy"`
+	NaturalKey  *string            `db:"natural_key" json:"NaturalKey"`
+}
+
+type Person struct {
+	ID               pgtype.UUID        `db:"id" json:"ID"`
+	Name             string             `db:"name" json:"Name"`
+	CreatorID        pgtype.UUID        `db:"creator_id" json:"CreatorID"`
+	RepresentativeID pgtype.UUID        `db:"representative_id" json:"RepresentativeID"`
+	Hidden           bool               `db:"hidden" json:"Hidden"`
+	Revision         int32              `db:"revision" json:"Revision"`
+	MergedInto       pgtype.UUID        `db:"merged_into" json:"MergedInto"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 }
 
 type PlaybackPosition struct {
@@ -575,7 +1019,310 @@ type PlayerSession struct {
 	LastActivity   pgtype.Timestamptz `db:"last_activity" json:"LastActivity"`
 }
 
+type ProducerConnection struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID  pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	UserID      pgtype.UUID        `db:"user_id" json:"UserID"`
+	IsDirector  bool               `db:"is_director" json:"IsDirector"`
+	ConnectedAt pgtype.Timestamptz `db:"connected_at" json:"ConnectedAt"`
+	LastPing    pgtype.Timestamptz `db:"last_ping" json:"LastPing"`
+}
+
+type RuntimeSetting struct {
+	Key       string             `db:"key" json:"Key"`
+	Value     []byte             `db:"value" json:"Value"`
+	Revision  int64              `db:"revision" json:"Revision"`
+	Source    string             `db:"source" json:"Source"`
+	UpdatedBy pgtype.UUID        `db:"updated_by" json:"UpdatedBy"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type RuntimeSettingsConsumer struct {
+	Service   string             `db:"service" json:"Service"`
+	Snapshot  []byte             `db:"snapshot" json:"Snapshot"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Hostname  string             `db:"hostname" json:"Hostname"`
+	StoppedAt pgtype.Timestamptz `db:"stopped_at" json:"StoppedAt"`
+}
+
+type ShowNote struct {
+	ID                      pgtype.UUID        `db:"id" json:"ID"`
+	OwnerID                 pgtype.UUID        `db:"owner_id" json:"OwnerID"`
+	Title                   string             `db:"title" json:"Title"`
+	Description             string             `db:"description" json:"Description"`
+	IsLive                  bool               `db:"is_live" json:"IsLive"`
+	LiveStartedAt           pgtype.Timestamptz `db:"live_started_at" json:"LiveStartedAt"`
+	PublicCode              *string            `db:"public_code" json:"PublicCode"`
+	SceneState              []byte             `db:"scene_state" json:"SceneState"`
+	CreatedAt               pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt               pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	WorkspaceMigratedAt     pgtype.Timestamptz `db:"workspace_migrated_at" json:"WorkspaceMigratedAt"`
+	WorkspaceMigrationError string             `db:"workspace_migration_error" json:"WorkspaceMigrationError"`
+}
+
+type ShowNoteAgentLease struct {
+	ID         pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	APITokenID pgtype.UUID        `db:"api_token_id" json:"ApiTokenID"`
+	UserID     pgtype.UUID        `db:"user_id" json:"UserID"`
+	AgentName  string             `db:"agent_name" json:"AgentName"`
+	ExpiresAt  pgtype.Timestamptz `db:"expires_at" json:"ExpiresAt"`
+	LastCursor int64              `db:"last_cursor" json:"LastCursor"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type ShowNoteBlock struct {
+	ID               pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID       pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	ParentID         pgtype.UUID        `db:"parent_id" json:"ParentID"`
+	BlockType        string             `db:"block_type" json:"BlockType"`
+	Title            string             `db:"title" json:"Title"`
+	Notes            string             `db:"notes" json:"Notes"`
+	VideoID          pgtype.UUID        `db:"video_id" json:"VideoID"`
+	ClipID           pgtype.UUID        `db:"clip_id" json:"ClipID"`
+	Position         int32              `db:"position" json:"Position"`
+	DurationOverride *int32             `db:"duration_override" json:"DurationOverride"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type ShowNoteDocument struct {
+	ShowNoteID       pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	Markdown         string             `db:"markdown" json:"Markdown"`
+	Revision         int64              `db:"revision" json:"Revision"`
+	Snapshot         []byte             `db:"snapshot" json:"Snapshot"`
+	SnapshotRevision int64              `db:"snapshot_revision" json:"SnapshotRevision"`
+	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type ShowNoteDocumentUpdate struct {
+	ShowNoteID pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	Revision   int64              `db:"revision" json:"Revision"`
+	Update     []byte             `db:"update" json:"Update"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type ShowNoteHost struct {
+	ID         pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	UserID     pgtype.UUID        `db:"user_id" json:"UserID"`
+	Role       string             `db:"role" json:"Role"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type ShowNoteMaterialization struct {
+	ThreadID         pgtype.UUID        `db:"thread_id" json:"ThreadID"`
+	ShowNoteID       pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	UserID           pgtype.UUID        `db:"user_id" json:"UserID"`
+	AcceptedRevision int64              `db:"accepted_revision" json:"AcceptedRevision"`
+	BaseMarkdown     string             `db:"base_markdown" json:"BaseMarkdown"`
+	ProposedMarkdown string             `db:"proposed_markdown" json:"ProposedMarkdown"`
+	Status           string             `db:"status" json:"Status"`
+	LeaseToken       pgtype.UUID        `db:"lease_token" json:"LeaseToken"`
+	RetryAt          pgtype.Timestamptz `db:"retry_at" json:"RetryAt"`
+	LastError        string             `db:"last_error" json:"LastError"`
+	Attempts         int32              `db:"attempts" json:"Attempts"`
+}
+
+type ShowNoteReference struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID     pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	OccurrenceKey  string             `db:"occurrence_key" json:"OccurrenceKey"`
+	Ordinal        int32              `db:"ordinal" json:"Ordinal"`
+	Kind           string             `db:"kind" json:"Kind"`
+	SourceUri      string             `db:"source_uri" json:"SourceUri"`
+	Label          string             `db:"label" json:"Label"`
+	Context        string             `db:"context" json:"Context"`
+	SectionPath    []string           `db:"section_path" json:"SectionPath"`
+	StartSeconds   *float64           `db:"start_seconds" json:"StartSeconds"`
+	EndSeconds     *float64           `db:"end_seconds" json:"EndSeconds"`
+	Status         string             `db:"status" json:"Status"`
+	VideoID        pgtype.UUID        `db:"video_id" json:"VideoID"`
+	ClipID         pgtype.UUID        `db:"clip_id" json:"ClipID"`
+	MarkerID       pgtype.UUID        `db:"marker_id" json:"MarkerID"`
+	DownloadJobID  pgtype.UUID        `db:"download_job_id" json:"DownloadJobID"`
+	LineStart      int32              `db:"line_start" json:"LineStart"`
+	LineEnd        int32              `db:"line_end" json:"LineEnd"`
+	ParsedRevision int64              `db:"parsed_revision" json:"ParsedRevision"`
+	Diagnostic     string             `db:"diagnostic" json:"Diagnostic"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type ShowNoteReviewReply struct {
+	ID           pgtype.UUID        `db:"id" json:"ID"`
+	ThreadID     pgtype.UUID        `db:"thread_id" json:"ThreadID"`
+	ActorKind    string             `db:"actor_kind" json:"ActorKind"`
+	ActorUserID  pgtype.UUID        `db:"actor_user_id" json:"ActorUserID"`
+	ActorTokenID pgtype.UUID        `db:"actor_token_id" json:"ActorTokenID"`
+	ActorName    string             `db:"actor_name" json:"ActorName"`
+	Body         string             `db:"body" json:"Body"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type ShowNoteReviewThread struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID     pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	Kind           string             `db:"kind" json:"Kind"`
+	Status         string             `db:"status" json:"Status"`
+	ActorKind      string             `db:"actor_kind" json:"ActorKind"`
+	ActorUserID    pgtype.UUID        `db:"actor_user_id" json:"ActorUserID"`
+	ActorTokenID   pgtype.UUID        `db:"actor_token_id" json:"ActorTokenID"`
+	ActorName      string             `db:"actor_name" json:"ActorName"`
+	Body           string             `db:"body" json:"Body"`
+	Summary        string             `db:"summary" json:"Summary"`
+	BaseRevision   int64              `db:"base_revision" json:"BaseRevision"`
+	BaseMarkdown   string             `db:"base_markdown" json:"BaseMarkdown"`
+	ExpectedText   string             `db:"expected_text" json:"ExpectedText"`
+	Patch          string             `db:"patch" json:"Patch"`
+	AnchorStart    []byte             `db:"anchor_start" json:"AnchorStart"`
+	AnchorEnd      []byte             `db:"anchor_end" json:"AnchorEnd"`
+	StartLine      int32              `db:"start_line" json:"StartLine"`
+	StartColumn    int32              `db:"start_column" json:"StartColumn"`
+	EndLine        int32              `db:"end_line" json:"EndLine"`
+	EndColumn      int32              `db:"end_column" json:"EndColumn"`
+	Detached       bool               `db:"detached" json:"Detached"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	ClosedAt       pgtype.Timestamptz `db:"closed_at" json:"ClosedAt"`
+	ClosedByUserID pgtype.UUID        `db:"closed_by_user_id" json:"ClosedByUserID"`
+}
+
+type ShowNoteRoomEvent struct {
+	Cursor       int64              `db:"cursor" json:"Cursor"`
+	ShowNoteID   pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	EventType    string             `db:"event_type" json:"EventType"`
+	ActorKind    string             `db:"actor_kind" json:"ActorKind"`
+	ActorUserID  pgtype.UUID        `db:"actor_user_id" json:"ActorUserID"`
+	ActorTokenID pgtype.UUID        `db:"actor_token_id" json:"ActorTokenID"`
+	ActorName    string             `db:"actor_name" json:"ActorName"`
+	Payload      []byte             `db:"payload" json:"Payload"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type ShowNoteRoomMessage struct {
+	ID           pgtype.UUID        `db:"id" json:"ID"`
+	ShowNoteID   pgtype.UUID        `db:"show_note_id" json:"ShowNoteID"`
+	EventCursor  *int64             `db:"event_cursor" json:"EventCursor"`
+	ActorKind    string             `db:"actor_kind" json:"ActorKind"`
+	ActorUserID  pgtype.UUID        `db:"actor_user_id" json:"ActorUserID"`
+	ActorTokenID pgtype.UUID        `db:"actor_token_id" json:"ActorTokenID"`
+	ActorName    string             `db:"actor_name" json:"ActorName"`
+	Body         string             `db:"body" json:"Body"`
+	ReplyTo      pgtype.UUID        `db:"reply_to" json:"ReplyTo"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type SpeechScore struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
+	SetID       pgtype.UUID        `db:"set_id" json:"SetID"`
+	StartTs     float64            `db:"start_ts" json:"StartTs"`
+	EndTs       float64            `db:"end_ts" json:"EndTs"`
+	ModelDigest string             `db:"model_digest" json:"ModelDigest"`
+	Sentiment   *float64           `db:"sentiment" json:"Sentiment"`
+	Toxicity    *float64           `db:"toxicity" json:"Toxicity"`
+	Labels      []byte             `db:"labels" json:"Labels"`
+	ScoredAt    pgtype.Timestamptz `db:"scored_at" json:"ScoredAt"`
+}
+
+type StitchAlignmentJob struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	ProjectID     pgtype.UUID        `db:"project_id" json:"ProjectID"`
+	OwnerID       pgtype.UUID        `db:"owner_id" json:"OwnerID"`
+	CaptionID     string             `db:"caption_id" json:"CaptionID"`
+	Language      string             `db:"language" json:"Language"`
+	ModelVersion  string             `db:"model_version" json:"ModelVersion"`
+	SourceVideoID string             `db:"source_video_id" json:"SourceVideoID"`
+	SourceStartUs int64              `db:"source_start_us" json:"SourceStartUs"`
+	SourceEndUs   int64              `db:"source_end_us" json:"SourceEndUs"`
+	StartUs       int64              `db:"start_us" json:"StartUs"`
+	EndUs         int64              `db:"end_us" json:"EndUs"`
+	Text          string             `db:"text" json:"Text"`
+	AlignmentKey  string             `db:"alignment_key" json:"AlignmentKey"`
+	Status        string             `db:"status" json:"Status"`
+	LockedBy      string             `db:"locked_by" json:"LockedBy"`
+	Result        []byte             `db:"result" json:"Result"`
+	Error         string             `db:"error" json:"Error"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type StitchAsset struct {
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	ProjectID pgtype.UUID `db:"project_id" json:"ProjectID"`
+	OwnerID   pgtype.UUID `db:"owner_id" json:"OwnerID"`
+	Hash      string      `db:"hash" json:"Hash"`
+	Path      string      `db:"path" json:"Path"`
+	Mime      string      `db:"mime" json:"Mime"`
+	Width     int32       `db:"width" json:"Width"`
+	Height    int32       `db:"height" json:"Height"`
+	Size      int64       `db:"size" json:"Size"`
+}
+
+type StitchEdit struct {
+	ID             pgtype.UUID        `db:"id" json:"ID"`
+	ProjectID      pgtype.UUID        `db:"project_id" json:"ProjectID"`
+	OwnerID        pgtype.UUID        `db:"owner_id" json:"OwnerID"`
+	OperationKey   string             `db:"operation_key" json:"OperationKey"`
+	RequestHash    string             `db:"request_hash" json:"RequestHash"`
+	Revision       int64              `db:"revision" json:"Revision"`
+	ActorKind      string             `db:"actor_kind" json:"ActorKind"`
+	ActorID        string             `db:"actor_id" json:"ActorID"`
+	ActorName      string             `db:"actor_name" json:"ActorName"`
+	Summary        string             `db:"summary" json:"Summary"`
+	Kind           string             `db:"kind" json:"Kind"`
+	BeforeDocument []byte             `db:"before_document" json:"BeforeDocument"`
+	AfterDocument  []byte             `db:"after_document" json:"AfterDocument"`
+	ChangedIds     []byte             `db:"changed_ids" json:"ChangedIds"`
+	Operations     []byte             `db:"operations" json:"Operations"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type StitchFolder struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	ParentID  pgtype.UUID        `db:"parent_id" json:"ParentID"`
+	Name      string             `db:"name" json:"Name"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
 type StitchJob struct {
+	ID                 pgtype.UUID        `db:"id" json:"ID"`
+	CreatedBy          pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+	Title              string             `db:"title" json:"Title"`
+	Format             string             `db:"format" json:"Format"`
+	Quality            string             `db:"quality" json:"Quality"`
+	Segments           []byte             `db:"segments" json:"Segments"`
+	GlobalFilters      []byte             `db:"global_filters" json:"GlobalFilters"`
+	Status             ExportStatus       `db:"status" json:"Status"`
+	ProgressPct        int32              `db:"progress_pct" json:"ProgressPct"`
+	FilePath           string             `db:"file_path" json:"FilePath"`
+	SizeBytes          int64              `db:"size_bytes" json:"SizeBytes"`
+	Attempts           int32              `db:"attempts" json:"Attempts"`
+	LockedAt           pgtype.Timestamptz `db:"locked_at" json:"LockedAt"`
+	LockedBy           *string            `db:"locked_by" json:"LockedBy"`
+	Pid                *int32             `db:"pid" json:"Pid"`
+	StartedAt          pgtype.Timestamptz `db:"started_at" json:"StartedAt"`
+	FinishedAt         pgtype.Timestamptz `db:"finished_at" json:"FinishedAt"`
+	LastError          *string            `db:"last_error" json:"LastError"`
+	LastAccessedAt     pgtype.Timestamptz `db:"last_accessed_at" json:"LastAccessedAt"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	ProjectID          pgtype.UUID        `db:"project_id" json:"ProjectID"`
+	DurationSeconds    *float64           `db:"duration_seconds" json:"DurationSeconds"`
+	DocumentSnapshot   []byte             `db:"document_snapshot" json:"DocumentSnapshot"`
+	ProjectRevision    *int64             `db:"project_revision" json:"ProjectRevision"`
+	ExportOperationKey *string            `db:"export_operation_key" json:"ExportOperationKey"`
+	RenderKind         string             `db:"render_kind" json:"RenderKind"`
+	RangeStartUs       *int64             `db:"range_start_us" json:"RangeStartUs"`
+	RangeEndUs         *int64             `db:"range_end_us" json:"RangeEndUs"`
+	FrameTimeUs        *int64             `db:"frame_time_us" json:"FrameTimeUs"`
+	RenderOptions      []byte             `db:"render_options" json:"RenderOptions"`
+	RenderRequestHash  *string            `db:"render_request_hash" json:"RenderRequestHash"`
+}
+
+type StitchProject struct {
 	ID              pgtype.UUID        `db:"id" json:"ID"`
 	CreatedBy       pgtype.UUID        `db:"created_by" json:"CreatedBy"`
 	Title           string             `db:"title" json:"Title"`
@@ -583,34 +1330,18 @@ type StitchJob struct {
 	Quality         string             `db:"quality" json:"Quality"`
 	Segments        []byte             `db:"segments" json:"Segments"`
 	GlobalFilters   []byte             `db:"global_filters" json:"GlobalFilters"`
-	Status          ExportStatus       `db:"status" json:"Status"`
-	ProgressPct     int32              `db:"progress_pct" json:"ProgressPct"`
-	FilePath        string             `db:"file_path" json:"FilePath"`
-	SizeBytes       int64              `db:"size_bytes" json:"SizeBytes"`
-	Attempts        int32              `db:"attempts" json:"Attempts"`
-	LockedAt        pgtype.Timestamptz `db:"locked_at" json:"LockedAt"`
-	LockedBy        *string            `db:"locked_by" json:"LockedBy"`
-	Pid             *int32             `db:"pid" json:"Pid"`
-	StartedAt       pgtype.Timestamptz `db:"started_at" json:"StartedAt"`
-	FinishedAt      pgtype.Timestamptz `db:"finished_at" json:"FinishedAt"`
-	LastError       *string            `db:"last_error" json:"LastError"`
-	LastAccessedAt  pgtype.Timestamptz `db:"last_accessed_at" json:"LastAccessedAt"`
 	CreatedAt       pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 	UpdatedAt       pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
-	ProjectID       pgtype.UUID        `db:"project_id" json:"ProjectID"`
-	DurationSeconds *float64           `db:"duration_seconds" json:"DurationSeconds"`
-}
-
-type StitchProject struct {
-	ID            pgtype.UUID        `db:"id" json:"ID"`
-	CreatedBy     pgtype.UUID        `db:"created_by" json:"CreatedBy"`
-	Title         string             `db:"title" json:"Title"`
-	Format        string             `db:"format" json:"Format"`
-	Quality       string             `db:"quality" json:"Quality"`
-	Segments      []byte             `db:"segments" json:"Segments"`
-	GlobalFilters []byte             `db:"global_filters" json:"GlobalFilters"`
-	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
-	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Document        []byte             `db:"document" json:"Document"`
+	LegacySnapshot  []byte             `db:"legacy_snapshot" json:"LegacySnapshot"`
+	DocumentVersion int32              `db:"document_version" json:"DocumentVersion"`
+	Revision        int64              `db:"revision" json:"Revision"`
+	EditorEnabled   bool               `db:"editor_enabled" json:"EditorEnabled"`
+	UndoStack       []pgtype.UUID      `db:"undo_stack" json:"UndoStack"`
+	RedoStack       []pgtype.UUID      `db:"redo_stack" json:"RedoStack"`
+	FolderID        pgtype.UUID        `db:"folder_id" json:"FolderID"`
+	Description     string             `db:"description" json:"Description"`
+	Tags            []string           `db:"tags" json:"Tags"`
 }
 
 type Tag struct {
@@ -620,6 +1351,26 @@ type Tag struct {
 	Color     *string            `db:"color" json:"Color"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 	CreatedBy pgtype.UUID        `db:"created_by" json:"CreatedBy"`
+}
+
+type Topic struct {
+	Slug      string             `db:"slug" json:"Slug"`
+	Title     string             `db:"title" json:"Title"`
+	Origin    string             `db:"origin" json:"Origin"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type TopicAlias struct {
+	AliasNorm string `db:"alias_norm" json:"AliasNorm"`
+	TopicSlug string `db:"topic_slug" json:"TopicSlug"`
+	Raw       string `db:"raw" json:"Raw"`
+	Source    string `db:"source" json:"Source"`
+}
+
+type TranscriptRepairBackup struct {
+	JobID      pgtype.UUID        `db:"job_id" json:"JobID"`
+	Transcript []byte             `db:"transcript" json:"Transcript"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 }
 
 type User struct {
@@ -635,6 +1386,12 @@ type User struct {
 	UpdatedAt             pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
 	DeletedAt             pgtype.Timestamptz `db:"deleted_at" json:"DeletedAt"`
 	SessionsInvalidatedAt pgtype.Timestamptz `db:"sessions_invalidated_at" json:"SessionsInvalidatedAt"`
+}
+
+type UserInterfacePreference struct {
+	UserID      pgtype.UUID        `db:"user_id" json:"UserID"`
+	Preferences []byte             `db:"preferences" json:"Preferences"`
+	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
 }
 
 type UserKeybinding struct {
@@ -679,6 +1436,11 @@ type Video struct {
 	MetadataRefreshedAt pgtype.Timestamptz   `db:"metadata_refreshed_at" json:"MetadataRefreshedAt"`
 	LinksHarvestedAt    pgtype.Timestamptz   `db:"links_harvested_at" json:"LinksHarvestedAt"`
 	Media               string               `db:"media" json:"Media"`
+	SubtitleState       string               `db:"subtitle_state" json:"SubtitleState"`
+	SubtitleCheckedAt   pgtype.Timestamptz   `db:"subtitle_checked_at" json:"SubtitleCheckedAt"`
+	SubtitleLastError   string               `db:"subtitle_last_error" json:"SubtitleLastError"`
+	TranscriptVersion   int64                `db:"transcript_version" json:"TranscriptVersion"`
+	CommentCount        int64                `db:"comment_count" json:"CommentCount"`
 }
 
 type VideoComment struct {
@@ -697,6 +1459,7 @@ type VideoComment struct {
 	Text        *string            `db:"text" json:"Text"`
 	Raw         []byte             `db:"raw" json:"Raw"`
 	Search      string             `db:"search" json:"Search"`
+	CommenterID pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
 }
 
 type VideoRevision struct {
@@ -731,6 +1494,45 @@ type VideoTranscript struct {
 	Raw       string             `db:"raw" json:"Raw"`
 	Search    string             `db:"search" json:"Search"`
 	Cues      []byte             `db:"cues" json:"Cues"`
+	// NULL means full-source transcript; otherwise array of transcribed [start,end] seconds, not complete video coverage
+	Coverage []byte `db:"coverage" json:"Coverage"`
+}
+
+type VisionAssetCheck struct {
+	VideoID   pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Kind      string             `db:"kind" json:"Kind"`
+	CheckedAt pgtype.Timestamptz `db:"checked_at" json:"CheckedAt"`
+}
+
+type VisualFrameEmbedding struct {
+	SetID       pgtype.UUID `db:"set_id" json:"SetID"`
+	SampleIndex int32       `db:"sample_index" json:"SampleIndex"`
+	SampleTs    float64     `db:"sample_ts" json:"SampleTs"`
+	FrameRef    string      `db:"frame_ref" json:"FrameRef"`
+	Embedding   string      `db:"embedding" json:"Embedding"`
+}
+
+type VisualIndexSet struct {
+	ID               pgtype.UUID        `db:"id" json:"ID"`
+	VideoID          pgtype.UUID        `db:"video_id" json:"VideoID"`
+	ModelID          string             `db:"model_id" json:"ModelID"`
+	AssetFingerprint string             `db:"asset_fingerprint" json:"AssetFingerprint"`
+	IntervalSeconds  float64            `db:"interval_seconds" json:"IntervalSeconds"`
+	StartTs          float64            `db:"start_ts" json:"StartTs"`
+	EndTs            float64            `db:"end_ts" json:"EndTs"`
+	Status           string             `db:"status" json:"Status"`
+	Active           bool               `db:"active" json:"Active"`
+	NextSample       int32              `db:"next_sample" json:"NextSample"`
+	Error            string             `db:"error" json:"Error"`
+	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type VisualReference struct {
+	ID        pgtype.UUID        `db:"id" json:"ID"`
+	OwnerID   pgtype.UUID        `db:"owner_id" json:"OwnerID"`
+	ModelID   string             `db:"model_id" json:"ModelID"`
+	Embedding string             `db:"embedding" json:"Embedding"`
+	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"ExpiresAt"`
 }
 
 type WatchedChannel struct {
@@ -760,6 +1562,50 @@ type WatchedChannelVideo struct {
 	Title       string             `db:"title" json:"Title"`
 	FirstSeenAt pgtype.Timestamptz `db:"first_seen_at" json:"FirstSeenAt"`
 	Enqueued    bool               `db:"enqueued" json:"Enqueued"`
+}
+
+type WikiLink struct {
+	FromTree string `db:"from_tree" json:"FromTree"`
+	FromSlug string `db:"from_slug" json:"FromSlug"`
+	ToTree   string `db:"to_tree" json:"ToTree"`
+	ToSlug   string `db:"to_slug" json:"ToSlug"`
+}
+
+type WikiPage struct {
+	Tree      string             `db:"tree" json:"Tree"`
+	Slug      string             `db:"slug" json:"Slug"`
+	Title     string             `db:"title" json:"Title"`
+	Body      string             `db:"body" json:"Body"`
+	Revision  int32              `db:"revision" json:"Revision"`
+	CreatorID pgtype.UUID        `db:"creator_id" json:"CreatorID"`
+	ChannelID pgtype.UUID        `db:"channel_id" json:"ChannelID"`
+	UpdatedBy string             `db:"updated_by" json:"UpdatedBy"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
+type WikiRevision struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	Tree          string             `db:"tree" json:"Tree"`
+	Slug          string             `db:"slug" json:"Slug"`
+	Revision      int32              `db:"revision" json:"Revision"`
+	Title         string             `db:"title" json:"Title"`
+	Body          string             `db:"body" json:"Body"`
+	Diff          string             `db:"diff" json:"Diff"`
+	Summary       string             `db:"summary" json:"Summary"`
+	ActorKind     string             `db:"actor_kind" json:"ActorKind"`
+	ActorID       string             `db:"actor_id" json:"ActorID"`
+	UserID        pgtype.UUID        `db:"user_id" json:"UserID"`
+	SessionID     string             `db:"session_id" json:"SessionID"`
+	ClientName    string             `db:"client_name" json:"ClientName"`
+	ClientVersion string             `db:"client_version" json:"ClientVersion"`
+	TokenName     string             `db:"token_name" json:"TokenName"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+}
+
+type WikiSearch struct {
+	Tree   string `db:"tree" json:"Tree"`
+	Slug   string `db:"slug" json:"Slug"`
+	Search string `db:"search" json:"Search"`
 }
 
 type YtdlpLog struct {

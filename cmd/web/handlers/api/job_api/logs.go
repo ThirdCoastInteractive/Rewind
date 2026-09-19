@@ -148,9 +148,12 @@ func HandleLogsStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 			Valid: true,
 		}
 
-		// Poll for new logs every 500ms
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
+		keepalive := time.NewTicker(15 * time.Second)
+		defer keepalive.Stop()
+		timeout := time.NewTimer(2 * time.Hour)
+		defer timeout.Stop()
 
 		ctx := c.Request().Context()
 
@@ -158,6 +161,12 @@ func HandleLogsStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 			select {
 			case <-ctx.Done():
 				return nil
+			case <-timeout.C:
+				return nil
+			case <-keepalive.C:
+				if err := common.WriteSSEKeepalive(c); err != nil {
+					return nil
+				}
 			case <-ticker.C:
 				// Fetch new logs since last timestamp
 				logs, err := dbc.Queries(ctx).GetYtdlpLogsForJobSince(ctx, &db.GetYtdlpLogsForJobSinceParams{

@@ -44,7 +44,7 @@ ranked AS (
   FROM hits
   GROUP BY video_id
 )
-SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media
+SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count
 FROM ranked r
 JOIN videos v ON v.id = r.video_id
 ORDER BY r.rank DESC, v.created_at DESC
@@ -94,7 +94,7 @@ type SearchVideosParams struct {
 //	  FROM hits
 //	  GROUP BY video_id
 //	)
-//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media
+//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count
 //	FROM ranked r
 //	JOIN videos v ON v.id = r.video_id
 //	ORDER BY r.rank DESC, v.created_at DESC
@@ -145,6 +145,11 @@ func (q *Queries) SearchVideos(ctx context.Context, arg *SearchVideosParams) ([]
 			&i.MetadataRefreshedAt,
 			&i.LinksHarvestedAt,
 			&i.Media,
+			&i.SubtitleState,
+			&i.SubtitleCheckedAt,
+			&i.SubtitleLastError,
+			&i.TranscriptVersion,
+			&i.CommentCount,
 		); err != nil {
 			return nil, err
 		}

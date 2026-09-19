@@ -1,3 +1,4 @@
+import { listen as pageListen } from './lib/page-scope.js';
 import * as d3 from 'd3';
 
 // ============================================================================
@@ -311,7 +312,7 @@ function init() {
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  pageListen(document, 'DOMContentLoaded', init);
 } else {
   init();
 }

@@ -43,36 +43,49 @@ func MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Shot
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(clipID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 11, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 15, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-signals=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-init=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{_multicamFormat: 'mp4', _multicamQuality: 'high', _multicamResolution: 1920, _multicamShotCount: %d}", len(shotList)))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("window.cutEditor?.multicam?.refreshPanel(); /* %d cameras */", len(clipCrops)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 12, Col: 148}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 16, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div data-show=\"$_selectedClipId === ''\" class=\"text-xs text-white/40 font-mono py-2 text-center\">Select a clip to use multicam.</div><div data-show=\"$_selectedClipId !== ''\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" data-signals=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 string
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{_multicamFormat: 'mp4', _multicamQuality: 'high', _multicamResolution: 1920, _multicamShotCount: %d, _multicamSaving: false, _multicamSaveFailed: false}", len(shotList)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 17, Col: 200}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div data-show=\"$_selectedClipId === ''\" class=\"text-xs text-white/40 font-mono py-2 text-center\">Select a clip to use multicam.</div><div data-show=\"$_selectedClipId !== ''\" class=\"space-y-4\"><section class=\"border border-red-500/40 bg-black\" aria-label=\"Program output\"><div class=\"flex items-center justify-between gap-2 px-2 py-2 border-b border-red-500/30 text-xs font-mono\"><span class=\"text-red-400 shrink-0\">● PROGRAM</span> <span class=\"text-white/80 truncate\" data-multicam-program-camera>No camera</span></div><div class=\"relative aspect-video\"><canvas width=\"640\" height=\"360\" class=\"block w-full h-full\" data-multicam-program aria-label=\"Active camera output\"></canvas><div class=\"absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-white/50\" data-multicam-program-empty>Choose an opening camera to preview the sequence.</div></div><p class=\"px-2 py-1 text-xs text-white/40\">Follows the playhead · Transitions applied on export</p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(clipCrops) < 2 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"text-xs text-white/40 font-mono py-2 text-center\">Add at least 2 crops in the INSPECTOR panel to enable multicam editing.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"text-xs text-white/40 font-mono py-2 text-center\">Add at least 2 crops in the INSPECTOR panel to enable multicam editing.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<!-- Camera buttons: click to cut to this crop at the playhead --> <div><div class=\"section-label mb-1\">CAMERAS</div><div class=\"flex flex-wrap gap-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<!-- Camera buttons: click to cut to this crop at the playhead --> <div><div class=\"section-label mb-1\">1 · CAMERA FRAMING</div><p class=\"text-xs text-white/50 mb-2\">Crops act as cameras. Edit their framing, then choose the opening camera.</p><div class=\"grid grid-cols-2 gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -82,25 +95,25 @@ func MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Shot
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div><!-- Shot timeline --> <div><div class=\"section-label mb-1\">SHOT LIST <span class=\"text-white/30 ml-1\" data-multicam-shot-count>(")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><!-- Shot timeline --> <div><div class=\"section-label mb-1\">2 · CAMERA SEQUENCE <span class=\"text-white/30 ml-1\" data-multicam-shot-count>(")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var4 string
-			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(shotList)))
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(shotList)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 36, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 54, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " shots)</span></div><div class=\"relative h-8 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer\" data-multicam-timeline title=\"Click a camera button to add a shot at the playhead position\"><div class=\"absolute inset-0\" data-multicam-timeline-layer></div><div class=\"absolute top-0 bottom-0 w-px bg-red-500 z-10 pointer-events-none\" data-multicam-playhead style=\"left: 0%\"></div></div></div><!-- Shot list items --> <div class=\"space-y-1 max-h-40 overflow-y-auto\" data-multicam-shot-list>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " shots)</span></div><div class=\"relative h-10 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer\" data-multicam-timeline title=\"Click a camera button to add a shot at the playhead position\"><div class=\"absolute inset-0\" data-multicam-timeline-layer></div><div class=\"absolute top-0 bottom-0 w-px bg-red-500 z-10 pointer-events-none\" data-multicam-playhead style=\"left: 0%\"></div></div></div><!-- Shot list items --> <div class=\"space-y-1 max-h-40 overflow-y-auto\" data-multicam-shot-list>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(shotList) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"text-xs text-white/30 font-mono text-center py-2\">Position the playhead and click a camera to add shots.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"text-xs text-white/30 font-mono text-center py-2\">Position the playhead and click a camera to add shots.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -112,7 +125,7 @@ func MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Shot
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><!-- Transition defaults --> <div><div class=\"section-label mb-1\">DEFAULT TRANSITION</div><div class=\"flex gap-2 items-center\"><select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" data-multicam-transition-type><option value=\"cut\">Hard Cut</option> <option value=\"fade\" selected>Fade</option> <option value=\"dissolve\">Dissolve</option> <option value=\"wipeleft\">Wipe Left</option> <option value=\"wiperight\">Wipe Right</option> <option value=\"slidedown\">Slide Down</option> <option value=\"slideup\">Slide Up</option></select><div class=\"flex items-center gap-1\"><input type=\"number\" min=\"0\" max=\"3\" step=\"0.1\" value=\"0.5\" class=\"w-14 px-1 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none text-center\" data-multicam-transition-dur> <span class=\"text-xs text-white/40 font-mono\">s</span></div></div></div><!-- Actions --> <div class=\"flex gap-1\"><button type=\"button\" class=\"flex-1 ghost-btn-sm\" data-multicam-clear title=\"Clear all shots\">CLEAR</button> <button type=\"button\" class=\"flex-1 ghost-btn-sm\" data-multicam-undo title=\"Undo last shot\">UNDO</button></div><!-- Export --> <div class=\"border-t-2 border-white/10 pt-2\"><div class=\"flex flex-wrap gap-1 mb-2\"><select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" data-bind=\"_multicamResolution\"><option value=\"1080\">1080p</option> <option value=\"1440\">1440p</option> <option value=\"1920\" selected>1920p</option> <option value=\"2160\">4K</option></select> <select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" data-bind=\"_multicamFormat\"><option value=\"mp4\">MP4</option> <option value=\"webm\">WebM</option></select> <select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" data-bind=\"_multicamQuality\"><option value=\"high\">High</option> <option value=\"max\">Maximum</option></select></div><button type=\"button\" class=\"w-full btn-primary btn-md disabled:opacity-30 disabled:pointer-events-none\" data-multicam-export data-on:click=\"@post('/api/clips/' + $_selectedClipId + '/multicam-export', {payload: {format: $_multicamFormat, quality: $_multicamQuality, resolution: Number($_multicamResolution)}})\" data-attr:disabled=\"$_selectedClipId === '' || $_multicamShotCount < 2\"><i class=\"fa-sharp fa-solid fa-clapperboard mr-2\" aria-hidden=\"true\"></i> EXPORT MULTICAM</button><div class=\"mt-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div><!-- Transition defaults --> <div><div class=\"section-label mb-1\">TRANSITION AT NEXT SWITCH</div><div class=\"flex gap-2 items-center\"><select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" aria-label=\"Transition at next camera switch\" data-multicam-transition-type><option value=\"cut\">Hard Cut</option> <option value=\"fade\" selected>Fade</option> <option value=\"dissolve\">Dissolve</option> <option value=\"wipeleft\">Wipe Left</option> <option value=\"wiperight\">Wipe Right</option> <option value=\"slidedown\">Slide Down</option> <option value=\"slideup\">Slide Up</option></select><div class=\"flex items-center gap-1\"><input type=\"number\" min=\"0\" max=\"3\" step=\"0.1\" value=\"0.5\" class=\"w-14 px-1 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none text-center\" aria-label=\"Transition duration in seconds\" data-multicam-transition-dur> <span class=\"text-xs text-white/40 font-mono\">s</span></div></div></div><!-- Actions --> <div class=\"flex gap-1\"><button type=\"button\" class=\"flex-1 ghost-btn-sm\" data-multicam-clear title=\"Clear all shots\">CLEAR</button> <button type=\"button\" class=\"flex-1 ghost-btn-sm\" data-multicam-undo title=\"Undo last sequence edit\">UNDO</button></div><p class=\"text-xs text-white/60\" role=\"status\" data-multicam-notice>Sequence changes save automatically.</p><button type=\"button\" class=\"ghost-btn-sm\" data-show=\"$_multicamSaveFailed\" data-multicam-retry-save>Retry save</button><!-- Export --> <div class=\"border-t-2 border-white/10 pt-2\"><details id=\"multicam-export-options\" data-preserve-attr=\"open\" class=\"mb-3\"><summary class=\"text-xs font-mono cursor-pointer mb-2\">Export settings</summary><div class=\"flex flex-wrap gap-1 mb-2\"><select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" aria-label=\"Export resolution\" data-bind=\"_multicamResolution\"><option value=\"1080\">1080p</option> <option value=\"1440\">1440p</option> <option value=\"1920\" selected>1920p</option> <option value=\"2160\">4K</option></select> <select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" aria-label=\"Export format\" data-bind=\"_multicamFormat\"><option value=\"mp4\">MP4</option> <option value=\"webm\">WebM</option></select> <select class=\"flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\" aria-label=\"Export quality\" data-bind=\"_multicamQuality\"><option value=\"high\">High</option> <option value=\"max\">Maximum</option></select></div></details> <button type=\"button\" class=\"w-full btn-primary btn-md disabled:opacity-30 disabled:pointer-events-none\" data-multicam-export data-on:click=\"@post('/api/clips/' + $_selectedClipId + '/multicam-export', {payload: {format: $_multicamFormat, quality: $_multicamQuality, resolution: Number($_multicamResolution)}})\" data-attr:disabled=\"$_selectedClipId === '' || $_multicamShotCount < 2 || $_multicamSaving\"><i class=\"fa-sharp fa-solid fa-clapperboard mr-2\" aria-hidden=\"true\"></i> EXPORT MULTICAM</button><div class=\"mt-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -120,12 +133,12 @@ func MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Shot
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -150,76 +163,103 @@ func MulticamCameraButton(crop crops.Crop) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
+		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var6 == nil {
+			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<button type=\"button\" class=\"px-2 py-1.5 text-xs font-mono transition-all border-2 bg-black text-white border-white/20 hover:border-amber-400/60 hover:bg-amber-400/10 active:scale-95\" data-multicam-camera=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(crop.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 160, Col: 32}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-crop-name=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"border border-white/20 bg-black p-2 space-y-2 min-w-0\"><div class=\"flex items-center gap-2\"><i class=\"fa-sharp fa-solid fa-video text-amber-400/60\" aria-hidden=\"true\"></i> <span class=\"text-xs font-mono font-semibold truncate\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(crop.Name)
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(multicamShotCropName(crop.ID, crops.CropArray{crop}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 161, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 188, Col: 112}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span></div><p class=\"text-xs text-white/50\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("Cut to %s at playhead", crop.Name))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(crop.AspectRatio)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 162, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 190, Col: 53}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"><i class=\"fa-sharp fa-solid fa-video mr-1 text-amber-400/60\" aria-hidden=\"true\"></i> ")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if crop.Name != "" {
-			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(crop.Name)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 166, Col: 14}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(crop.AspectRatio)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 168, Col: 21}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</p><button type=\"button\" class=\"w-full ghost-btn-sm\" data-multicam-preview=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</button>")
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(crop.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 191, Col: 83}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" title=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue("Edit framing for " + crop.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 191, Col: 125}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">Edit framing</button> <button type=\"button\" class=\"w-full btn-secondary btn-sm\" data-multicam-camera=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(crop.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 192, Col: 90}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" data-crop-name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(crop.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 192, Col: 119}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" title=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue("Switch to " + crop.Name + " at the playhead")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 192, Col: 175}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\">Use camera</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -257,100 +297,100 @@ func MulticamShotRow(index int, shot crops.Shot, clipCrops crops.CropArray) temp
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var14 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var14 == nil {
+			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"flex items-center gap-1 px-2 py-1 bg-neutral-900/50 border border-white/5 text-xs font-mono group\" data-multicam-shot-index=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", index))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 190, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><span class=\"text-amber-400/60 w-4\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", index+1))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 192, Col: 66}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span> <span class=\"text-white/80 flex-1 truncate\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(multicamShotCropName(shot.CropID, clipCrops))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 193, Col: 92}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</span> <span class=\"text-white/40\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex items-center gap-1 px-2 py-1 bg-neutral-900/50 border border-white/5 text-xs font-mono group\" data-multicam-shot-index=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f–%.1fs", shot.Start, shot.End))
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 194, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 215, Col: 53}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</span> ")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if shot.TransitionOut != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span class=\"text-white/30\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%s %.1fs", shot.TransitionOut.Type, shot.TransitionOut.Duration))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 196, Col: 116}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"><i class=\"fa-sharp fa-solid fa-shuffle\" aria-hidden=\"true\"></i></span> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"><span class=\"text-amber-400/60 w-4\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<button type=\"button\" class=\"text-white/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity\" data-multicam-remove-shot=\"")
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", index+1))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 217, Col: 66}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span> <span class=\"text-white/80 flex-1 truncate\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", index))
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(multicamShotCropName(shot.CropID, clipCrops))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/multicam_panel.templ`, Line: 203, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 218, Col: 92}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" title=\"Remove shot\"><i class=\"fa-sharp fa-solid fa-xmark\" aria-hidden=\"true\"></i></button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span> <span class=\"text-white/40\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f–%.1fs", shot.Start, shot.End))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 219, Col: 81}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if shot.TransitionOut != nil {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<span class=\"text-white/30\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%s %.1fs", shot.TransitionOut.Type, shot.TransitionOut.Duration))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 221, Col: 116}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><i class=\"fa-sharp fa-solid fa-shuffle\" aria-hidden=\"true\"></i></span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<button type=\"button\" class=\"text-white/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity\" data-multicam-remove-shot=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/multicam_panel.templ`, Line: 228, Col: 55}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" title=\"Remove shot\"><i class=\"fa-sharp fa-solid fa-xmark\" aria-hidden=\"true\"></i></button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

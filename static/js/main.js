@@ -1,3 +1,56 @@
+import './lib/navigation.js';
+import './lib/agent-drawer.js';
+
+function bindWikiPlayers(root) {
+  const scope = root || document;
+  scope.querySelectorAll('.wiki-player video').forEach((video) => {
+    if (video.dataset.wikiBound) return;
+    video.dataset.wikiBound = '1';
+    const start = parseFloat(video.dataset.start);
+    const end = parseFloat(video.dataset.end);
+    const hasStart = Number.isFinite(start);
+    const hasEnd = Number.isFinite(end) && end > (hasStart ? start : 0);
+    const seekStart = () => {
+      if (hasStart && Math.abs(video.currentTime - start) > 0.3) {
+        video.currentTime = start;
+      }
+    };
+    video.addEventListener('loadedmetadata', seekStart);
+    video.addEventListener('play', () => {
+      if (hasStart && video.currentTime < start - 0.25) video.currentTime = start;
+    });
+    if (hasEnd) {
+      video.addEventListener('timeupdate', () => {
+        if (video.currentTime >= end) {
+          video.pause();
+          video.currentTime = hasStart ? start : 0;
+        }
+      });
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => bindWikiPlayers(document));
+function bootStitchWorkspace() {
+  if (!document.querySelector('[data-stitch-workspace]')) return;
+  if (typeof window.mountStitchWorkspaces === 'function') {
+    window.mountStitchWorkspaces();
+    return;
+  }
+  const existing = document.querySelector('script[src*="stitch-workspace.js"]');
+  const src = existing?.getAttribute('src') || '/static/dist/stitch-workspace.js';
+  if (document.querySelector(`script[data-stitch-boot="${src}"]`)) return;
+  const script = document.createElement('script');
+  script.src = src;
+  script.dataset.stitchBoot = src;
+  script.onload = () => window.mountStitchWorkspaces?.();
+  document.head.appendChild(script);
+}
+
+window.addEventListener('rewind:page-ready', () => {
+  bindWikiPlayers(document.getElementById('page-content') || document);
+  bootStitchWorkspace();
+});
 // ============================================================================
 // REWIND - Main Application JavaScript
 // Black & White Design System - Physical Interaction Model
@@ -9,26 +62,13 @@
 
 // Enable view transitions for navigation links
 document.addEventListener('DOMContentLoaded', () => {
-  // View Transitions API support
-  if (document.startViewTransition) {
-    document.addEventListener('click', (e) => {
-      const link = e.target.closest('a[data-transition]');
-      if (link && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        e.preventDefault();
-        document.startViewTransition(() => {
-          window.location.href = link.href;
-        });
-      }
-    });
-  }
-
   // Table row click handlers
   document.addEventListener('click', (e) => {
     const row = e.target.closest('tr[data-href]');
     if (row && !e.target.closest('a, button')) {
       const href = row.getAttribute('data-href');
       if (href) {
-        window.location.href = href;
+        window.RewindNavigation.navigate(href);
       }
     }
   });
@@ -107,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
 class AudioService {
   constructor() {
     this.sounds = {};
-    this.enabled = localStorage.getItem('soundsEnabled') !== 'false';
+    this.enabled = document.body?.dataset.soundsEnabled !== 'false';
   }
   
   load(name, path) {
@@ -142,78 +182,17 @@ window.audio = new AudioService();
 // UTILITY FUNCTIONS
 // ============================================================================
 
-// Escape key handler for closing drawers/modals
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    // Close mobile menu if open
-    const mobileMenu = document.getElementById('mobile-menu');
-    if (mobileMenu && !mobileMenu.classList.contains('hidden')) {
-      mobileMenu.classList.add('hidden');
-    }
-    
-    // Close admin dropdown
-    const adminDropdown = document.getElementById('admin-dropdown');
-    if (adminDropdown && !adminDropdown.classList.contains('hidden')) {
-      adminDropdown.classList.add('hidden');
-    }
-  }
-});
-// ============================================================================
-// MOBILE GESTURE SUPPORT
-// ============================================================================
-
-// Swipe-to-close mobile menu
+// Preferences and bookmarklets belong to the persistent shell and each new page.
 document.addEventListener('DOMContentLoaded', () => {
-  const mobileMenu = document.getElementById('mobile-menu');
-  if (!mobileMenu) return;
-  
-  let touchStartY = 0;
-  let touchStartTime = 0;
-  
-  mobileMenu.addEventListener('touchstart', (e) => {
-    touchStartY = e.touches[0].clientY;
-    touchStartTime = Date.now();
-  }, { passive: true });
-  
-  mobileMenu.addEventListener('touchend', (e) => {
-    const touchEndY = e.changedTouches[0].clientY;
-    const touchDuration = Date.now() - touchStartTime;
-    const swipeDistance = touchEndY - touchStartY;
-    
-    // Swipe up to close (>50px in <300ms)
-    if (swipeDistance < -50 && touchDuration < 300) {
-      mobileMenu.classList.add('hidden');
-    }
-  }, { passive: true });
+  window.audio.enabled = document.body.dataset.soundsEnabled !== 'false';
 });
-
-// Haptic feedback for mobile actions (if supported)
-function triggerHaptic(intensity = 'light') {
-  if ('vibrate' in navigator) {
-    const patterns = {
-      light: [10],
-      medium: [20],
-      heavy: [30]
-    };
-    navigator.vibrate(patterns[intensity] || patterns.light);
-  }
+function preparePageLinks() {
+  const bookmarklet = 'javascript:(function(){window.open(' + JSON.stringify(location.origin + '/bookmarklet?url=') + '+encodeURIComponent(location.href),"rewind","width=500,height=600")})()';
+  document.querySelectorAll('.bookmarklet-link').forEach(link => link.href = bookmarklet);
+  document.querySelectorAll('.bookmarklet-code').forEach(code => code.textContent = bookmarklet);
 }
-
-// Add haptic feedback to important mobile interactions
-document.addEventListener('DOMContentLoaded', () => {
-  // Job submission
-  const jobForm = document.getElementById('jobForm');
-  if (jobForm && window.innerWidth < 1024) {
-    jobForm.addEventListener('submit', () => {
-      triggerHaptic('medium');
-    });
-  }
-  
-  // Mobile menu toggle
-  const mobileMenuButton = document.querySelector('[onclick="toggleMobileMenu()"]');
-  if (mobileMenuButton) {
-    mobileMenuButton.addEventListener('click', () => {
-      triggerHaptic('light');
-    });
-  }
+document.addEventListener('DOMContentLoaded', preparePageLinks);
+window.addEventListener('rewind:page-ready', preparePageLinks);
+document.addEventListener('submit', event => {
+  if (event.target.id === 'jobForm' && window.innerWidth < 1024) navigator.vibrate?.(20);
 });

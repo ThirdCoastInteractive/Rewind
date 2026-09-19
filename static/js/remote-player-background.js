@@ -1,3 +1,4 @@
+import { listen as pageListen, pageFrame, PageMutationObserver } from './lib/page-scope.js';
 /* Remote player WebGL background (Perlin Nebula)
 
    Goals:
@@ -532,7 +533,7 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
     };
 
     function frame(now) {
-      rafId = requestAnimationFrame(frame);
+      rafId = pageFrame(frame);
       if (document.visibilityState === 'hidden') return;
 
       resize();
@@ -552,8 +553,8 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    window.addEventListener('resize', resize, { passive: true });
-    document.addEventListener('visibilitychange', () => {
+    pageListen(window, 'resize', resize, { passive: true });
+    pageListen(document, 'visibilitychange', () => {
       // If the tab becomes visible after a long sleep, reset the fallback epoch.
       if (document.visibilityState === 'visible') {
         localEpochMs = Date.now();
@@ -561,7 +562,7 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
     });
 
     resize();
-    rafId = requestAnimationFrame(frame);
+    rafId = pageFrame(frame);
 
     // Expose a tiny hook for future use (e.g., other shaders).
     return {
@@ -628,7 +629,7 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
       sceneEl = next;
 
       if (!sceneEl) return;
-      sceneAttrObserver = new MutationObserver(() => {
+      sceneAttrObserver = new PageMutationObserver(() => {
         applyScene(safeParseScene());
       });
       sceneAttrObserver.observe(sceneEl, { attributes: true, attributeFilter: ['data-scene-b64'] });
@@ -640,7 +641,7 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
     // Observe the subtree so we can re-bind when that happens.
     const root = document.body || document.documentElement;
     if (root) {
-      const swapObserver = new MutationObserver(() => {
+      const swapObserver = new PageMutationObserver(() => {
         attachSceneAttrObserver();
         applyScene(safeParseScene());
       });
@@ -654,7 +655,7 @@ import { clampNumber, parseAspectRatio } from './lib/utils.js';
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    pageListen(document, 'DOMContentLoaded', init);
   } else {
     init();
   }

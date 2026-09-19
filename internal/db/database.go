@@ -122,7 +122,42 @@ func (db *DatabaseConnection) Migrate(ctx context.Context) error {
 			// Default: migrate to latest version
 			targetVersion = goose.MaxVersion
 		}
-		err = goose.UpToContext(ctx, stdDb, "sql/migrations", targetVersion)
+		// v0.0.3 shipped 40–48 without 37–39. Apply those historical
+		// migrations on upgrade, but never silently accept other ledger gaps.
+		rows, queryErr := stdDb.QueryContext(ctx, "SELECT version_id FROM goose_db_version WHERE is_applied = true")
+		if queryErr != nil {
+			return queryErr
+		}
+		applied := make(map[int64]bool)
+		for rows.Next() {
+			var version int64
+			if err := rows.Scan(&version); err != nil {
+				rows.Close()
+				return err
+			}
+			applied[version] = true
+		}
+		queryErr = rows.Err()
+		rows.Close()
+		if queryErr != nil {
+			return queryErr
+		}
+		allowMissing := false
+		for _, migration := range migrations {
+			v := migration.Version
+			if v > currentVersion || v > targetVersion || applied[v] {
+				continue
+			}
+			if v < 37 || v > 39 {
+				return fmt.Errorf("unexpected missing migration %d below installed version %d", v, currentVersion)
+			}
+			allowMissing = true
+		}
+		var options []goose.OptionsFunc
+		if allowMissing {
+			options = append(options, goose.WithAllowMissing())
+		}
+		err = goose.UpToContext(ctx, stdDb, "sql/migrations", targetVersion, options...)
 	}
 
 	if err != nil {

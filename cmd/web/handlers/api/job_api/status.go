@@ -27,9 +27,9 @@ func HandleStatus(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		ctx := c.Request().Context()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-
-		// Add timeout to prevent zombie connections
-		timeout := time.NewTimer(5 * time.Minute)
+		keepalive := time.NewTicker(15 * time.Second)
+		defer keepalive.Stop()
+		timeout := time.NewTimer(2 * time.Hour)
 		defer timeout.Stop()
 
 		var lastStatus db.JobStatus
@@ -42,29 +42,24 @@ func HandleStatus(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 			case <-timeout.C:
 				slog.Warn("SSE connection timeout", "job_id", jobUUID)
 				return nil
+			case <-keepalive.C:
+				if err := common.WriteSSEKeepalive(c); err != nil {
+					return nil
+				}
 			case <-ticker.C:
-				// Fetch current job
 				job, err := dbc.Queries(ctx).GetDownloadJobByID(ctx, jobUUID)
 				if err != nil {
 					slog.Error("failed to fetch job for SSE", "error", err, "job_id", jobUUID)
 					return err
 				}
 
-				// Only send update if status changed
 				if job.Status != lastStatus {
 					lastStatus = job.Status
-
-					// Render the job detail card
-					fragment := templates.JobDetailContent(job)
-
-					// Send fragment patch
-					if err := sse.PatchElementTempl(fragment); err != nil {
+					if err := sse.PatchElementTempl(templates.JobDetailCard(job)); err != nil {
 						slog.Error("failed to send SSE patch", "error", err, "job_id", jobUUID)
 						return err
 					}
-
-					// If job is finished, close the connection
-					if job.Status == "succeeded" || job.Status == "failed" || job.Status == "cancelled" {
+					if job.Status == db.JobStatusSucceeded || job.Status == db.JobStatusFailed {
 						slog.Info("Job finished, closing SSE connection", "job_id", jobUUID, "status", job.Status)
 						return nil
 					}

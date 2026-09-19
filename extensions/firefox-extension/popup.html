@@ -47,6 +47,16 @@
         text-transform: uppercase;
       }
       .toggle input { transform: scale(1.1); }
+      .num {
+        width: 56px;
+        background: transparent;
+        border: 2px solid rgba(255,255,255,0.2);
+        color: #fff;
+        padding: 4px 6px;
+        font-family: inherit;
+        font-size: 12px;
+        text-align: right;
+      }
     </style>
   </head>
   <body>
@@ -66,11 +76,23 @@
       <div class="row">
         <div class="stack">
           <div class="kv"><div class="k">SITE</div><div id="site" class="v">—</div></div>
+          <div class="kv"><div class="k">STATUS</div><div id="pageStatus" class="v">—</div></div>
           <label class="toggle">
             <input id="sendCookies" type="checkbox" />
             <span>SEND COOKIES FOR THIS SITE</span>
           </label>
           <div class="kv"><div class="k">COOKIES SAVED</div><div id="cookieCount" class="v">—</div></div>
+          <div id="liveOpts" class="stack" style="display:none">
+            <label class="toggle">
+              <input id="liveFromStart" type="checkbox" />
+              <span>From the beginning</span>
+            </label>
+            <div class="muted">Kick DVR from start often fails.</div>
+            <div class="kv">
+              <div class="k">WAIT FOR STREAM (MIN)</div>
+              <input id="waitMinutes" class="num" type="number" min="0" step="1" value="0" />
+            </div>
+          </div>
         </div>
       </div>
 

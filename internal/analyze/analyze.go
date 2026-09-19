@@ -5,7 +5,6 @@ package analyze
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"time"
 )
@@ -411,9 +410,4 @@ func uploadsPerWeek(videos []Video, now time.Time) float64 {
 
 func uploadsPerWeekRecent(videos []Video) float64 {
 	return float64(len(videos)) / (float64(recentDays) / 7)
-}
-
-// Round1 rounds v to one decimal place for display.
-func Round1(v float64) float64 {
-	return math.Round(v*10) / 10
 }

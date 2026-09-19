@@ -1,0 +1,29 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/interfaceprefs"
+)
+
+templ AppearanceSettings() {
+	<section class="rw-panel appearance-settings" data-signals="{appearanceStatus:''}">
+		<header class="rw-panel-heading"><h3>Appearance</h3><p>Pick your palette. Every theme has a light and dark side.</p></header>
+		<fieldset class="theme-options">
+			<legend class="sr-only">Color theme</legend>
+			for _,theme:=range interfaceprefs.Themes {
+				<label class="theme-choice" data-palette={ theme.ID }>
+					<input type="radio" name="appearance-theme" value={ theme.ID } checked?={ appearancePreference(ctx,"theme")==theme.ID } data-attr:checked={ fmt.Sprintf("$uiTheme === '%s'", theme.ID) } data-on:change={ fmt.Sprintf("@post('/settings/appearance?key=theme&value=%s')", theme.ID) }/>
+					<span class="theme-swatch" aria-hidden="true"><span></span><span></span><span></span></span>
+					<strong>{ theme.Name }</strong><span class="theme-description">{ theme.Description }</span>
+				</label>
+			}
+		</fieldset>
+		<fieldset class="appearance-modes">
+			<legend>Color mode</legend>
+			for _,mode:=range []string{"system","light","dark"} {
+				<label><input type="radio" name="appearance-mode" value={ mode } checked?={ appearancePreference(ctx,"color_mode")==mode } data-attr:checked={ fmt.Sprintf("$uiColorMode === '%s'", mode) } data-on:change={ fmt.Sprintf("@post('/settings/appearance?key=color_mode&value=%s')", mode) }/><span>{ mode }</span></label>
+			}
+		</fieldset>
+		<p class="rw-footnote" role="status" data-text="$appearanceStatus || 'Saved to your account. System follows your device’s light or dark preference.'"></p>
+	</section>
+}

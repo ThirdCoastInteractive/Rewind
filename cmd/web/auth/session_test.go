@@ -42,7 +42,6 @@ func TestSessionManager_SaveAndGetSession_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user-1", uid)
 	require.Equal(t, "alice", uname)
-	require.True(t, sm.IsAuthenticated(req2))
 
 	// Verify access level is stored and retrievable
 	require.Equal(t, AccessUser, sm.GetAccessLevel(req2))
@@ -103,7 +102,6 @@ func TestSessionManager_GetSession_NotAuthenticated(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotAuthenticated)
 	require.Equal(t, "", uid)
 	require.Equal(t, "", uname)
-	require.False(t, sm.IsAuthenticated(req))
 }
 
 func TestSessionManager_GetSession_BadCookie(t *testing.T) {

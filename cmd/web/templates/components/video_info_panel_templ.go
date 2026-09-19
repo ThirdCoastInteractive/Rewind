@@ -45,7 +45,7 @@ func InfoColumn(title string, rows []videoinfo.InfoPair, links []videoinfo.InfoL
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 14, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 14, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -104,7 +104,7 @@ func InfoColumnWithTags(title string, rows []videoinfo.InfoPair, tags []string) 
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 27, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 27, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -133,7 +133,7 @@ func InfoColumnWithTags(title string, rows []videoinfo.InfoPair, tags []string) 
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 36, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 36, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func BadgeList(title string, items []string) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 47, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 47, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -204,7 +204,7 @@ func BadgeList(title string, items []string) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(item)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 50, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 50, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -260,7 +260,7 @@ func QualityChips(title string, videoID string, chips []QualityChipData) templ.C
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 67, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 67, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -279,7 +279,7 @@ func QualityChips(title string, videoID string, chips []QualityChipData) templ.C
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(chip.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 73, Col: 18}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 73, Col: 18}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -310,7 +310,7 @@ func QualityChips(title string, videoID string, chips []QualityChipData) templ.C
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue("Download " + chip.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 80, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 80, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 				if templ_7745c5c3_Err != nil {
@@ -323,7 +323,7 @@ func QualityChips(title string, videoID string, chips []QualityChipData) templ.C
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(chip.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/components/video_info_panel.templ`, Line: 83, Col: 18}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/video_info_panel.templ`, Line: 83, Col: 18}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -345,8 +345,8 @@ func QualityChips(title string, videoID string, chips []QualityChipData) templ.C
 
 func downloadFormat(videoID string, formatIDs string, label string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_downloadFormat_8922`,
-		Function: `function __templ_downloadFormat_8922(videoID, formatIDs, label){if (!confirm("Download " + label + " format? This will create a new download job for this specific quality.")) {
+		Name: `__templ_downloadFormat_593c`,
+		Function: `function __templ_downloadFormat_593c(videoID, formatIDs, label){if (!confirm("Download " + label + " format? This will create a new download job for this specific quality.")) {
 		return
 	}
 	fetch("/api/videos/" + videoID + "/download-format", {
@@ -356,7 +356,7 @@ func downloadFormat(videoID string, formatIDs string, label string) templ.Compon
 	}).then(function(response) {
 		if (response.ok) {
 			return response.json().then(function(data) {
-				window.location.href = "/jobs/" + data.job_id
+				window.RewindNavigation.navigate("/jobs/" + data.job_id)
 			})
 		}
 		return response.text().then(function(text) {
@@ -366,8 +366,8 @@ func downloadFormat(videoID string, formatIDs string, label string) templ.Compon
 		alert("Error: " + error.message)
 	})
 }`,
-		Call:       templ.SafeScript(`__templ_downloadFormat_8922`, videoID, formatIDs, label),
-		CallInline: templ.SafeScriptInline(`__templ_downloadFormat_8922`, videoID, formatIDs, label),
+		Call:       templ.SafeScript(`__templ_downloadFormat_593c`, videoID, formatIDs, label),
+		CallInline: templ.SafeScriptInline(`__templ_downloadFormat_593c`, videoID, formatIDs, label),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleCancel serves POST /jobs/:id/cancel, terminating a running download job.
 func HandleCancel(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -49,7 +50,7 @@ func HandleCancel(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 			return c.String(500, "failed to cancel job")
 		}
 
-		return c.JSON(200, map[string]any{"status": "cancelled"})
+		return jobActionResponse(c, map[string]any{"status": "cancelled"}, "Download cancellation requested.")
 	}
 }
 

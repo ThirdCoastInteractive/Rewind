@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"thirdcoast.systems/rewind/internal/db"
 )
@@ -57,14 +56,4 @@ func cleanupClipExportsLRU(ctx context.Context, dbc *db.DatabaseConnection) {
 
 		freed += exp.SizeBytes
 	}
-}
-
-// safeClipExportDir returns a safe directory path for clip exports.
-func safeClipExportDir(clipID string) string {
-	return filepath.Join(string(os.PathSeparator), "exports", "clips", clipID)
-}
-
-// ensureDir creates a directory and all parent directories.
-func ensureDir(path string) error {
-	return os.MkdirAll(path, 0755)
 }

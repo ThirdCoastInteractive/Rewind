@@ -7,6 +7,26 @@ import (
 	"testing"
 )
 
+func TestStoredTranscriptCanRestoreVTTFile(t *testing.T) {
+	cuesJSON := []byte(`[{"start":1.25,"end":2.5,"text":"Redbar is watching."}]`)
+	cues, err := CuesFromStoredTranscript(cuesJSON, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "video.captions.en.vtt")
+	if err := WriteVTTFile(path, cues); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if !strings.Contains(got, "00:00:01.250 --> 00:00:02.500") || !strings.Contains(got, "Redbar is watching.") {
+		t.Fatalf("unexpected VTT: %q", got)
+	}
+}
+
 func TestParseYouTubeAuto(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "youtube-auto.vtt"))
 	if err != nil {
@@ -88,13 +108,13 @@ func TestParseEmpty(t *testing.T) {
 
 func TestLangFromFilename(t *testing.T) {
 	cases := map[string]string{
-		"abc.captions.en.vtt":        "en",
-		"abc.captions.en-US.vtt":     "en-us",
-		"abc.captions.und.vtt":       "und",
-		"abc.captions.video.vtt":     "und",
-		"abc.captions.en.src.vtt":    "en",
-		"something.en.vtt":           "en",
-		"nope.vtt":                   "und",
+		"abc.captions.en.vtt":     "en",
+		"abc.captions.en-US.vtt":  "en-us",
+		"abc.captions.und.vtt":    "und",
+		"abc.captions.video.vtt":  "und",
+		"abc.captions.en.src.vtt": "en",
+		"something.en.vtt":        "en",
+		"nope.vtt":                "und",
 	}
 	for in, want := range cases {
 		if got := LangFromFilename(in); got != want {

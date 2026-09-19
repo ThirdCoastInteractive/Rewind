@@ -2,20 +2,28 @@
 
 BINDIR ?= bin/local
 
-# Shared ffmpeg runtime images so encoder/downloader rebuilds skip apt/apk.
-# Ingest compiles whisper.cpp inside ingest.Dockerfile (no Python weights).
+# Keep GPU compiler layers out of Docker Desktop's small shared cache.
+# This selects the builder for this make invocation, not other projects.
+BUILDX_BUILDER ?= rewind
+export BUILDX_BUILDER
+PYTHON ?= python
+
+# Optional standalone runtime images; public service builds remain self-contained.
 RUNTIME_FFMPEG_DEBIAN ?= rewind-runtime-ffmpeg-debian:local
 RUNTIME_FFMPEG_ALPINE ?= rewind-runtime-ffmpeg-alpine:local
 
-.PHONY: help up up-fast up-web up-workers runtime-bases runtime-bases-force down logs status clean generate sqlc templ assets build test lint lint-template-go-files lint-uuid-parse lint-release e2e release
+.PHONY: help up up-fast up-web up-workers up-ml build-cache runtime-bases runtime-bases-force down logs status clean generate sqlc templ assets build test lint lint-template-go-files lint-uuid-parse lint-release e2e release show-notes-migrate show-notes-preflight
 
 help:
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "  up                 Ensure runtime bases, rebuild services, start stack"
-	@echo "  up-fast            Start stack WITHOUT rebuilding anything (fastest)"
-	@echo "  up-web             Rebuild + restart only web (day-to-day UI work)"
-	@echo "  up-workers         Rebuild + restart downloader/ingest/encoder"
+	@echo "  up                 Start the stack. Rebuilds only services whose sources changed"
+	@echo "  up-fast            Start stack without rebuilding anything"
+	@echo "  up-web             Force rebuild rewind (UI + in-process workers)"
+	@echo "  up-workers         Same as up-web"
+	@echo "  up-ml              Force rebuild rewind-ml"
+	@echo "  migrate            Run database migrations (rewind migrate)"
+	@echo "  build-cache        Ensure the persistent Rewind builder exists"
 	@echo "  runtime-bases      Build shared ffmpeg bases if missing (slow, rare)"
 	@echo "  runtime-bases-force  Rebuild bases from scratch (no cache)"
 	@echo "  down               Stop all services"
@@ -25,7 +33,10 @@ help:
 	@echo "  generate           Run sqlc + templ + assets"
 	@echo "  build              Build all Go binaries"
 	@echo "  test               Run Go tests"
+	@echo "  test-tools         Test release guardrails in disposable repositories"
 	@echo "  e2e                Run Playwright E2E tests"
+	@echo "  show-notes-migrate  Backfill collaborative Markdown documents"
+	@echo "  show-notes-preflight Verify every note is safe for workspace cutover"
 	@echo "  lint               Run code-pattern guardrails"
 	@echo ""
 	@echo "Performance testing:"
@@ -43,10 +54,19 @@ setup:
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	pnpm install
 
-# Build shared ffmpeg bases only when missing. Ingest's whisper.cpp compile is
-# cached as Docker layers inside ingest.Dockerfile — first ingest build is the
-# slow one, then Go-only rebuilds stay fast. GGML weights live in ./bin/models.
-runtime-bases:
+# Bootstrap once; later invocations reuse this builder and its cache volume.
+build-cache:
+	@docker buildx inspect "$(BUILDX_BUILDER)" >/dev/null 2>&1 || \
+		docker buildx create --name "$(BUILDX_BUILDER)" --driver docker-container \
+		--driver-opt default-load=true --buildkitd-config docker/buildkitd.toml
+	@docker buildx inspect --bootstrap "$(BUILDX_BUILDER)" >/dev/null
+	@echo "Build cache: $(BUILDX_BUILDER)"
+
+.PHONY: test-build-cache
+test-build-cache: build-cache
+	$(PYTHON) scripts/check-build-cache.py --builder "$(BUILDX_BUILDER)"
+
+runtime-bases: build-cache
 	@if ! docker image inspect $(RUNTIME_FFMPEG_DEBIAN) >/dev/null 2>&1; then \
 		echo "==> building $(RUNTIME_FFMPEG_DEBIAN) (ffmpeg via apt, one-time)"; \
 		docker build -t $(RUNTIME_FFMPEG_DEBIAN) -f docker/runtime-ffmpeg-debian.Dockerfile docker/; \
@@ -56,25 +76,32 @@ runtime-bases:
 		docker build -t $(RUNTIME_FFMPEG_ALPINE) -f docker/runtime-ffmpeg-alpine.Dockerfile docker/; \
 	else echo "ok  $(RUNTIME_FFMPEG_ALPINE)"; fi
 
-runtime-bases-force:
+runtime-bases-force: build-cache
 	docker build --no-cache -t $(RUNTIME_FFMPEG_DEBIAN) -f docker/runtime-ffmpeg-debian.Dockerfile docker/
 	docker build --no-cache -t $(RUNTIME_FFMPEG_ALPINE) -f docker/runtime-ffmpeg-alpine.Dockerfile docker/
 
-# Full stack: bases if needed, then compose --build (Go layers only on day-to-day edits).
-up: runtime-bases
-	docker compose up -d --build --remove-orphans
+# Rebuild only services whose sources are newer than the image, then start.
+# Ollama / vision wheels live in ./bin/runtime and are not part of the image.
+up: build-cache
+	$(PYTHON) scripts/compose-up.py
 
 # No image builds — just start whatever is already built.
 up-fast:
-	docker compose up -d --remove-orphans
+	$(PYTHON) scripts/compose-up.py --no-build
 
-# UI iteration path: only rebuild web.
-up-web: runtime-bases
-	docker compose up -d --build --no-deps web
+# Force a single service when the mtime check is wrong or you want a clean image.
+up-web: build-cache
+	$(PYTHON) scripts/compose-up.py --force rewind
 
-# Worker iteration: skip web/sfu.
-up-workers: runtime-bases
-	docker compose up -d --build --no-deps downloader ingest encoder
+up-workers: build-cache
+	$(PYTHON) scripts/compose-up.py --force rewind
+
+up-ml: build-cache
+	$(PYTHON) scripts/compose-up.py --force rewind-ml
+
+.PHONY: migrate
+migrate: build-cache
+	docker compose run --rm --build --no-deps rewind migrate
 
 down:
 	docker compose down
@@ -96,25 +123,103 @@ sqlc:
 	sqlc generate -f internal/db/sql/sqlc.yaml
 
 templ:
-	templ fmt .
-	templ generate
+	templ fmt cmd/web/templates
+	templ generate -path cmd/web/templates
 
 assets:
 	pnpm run build
 
 build: generate
+	go build -o $(BINDIR)/rewind ./cmd/web
 	go build -o $(BINDIR)/web ./cmd/web
 	go build -o $(BINDIR)/sfu ./cmd/sfu
 	go build -o $(BINDIR)/downloader ./cmd/downloader
 	go build -o $(BINDIR)/ingest ./cmd/ingest
 	go build -o $(BINDIR)/encoder ./cmd/encoder
+	go build -o $(BINDIR)/ml ./cmd/ml
 	go build -o $(BINDIR)/pg-migrator ./cmd/pg-migrator
 
 test:
 	go test ./...
 
+.PHONY: test-stitch-core
+test-stitch-core:
+	go test ./internal/stitch
+
+.PHONY: test-stitch-integration
+test-stitch-integration:
+	go test -tags=integration ./internal/integration -run Stitch -count=1 -v
+
+.PHONY: test-stitch-render test-stitch-client
+test-stitch-render:
+	go test -tags=integration ./internal/encode -run Canonical -count=1 -v
+
+test-stitch-client:
+	node --test tests/stitch-workspace.behavior.test.mjs
+
+.PHONY: test-stitch-mcp
+test-stitch-mcp:
+	go test -tags=integration ./internal/mcp -run TestStitchEditorMCP -count=1 -v
+
+.PHONY: test-generation-retry
+test-generation-retry:
+	go test ./cmd/ml/... ./cmd/web/handlers/api/video_api ./cmd/web/templates ./internal/contextwindow ./internal/transcription
+
+.PHONY: test-tools
+test-tools:
+	bash scripts/test-release.sh
+
+.PHONY: release-audit
+release-audit:
+	go test -tags=releaseaudit ./internal/integration ./internal/agent ./cmd/web/handlers/api/shownote_api -run 'TestV003|TestFollowupRetains|TestOfflineScene' -count=1
+	node --test static/js/lib/save-queue.test.js static/js/lib/page-scope.test.js static/js/lib/sponsorblock.test.js
+
+.PHONY: vision-build vision-test vision-install postgres-vector-build integration-up integration-down integration-test
+VISION_MODEL ?= ViT-B-32__openai
+VISION_LICENSE_ARGS ?=
+vision-build: build-cache
+	docker compose -f docker-compose.integration.yml build vision
+
+vision-test:
+	docker compose -f docker-compose.integration.yml run --rm --no-deps vision
+
+vision-install:
+	docker compose run --rm --no-deps -w /opt/vision rewind-ml python3 models.py $(VISION_MODEL) $(VISION_LICENSE_ARGS)
+
+vision-install-canary:
+	docker compose -f docker-compose.integration.yml run --rm --no-deps -e VISION_MODEL_DIR=/models/vision -v ./bin/models/vision:/models/vision vision python3 models.py $(VISION_MODEL) $(VISION_LICENSE_ARGS)
+
+vision-lock:
+	docker compose -f docker-compose.integration.yml run --rm --no-deps vision pip freeze --exclude onnxruntime --exclude onnxruntime-gpu > services/vision/requirements.lock
+
+vision-canary:
+	docker compose -f docker-compose.integration.yml run --rm --no-deps -e VISION_MODEL_DIR=/models/vision -v ./bin/models/vision:/models/vision:ro -v ./services/vision:/app:ro vision python3 model_canary.py
+
+postgres-vector-build: build-cache
+	docker compose -f docker-compose.integration.yml build postgres
+
+integration-up:
+	docker compose -f docker-compose.integration.yml up -d --wait postgres
+
+integration-down:
+	docker compose -f docker-compose.integration.yml down
+
+integration-test:
+	go test -tags=integration ./internal/integration -count=1 -v
+	go test -tags=integration ./internal/mcp -count=1 -v
+
+.PHONY: agent-model-test
+agent-model-test:
+	go test -tags=realmodel ./internal/agent -run TestQwenArchiveCompilation -count=1 -v -timeout 15m
+
 e2e:
 	pnpm exec playwright test
+
+show-notes-migrate: build-cache
+	docker compose run --rm --build --no-deps --entrypoint ./show-note-workspace rewind
+
+show-notes-preflight: build-cache
+	docker compose run --rm --build --no-deps --entrypoint ./show-note-workspace rewind --preflight
 
 release:
 	@echo "Squashing master → public/main (private paths excluded, ThirdCoast identity)..."
@@ -204,3 +309,16 @@ perf-dashboards:
 perf-clean:
 	rm -rf bin/dev/sitespeed/results/*
 	rm -rf bin/dev/sitespeed/video/*
+
+# Full inference diagnostics use explicit installed models and never modify media.
+.PHONY: ml-canary vision-cuda-build vision-cuda-canary
+ml-canary:
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --no-deps -e CANARY_CONTEXT=32768 -v $(CURDIR)/scripts/ml-canary.sh:/tmp/ml-canary.sh:ro --entrypoint sh rewind-ml /tmp/ml-canary.sh
+vision-cuda-build: build-cache
+	docker build -f ml.Dockerfile --target runtime-cuda -t rewind-ml:cuda-test .
+vision-cuda-canary:
+	docker run --rm --gpus all -e VISION_MODEL_DIR=/models/vision -v $(CURDIR)/bin/models/vision:/models/vision:ro -v $(CURDIR)/services/vision:/app:ro rewind-ml:cuda-test python3 /app/gpu_canary.py
+
+.PHONY: agent-handshake-test
+agent-handshake-test:
+	go test -tags=agenthandshake ./internal/agentprotocol -run TestInstalledProviderHandshake -count=1 -v -timeout 1m

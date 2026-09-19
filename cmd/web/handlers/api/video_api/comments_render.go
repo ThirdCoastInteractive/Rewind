@@ -143,6 +143,13 @@ func deref(s *string) string {
 	return ""
 }
 
+func uuidIfValid(id pgtype.UUID) string {
+	if id.Valid {
+		return id.String()
+	}
+	return ""
+}
+
 func derefInt64(p *int64) int64 {
 	if p != nil {
 		return *p
@@ -169,6 +176,7 @@ func listCommentsToItems(videoID string, rows []*db.ListVideoCommentsRow) []comp
 			ID:          r.ID.String(),
 			VideoID:     videoID,
 			CommentID:   r.CommentID,
+			CommenterID: uuidIfValid(r.CommenterID),
 			Author:      deref(r.Author),
 			AuthorURL:   deref(r.AuthorURL),
 			AuthorThumb: r.AuthorThumbnail,
@@ -192,6 +200,7 @@ func searchCommentsToItems(videoID string, rows []*db.SearchVideoCommentsRow) []
 			ID:          r.ID.String(),
 			VideoID:     videoID,
 			CommentID:   r.CommentID,
+			CommenterID: uuidIfValid(r.CommenterID),
 			Author:      deref(r.Author),
 			AuthorURL:   deref(r.AuthorURL),
 			AuthorThumb: r.AuthorThumbnail,
@@ -216,6 +225,7 @@ func replyCommentsToItems(videoID string, rows []*db.ListVideoCommentRepliesRow)
 			ID:          r.ID.String(),
 			VideoID:     videoID,
 			CommentID:   r.CommentID,
+			CommenterID: uuidIfValid(r.CommenterID),
 			Author:      deref(r.Author),
 			AuthorURL:   deref(r.AuthorURL),
 			AuthorThumb: r.AuthorThumbnail,

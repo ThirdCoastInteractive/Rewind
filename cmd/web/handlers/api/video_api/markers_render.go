@@ -47,6 +47,7 @@ func HandleMarkersRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 
 		// Fetch SponsorBlock segments for YouTube videos
 		sbMarkers := []*db.Marker{}
+		segments := make(map[*db.Marker]string)
 		if videoRow.Src != "" {
 			if ytID, err := videoid.ExtractYouTubeVideoID(videoRow.Src); err == nil && ytID != "" {
 				sb := sponsorblock.NewClient(os.Getenv("SPONSORBLOCK_BASE_URL"))
@@ -65,7 +66,9 @@ func HandleMarkersRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 					slog.Warn("markers render: sponsorblock failed", "error", err)
 				} else {
 					for _, s := range segs {
-						sbMarkers = append(sbMarkers, sponsorblock.SegmentToMarker(videoUUID, s))
+						marker := sponsorblock.SegmentToMarker(videoUUID, s)
+						sbMarkers = append(sbMarkers, marker)
+						segments[marker] = "sb:" + s.UUID
 					}
 				}
 			}
@@ -80,7 +83,7 @@ func HandleMarkersRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 		})
 
 		// Convert to templ-friendly items.
-		// DB markers are indices 0..len(markers)-1, SB markers are len(markers)..len(all)-1.
+		// Preserve provenance across sorting; position does not identify the source.
 		items := make([]components.MarkerItem, len(all))
 		for i, m := range all {
 			dur := 0.0
@@ -93,7 +96,10 @@ func HandleMarkersRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 				Duration:       dur,
 				Title:          m.Title,
 				Description:    m.Description,
-				IsSponsorBlock: i >= len(markers),
+			}
+			if id, ok := segments[m]; ok {
+				items[i].ID = id
+				items[i].IsSponsorBlock = true
 			}
 		}
 

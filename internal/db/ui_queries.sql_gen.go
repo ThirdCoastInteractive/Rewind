@@ -9,18 +9,17 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"thirdcoast.systems/rewind/pkg/videoinfo"
 )
 
 const getDownloadJobByID = `-- name: GetDownloadJobByID :one
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 FROM download_jobs
 WHERE id = $1
 `
 
 // GetDownloadJobByID returns a download job by ID
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 //	FROM download_jobs
 //	WHERE id = $1
 func (q *Queries) GetDownloadJobByID(ctx context.Context, id pgtype.UUID) (*DownloadJob, error) {
@@ -49,6 +48,7 @@ func (q *Queries) GetDownloadJobByID(ctx context.Context, id pgtype.UUID) (*Down
 		&i.BatchLabel,
 		&i.BatchTotal,
 		&i.WatchID,
+		&i.DedupeKey,
 	)
 	return &i, err
 }
@@ -92,14 +92,14 @@ func (q *Queries) GetHomeStats(ctx context.Context) (*GetHomeStatsRow, error) {
 }
 
 const getVideoByID = `-- name: GetVideoByID :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 FROM videos
 WHERE id = $1
 `
 
 // GetVideoByID returns a video by ID
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 //	FROM videos
 //	WHERE id = $1
 func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, error) {
@@ -141,8 +141,163 @@ func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, err
 		&i.MetadataRefreshedAt,
 		&i.LinksHarvestedAt,
 		&i.Media,
+		&i.SubtitleState,
+		&i.SubtitleCheckedAt,
+		&i.SubtitleLastError,
+		&i.TranscriptVersion,
+		&i.CommentCount,
 	)
 	return &i, err
+}
+
+const listCatalogCandidates = `-- name: ListCatalogCandidates :many
+WITH params AS (
+    SELECT NULLIF(btrim(COALESCE($3::text, '')), '') AS tsq
+), hits AS (
+    SELECT v.id AS video_id,
+           COALESCE((v.search @@ to_tsquery('simple', p.tsq)), FALSE)::boolean AS metadata_match,
+           EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq)) AS comment_match,
+           EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq)) AS transcript_match,
+           EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)) AS context_window_match
+    FROM videos v CROSS JOIN params p
+    WHERE p.tsq IS NOT NULL AND (
+        v.search @@ to_tsquery('simple', p.tsq)
+        OR EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq))
+        OR EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq))
+        OR EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq))
+    )
+)
+SELECT v.id, v.title, v.uploader, v.src, v.upload_date, v.duration_seconds,
+       v.thumbnail_path, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle,
+       h.metadata_match, h.comment_match, h.transcript_match, h.context_window_match,
+       COUNT(*) OVER() AS total_count
+FROM videos v JOIN hits h ON h.video_id = v.id
+LEFT JOIN channels ch ON ch.id = v.channel_row_id
+WHERE v.media = 'metadata'
+  AND ($1::text IS NULL OR v.uploader ILIKE '%' || $1 || '%')
+  AND (COALESCE(cardinality($2::text[]),0)=0
+    OR (h.metadata_match AND 'metadata'=ANY($2::text[]))
+      OR ('title'=ANY($2::text[]) AND to_tsvector('simple',v.title) @@ to_tsquery('simple',$3))
+      OR ('description'=ANY($2::text[]) AND to_tsvector('simple',v.description) @@ to_tsquery('simple',$3))
+      OR ('uploader'=ANY($2::text[]) AND to_tsvector('simple',v.uploader) @@ to_tsquery('simple',$3))
+      OR ('tags'=ANY($2::text[]) AND to_tsvector('simple',array_to_string(v.tags,' ')) @@ to_tsquery('simple',$3))
+    OR (h.comment_match AND 'comments'=ANY($2::text[]))
+    OR (h.transcript_match AND 'transcript'=ANY($2::text[]))
+    OR (h.context_window_match AND 'context_windows'=ANY($2::text[])))
+  AND ($4::uuid IS NULL OR ch.creator_id = $4)
+  AND ($5::uuid IS NULL OR ch.id = $5)
+ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+LIMIT $6
+`
+
+type ListCatalogCandidatesParams struct {
+	Uploader     *string     `db:"uploader" json:"Uploader"`
+	Sources      []string    `db:"sources" json:"Sources"`
+	Tsquery      *string     `db:"tsquery" json:"Tsquery"`
+	CreatorID    pgtype.UUID `db:"creator_id" json:"CreatorID"`
+	ChannelRowID pgtype.UUID `db:"channel_row_id" json:"ChannelRowID"`
+	PageLimit    int32       `db:"page_limit" json:"PageLimit"`
+}
+
+type ListCatalogCandidatesRow struct {
+	ID                 pgtype.UUID `db:"id" json:"ID"`
+	Title              string      `db:"title" json:"Title"`
+	Uploader           string      `db:"uploader" json:"Uploader"`
+	Src                string      `db:"src" json:"Src"`
+	UploadDate         pgtype.Date `db:"upload_date" json:"UploadDate"`
+	DurationSeconds    *int32      `db:"duration_seconds" json:"DurationSeconds"`
+	ThumbnailPath      *string     `db:"thumbnail_path" json:"ThumbnailPath"`
+	ThumbGradientStart *string     `db:"thumb_gradient_start" json:"ThumbGradientStart"`
+	ThumbGradientEnd   *string     `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
+	ThumbGradientAngle *int32      `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
+	MetadataMatch      bool        `db:"metadata_match" json:"MetadataMatch"`
+	CommentMatch       bool        `db:"comment_match" json:"CommentMatch"`
+	TranscriptMatch    bool        `db:"transcript_match" json:"TranscriptMatch"`
+	ContextWindowMatch bool        `db:"context_window_match" json:"ContextWindowMatch"`
+	TotalCount         int64       `db:"total_count" json:"TotalCount"`
+}
+
+// ListCatalogCandidates returns matching metadata-only rows separately from
+// playable video cards.
+//
+//	WITH params AS (
+//	    SELECT NULLIF(btrim(COALESCE($3::text, '')), '') AS tsq
+//	), hits AS (
+//	    SELECT v.id AS video_id,
+//	           COALESCE((v.search @@ to_tsquery('simple', p.tsq)), FALSE)::boolean AS metadata_match,
+//	           EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq)) AS comment_match,
+//	           EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq)) AS transcript_match,
+//	           EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)) AS context_window_match
+//	    FROM videos v CROSS JOIN params p
+//	    WHERE p.tsq IS NOT NULL AND (
+//	        v.search @@ to_tsquery('simple', p.tsq)
+//	        OR EXISTS (SELECT 1 FROM video_comments c WHERE c.video_id = v.id AND c.search @@ to_tsquery('simple', p.tsq))
+//	        OR EXISTS (SELECT 1 FROM video_transcripts t WHERE t.video_id = v.id AND t.search @@ to_tsquery('simple', p.tsq))
+//	        OR EXISTS (SELECT 1 FROM context_windows cw WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq))
+//	    )
+//	)
+//	SELECT v.id, v.title, v.uploader, v.src, v.upload_date, v.duration_seconds,
+//	       v.thumbnail_path, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle,
+//	       h.metadata_match, h.comment_match, h.transcript_match, h.context_window_match,
+//	       COUNT(*) OVER() AS total_count
+//	FROM videos v JOIN hits h ON h.video_id = v.id
+//	LEFT JOIN channels ch ON ch.id = v.channel_row_id
+//	WHERE v.media = 'metadata'
+//	  AND ($1::text IS NULL OR v.uploader ILIKE '%' || $1 || '%')
+//	  AND (COALESCE(cardinality($2::text[]),0)=0
+//	    OR (h.metadata_match AND 'metadata'=ANY($2::text[]))
+//	      OR ('title'=ANY($2::text[]) AND to_tsvector('simple',v.title) @@ to_tsquery('simple',$3))
+//	      OR ('description'=ANY($2::text[]) AND to_tsvector('simple',v.description) @@ to_tsquery('simple',$3))
+//	      OR ('uploader'=ANY($2::text[]) AND to_tsvector('simple',v.uploader) @@ to_tsquery('simple',$3))
+//	      OR ('tags'=ANY($2::text[]) AND to_tsvector('simple',array_to_string(v.tags,' ')) @@ to_tsquery('simple',$3))
+//	    OR (h.comment_match AND 'comments'=ANY($2::text[]))
+//	    OR (h.transcript_match AND 'transcript'=ANY($2::text[]))
+//	    OR (h.context_window_match AND 'context_windows'=ANY($2::text[])))
+//	  AND ($4::uuid IS NULL OR ch.creator_id = $4)
+//	  AND ($5::uuid IS NULL OR ch.id = $5)
+//	ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+//	LIMIT $6
+func (q *Queries) ListCatalogCandidates(ctx context.Context, arg *ListCatalogCandidatesParams) ([]*ListCatalogCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listCatalogCandidates,
+		arg.Uploader,
+		arg.Sources,
+		arg.Tsquery,
+		arg.CreatorID,
+		arg.ChannelRowID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListCatalogCandidatesRow
+	for rows.Next() {
+		var i ListCatalogCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Uploader,
+			&i.Src,
+			&i.UploadDate,
+			&i.DurationSeconds,
+			&i.ThumbnailPath,
+			&i.ThumbGradientStart,
+			&i.ThumbGradientEnd,
+			&i.ThumbGradientAngle,
+			&i.MetadataMatch,
+			&i.CommentMatch,
+			&i.TranscriptMatch,
+			&i.ContextWindowMatch,
+			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDistinctTags = `-- name: ListDistinctTags :many
@@ -216,7 +371,7 @@ func (q *Queries) ListDistinctUploaders(ctx context.Context) ([]string, error) {
 }
 
 const listDownloadJobsByUser = `-- name: ListDownloadJobsByUser :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 FROM download_jobs
 WHERE archived_by = $1
   AND archived = FALSE
@@ -231,7 +386,7 @@ type ListDownloadJobsByUserParams struct {
 
 // ListDownloadJobsByUser returns all download jobs for a user
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 //	FROM download_jobs
 //	WHERE archived_by = $1
 //	  AND archived = FALSE
@@ -269,6 +424,7 @@ func (q *Queries) ListDownloadJobsByUser(ctx context.Context, arg *ListDownloadJ
 			&i.BatchLabel,
 			&i.BatchTotal,
 			&i.WatchID,
+			&i.DedupeKey,
 		); err != nil {
 			return nil, err
 		}
@@ -281,7 +437,7 @@ func (q *Queries) ListDownloadJobsByUser(ctx context.Context, arg *ListDownloadJ
 }
 
 const listDownloadJobsByVideoID = `-- name: ListDownloadJobsByVideoID :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 FROM download_jobs
 WHERE video_id = $1
    OR url = $2
@@ -296,7 +452,7 @@ type ListDownloadJobsByVideoIDParams struct {
 // ListDownloadJobsByVideoID returns all download jobs for a video.
 // Matches by video_id FK or by URL matching the video's src column.
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 //	FROM download_jobs
 //	WHERE video_id = $1
 //	   OR url = $2
@@ -333,6 +489,7 @@ func (q *Queries) ListDownloadJobsByVideoID(ctx context.Context, arg *ListDownlo
 			&i.BatchLabel,
 			&i.BatchTotal,
 			&i.WatchID,
+			&i.DedupeKey,
 		); err != nil {
 			return nil, err
 		}
@@ -464,7 +621,7 @@ func (q *Queries) ListRecentClips(ctx context.Context) ([]*ListRecentClipsRow, e
 }
 
 const listRecentDownloadJobs = `-- name: ListRecentDownloadJobs :many
-SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 FROM download_jobs
 WHERE archived = FALSE
 ORDER BY created_at DESC
@@ -473,7 +630,7 @@ LIMIT 100
 
 // ListRecentDownloadJobs returns recent download jobs for all users
 //
-//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+//	SELECT id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 //	FROM download_jobs
 //	WHERE archived = FALSE
 //	ORDER BY created_at DESC
@@ -510,6 +667,7 @@ func (q *Queries) ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, e
 			&i.BatchLabel,
 			&i.BatchTotal,
 			&i.WatchID,
+			&i.DedupeKey,
 		); err != nil {
 			return nil, err
 		}
@@ -522,16 +680,18 @@ func (q *Queries) ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, e
 }
 
 const listRecentVideos = `-- name: ListRecentVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 FROM videos
+WHERE media <> 'metadata'
 ORDER BY created_at DESC
 LIMIT 15
 `
 
 // ListRecentVideos returns recent videos (by archive date)
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 //	FROM videos
+//	WHERE media <> 'metadata'
 //	ORDER BY created_at DESC
 //	LIMIT 15
 func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
@@ -579,6 +739,11 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 			&i.MetadataRefreshedAt,
 			&i.LinksHarvestedAt,
 			&i.Media,
+			&i.SubtitleState,
+			&i.SubtitleCheckedAt,
+			&i.SubtitleLastError,
+			&i.TranscriptVersion,
+			&i.CommentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -591,18 +756,20 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 }
 
 const listRecentlyPublishedVideos = `-- name: ListRecentlyPublishedVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 FROM videos
-WHERE upload_date IS NOT NULL
+WHERE media <> 'metadata'
+  AND upload_date IS NOT NULL
 ORDER BY upload_date DESC
 LIMIT 15
 `
 
 // ListRecentlyPublishedVideos returns videos sorted by original publish date
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 //	FROM videos
-//	WHERE upload_date IS NOT NULL
+//	WHERE media <> 'metadata'
+//	  AND upload_date IS NOT NULL
 //	ORDER BY upload_date DESC
 //	LIMIT 15
 func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, error) {
@@ -650,6 +817,11 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 			&i.MetadataRefreshedAt,
 			&i.LinksHarvestedAt,
 			&i.Media,
+			&i.SubtitleState,
+			&i.SubtitleCheckedAt,
+			&i.SubtitleLastError,
+			&i.TranscriptVersion,
+			&i.CommentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -664,180 +836,365 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 const listVideosPaginated = `-- name: ListVideosPaginated :many
 WITH params AS (
     SELECT
-        NULLIF(btrim(COALESCE($14::text, '')), '') AS tsq,
-        NULLIF(btrim(COALESCE($15::text, '')), '') AS raw
+        NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
+        NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+),
+field_clauses AS (
+    SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
+    FROM jsonb_array_elements(COALESCE($2::jsonb, '[]'::jsonb))
+),
+field_hits AS (
+    SELECT fc.ordinality, fv.id AS video_id
+    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.title, '')) @@ phraseto_tsquery('simple', fc.phrase)
+    WHERE fc.field = 'title'
+    UNION ALL
+    SELECT fc.ordinality, fv.id AS video_id
+    FROM field_clauses fc JOIN videos fv ON fc.phrase <> '' AND strpos(lower(fv.src), lower(fc.phrase)) > 0
+    WHERE fc.field = 'url'
+    UNION ALL
+    SELECT fc.ordinality, fv.id AS video_id
+    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.description, '')) @@ phraseto_tsquery('simple', fc.phrase)
+    WHERE fc.field = 'description'
+    UNION ALL
+    SELECT fc.ordinality, fv.id AS video_id
+    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.uploader, '')) @@ phraseto_tsquery('simple', fc.phrase)
+    WHERE fc.field = 'uploader'
+    UNION ALL
+    SELECT fc.ordinality, ft.video_id AS video_id
+    FROM field_clauses fc JOIN video_transcripts ft ON ft.search @@ phraseto_tsquery('simple', fc.phrase)
+    WHERE fc.field = 'transcript'
+    UNION ALL
+    SELECT fc.ordinality, fw.video_id AS video_id
+    FROM field_clauses fc JOIN context_windows fw ON NOT fw.stale AND fw.search @@ phraseto_tsquery('simple', fc.phrase)
+    WHERE fc.field = 'context'
+),
+field_matches AS (
+    SELECT video_id FROM field_hits
+    GROUP BY video_id
+    HAVING count(DISTINCT ordinality) = (SELECT count(*) FROM field_clauses)
 ),
 hits AS (
-    SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+    SELECT
+        v.id AS video_id,
+        -- Title matches boost ×4 using the title tsvector, not whole v.search.
+        -- Description/tags/uploader stay ×1.
+        ts_rank_cd(v.search, to_tsquery('simple', p.tsq))
+            * CASE
+                WHEN to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) THEN 4
+                ELSE 1
+              END AS rank,
+        to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) AS title_match,
+        to_tsvector('simple', coalesce(v.uploader, '')) @@ to_tsquery('simple', p.tsq) AS uploader_match,
+        to_tsvector('simple', coalesce(v.description, '')) @@ to_tsquery('simple', p.tsq) AS description_match,
+        to_tsvector('simple', coalesce(array_to_string(v.tags, ' '), '')) @@ to_tsquery('simple', p.tsq) AS tags_match,
+        FALSE AS comment_match,
+        FALSE AS transcript_match,
+        FALSE AS context_window_match,
+        NULL::text AS snippet,
+        NULL::text AS snippet_source,
+        3::smallint AS snippet_priority
     FROM videos v
     CROSS JOIN params p
     WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
     UNION ALL
-    SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
-    FROM videos v
-    CROSS JOIN params p
-    WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
-    UNION ALL
-    SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+    SELECT
+        vc.video_id,
+        max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq))) * 1.5,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        TRUE,
+        FALSE,
+        FALSE,
+        NULL::text,
+        'comment'::text,
+        2::smallint
     FROM video_comments vc
     CROSS JOIN params p
     WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
     GROUP BY vc.video_id
     UNION ALL
-    SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+    SELECT
+        vt.video_id,
+        max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq))) * 3,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        TRUE,
+        FALSE,
+        NULL::text,
+        'transcript'::text,
+        1::smallint
     FROM video_transcripts vt
     CROSS JOIN params p
     WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
     GROUP BY vt.video_id
     UNION ALL
-    SELECT v.id, 0.05::real
-    FROM videos v
+    SELECT
+        cw.video_id,
+        max(ts_rank_cd(cw.search, to_tsquery('simple', p.tsq))) * 2,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        TRUE,
+        NULL::text,
+        'context_window'::text,
+        2::smallint
+    FROM context_windows cw
     CROSS JOIN params p
-    WHERE p.raw IS NOT NULL AND (
-        strpos(lower(v.title), lower(p.raw)) > 0
-        OR strpos(lower(v.uploader), lower(p.raw)) > 0
-    )
+    WHERE p.tsq IS NOT NULL AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+    GROUP BY cw.video_id
 ),
 ranked AS (
-    SELECT video_id, sum(rank) AS rank
+    SELECT
+        video_id,
+        sum(rank) AS rank,
+        bool_or(title_match) AS search_match_title,
+        bool_or(uploader_match) AS search_match_uploader,
+        bool_or(description_match) AS search_match_description,
+        bool_or(tags_match) AS search_match_tags,
+        bool_or(comment_match) AS search_match_comment,
+        bool_or(transcript_match) AS search_match_transcript,
+        bool_or(context_window_match) AS search_match_context_window,
+        (array_agg(snippet ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet,
+        (array_agg(snippet_source ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet_source
     FROM hits
     GROUP BY video_id
 )
-SELECT 
-    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media,
+SELECT
+    v.id,
+    v.created_at,
+    v.title,
+    v.uploader,
+    v.description,
+    v.tags,
+    v.media,
+    v.format,
+    v.upload_date,
+    v.duration_seconds,
+    v.view_count,
+    v.like_count,
+    v.comment_count,
+    v.thumb_gradient_start,
+    v.thumb_gradient_end,
+    v.thumb_gradient_angle,
     COUNT(*) OVER() AS total_count,
     COALESCE((SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id), 0) AS clip_count,
     COALESCE((SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id), 0) AS marker_count,
     COALESCE((SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id), '1970-01-01'::timestamptz) AS last_clip_at,
     COALESCE((SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id), '1970-01-01'::timestamptz) AS last_marker_at,
-    COALESCE(u.user_name, 'unknown') AS archived_by_username
+    COALESCE(u.user_name, 'unknown') AS archived_by_username,
+    COALESCE(r.search_match_title, FALSE) AS search_match_title,
+    COALESCE(r.search_match_uploader, FALSE) AS search_match_uploader,
+    COALESCE(r.search_match_description, FALSE) AS search_match_description,
+    COALESCE(r.search_match_tags, FALSE) AS search_match_tags,
+    COALESCE(r.search_match_comment, FALSE) AS search_match_comment,
+    COALESCE(r.search_match_transcript, FALSE) AS search_match_transcript,
+    COALESCE(r.search_match_context_window, FALSE) AS search_match_context_window,
+    COALESCE(CASE
+        -- Expensive headline extraction is deliberately deferred to the rows
+        -- that survive ORDER BY/LIMIT instead of running for every library hit.
+        WHEN r.search_match_transcript THEN (
+            SELECT regexp_replace(regexp_replace(ts_headline('simple', vt.text, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+            FROM video_transcripts vt
+            WHERE vt.video_id = v.id AND vt.search @@ to_tsquery('simple', p.tsq)
+            ORDER BY ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)) DESC
+            LIMIT 1
+        )
+        WHEN r.search_match_context_window THEN (
+            SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', cw.title, cw.summary), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+            FROM context_windows cw
+            WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+            ORDER BY ts_rank_cd(cw.search, to_tsquery('simple', p.tsq)) DESC
+            LIMIT 1
+        )
+        WHEN r.search_match_comment THEN (
+            SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', vc.author, vc.text), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+            FROM video_comments vc
+            WHERE vc.video_id = v.id AND vc.search @@ to_tsquery('simple', p.tsq)
+            ORDER BY ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)) DESC
+            LIMIT 1
+        )
+        WHEN r.search_match_description THEN regexp_replace(regexp_replace(ts_headline('simple', v.description, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+        WHEN r.search_match_tags THEN array_to_string(v.tags, ', ')
+        WHEN r.search_match_title THEN v.title
+        WHEN r.search_match_uploader THEN v.uploader
+    END, '')::text AS search_match_snippet,
+    COALESCE(CASE
+        WHEN r.search_match_transcript THEN 'transcript'
+        WHEN r.search_match_context_window THEN 'context_window'
+        WHEN r.search_match_comment THEN 'comment'
+        WHEN r.search_match_description THEN 'description'
+        WHEN r.search_match_tags THEN 'tags'
+        WHEN r.search_match_title THEN 'title'
+        WHEN r.search_match_uploader THEN 'uploader'
+    END, '')::text AS search_match_snippet_source
 FROM videos v
 LEFT JOIN users u ON v.archived_by = u.id
 LEFT JOIN ranked r ON r.video_id = v.id
 CROSS JOIN params p
 WHERE
+    -- Metadata-only catalog entries are not playable videos and never belong in card feeds.
+    v.media <> 'metadata'
     -- Full-text / substring search (optional).
-    (p.raw IS NULL OR r.video_id IS NOT NULL)
-    -- Uploader filter: substring, case-insensitive (optional)
-    AND ($1::text IS NULL OR strpos(lower(v.uploader), lower($1)) > 0)
-    -- Channel filter (optional)
-    AND ($2::text IS NULL OR v.channel_id = $2)
+    AND (p.raw IS NULL OR r.video_id IS NOT NULL)
+    AND (COALESCE(cardinality($1::text[]),0)=0
+      OR ('title'=ANY($1::text[]) AND r.search_match_title)
+      OR ('description'=ANY($1::text[]) AND r.search_match_description)
+      OR ('tags'=ANY($1::text[]) AND r.search_match_tags)
+      OR ('comments'=ANY($1::text[]) AND r.search_match_comment)
+      OR ('transcript'=ANY($1::text[]) AND r.search_match_transcript)
+      OR ('context_windows'=ANY($1::text[]) AND r.search_match_context_window)
+      OR ('uploader'=ANY($1::text[]) AND r.search_match_uploader))
+    -- Resolve each scope once, then intersect by video (all scopes must match).
+    AND (COALESCE(jsonb_array_length($2::jsonb), 0) = 0
+         OR v.id IN (SELECT video_id FROM field_matches))
+    -- Require completed assets. Keep predicates separate so unused filters
+    -- disappear from the plan instead of adding per-video conditional subplans.
+    AND (NOT COALESCE('context' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM context_windows ac WHERE ac.video_id = v.id AND NOT ac.stale))
+    AND (NOT COALESCE('transcript' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM video_transcripts atx WHERE atx.video_id = v.id AND btrim(atx.text) <> ''))
+    AND (NOT COALESCE('thumbnail' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"thumbnail":true}'::jsonb)
+    AND (NOT COALESCE('preview' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"preview":true}'::jsonb)
+    AND (NOT COALESCE('waveform' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"waveform":true}'::jsonb)
+    AND (NOT COALESCE('seek' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"seek":true}'::jsonb)
+    AND ($3::text[] IS NULL OR $3::text[] <@ ARRAY['context','transcript','thumbnail','preview','waveform','seek'])
+    -- Uploader combobox filter: indexed, case-insensitive prefix; optionally negate it.
+    AND (
+        $4::text IS NULL
+        OR (
+            COALESCE($5::boolean, FALSE) = FALSE
+            AND lower(v.uploader) LIKE lower($4) || '%'
+        )
+        OR (
+            COALESCE($5::boolean, FALSE) = TRUE
+            AND lower(v.uploader) NOT LIKE lower($4) || '%'
+        )
+    )
+	-- Channel filter (optional)
+	AND ($6::text IS NULL OR v.channel_id = $6)
+    -- First-class creator/channel filters.
+    AND ($7::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM channels ch WHERE ch.id = v.channel_row_id AND ch.creator_id = $7
+    ))
+    AND ($8::uuid IS NULL OR v.channel_row_id = $8)
     -- Duration filter: short=<5min, medium=5-30min, long=>30min
     AND (
-        $3::text IS NULL
-        OR ($3 = 'short' AND v.duration_seconds < 300)
-        OR ($3 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
-        OR ($3 = 'long' AND v.duration_seconds >= 1800)
+        $9::text IS NULL
+        OR ($9 = 'short' AND v.duration_seconds < 300)
+        OR ($9 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
+        OR ($9 = 'long' AND v.duration_seconds >= 1800)
     )
     -- Scraped tags filter (any tag matches)
-    AND ($4::text[] IS NULL OR v.tags && $4::text[])
+    AND ($10::text[] IS NULL OR v.tags && $10::text[])
     -- User tag filter (video has any of the selected tag ids)
-    AND ($5::uuid[] IS NULL OR EXISTS (
+    AND ($11::uuid[] IS NULL OR EXISTS (
         SELECT 1 FROM video_tags vt
-        WHERE vt.video_id = v.id AND vt.tag_id = ANY($5::uuid[])
+        WHERE vt.video_id = v.id AND vt.tag_id = ANY($11::uuid[])
     ))
     -- Date range (archived or published based on date_type)
     AND (
-        $6::date IS NULL 
-        OR ($7::text = 'published' AND v.upload_date >= $6)
-        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date >= $6)
+        $12::date IS NULL
+        OR ($13::text = 'published' AND v.upload_date >= $12)
+        OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date >= $12)
     )
     AND (
-        $8::date IS NULL
-        OR ($7::text = 'published' AND v.upload_date <= $8)
-        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date <= $8)
+        $14::date IS NULL
+        OR ($13::text = 'published' AND v.upload_date <= $14)
+        OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date <= $14)
     )
     -- Has clips filter
-    AND ($9::boolean IS NULL OR $9 = FALSE 
+    AND ($15::boolean IS NULL OR $15 = FALSE
          OR EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id))
     -- Has markers filter
-    AND ($10::boolean IS NULL OR $10 = FALSE
+    AND ($16::boolean IS NULL OR $16 = FALSE
          OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 ORDER BY
-    CASE WHEN $11 = 'relevance' THEN r.rank END DESC NULLS LAST,
+    CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
     -- Date sorts (archived)
-    CASE WHEN $11 = 'newest' THEN v.created_at END DESC NULLS LAST,
-    CASE WHEN $11 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+    CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
+    CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
     -- Date sorts (published)
-    CASE WHEN $11 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-    CASE WHEN $11 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+    CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+    CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
     -- Title sorts
-    CASE WHEN $11 = 'alpha' THEN v.title END ASC NULLS LAST,
-    CASE WHEN $11 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+    CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
+    CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
     -- Duration sorts
-    CASE WHEN $11 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-    CASE WHEN $11 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+    CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+    CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
     -- Activity sorts
-    CASE WHEN $11 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $11 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $11 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $11 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
     -- Default fallback
     v.created_at DESC
-LIMIT $13
-OFFSET $12
+LIMIT $19
+OFFSET $18
 `
 
 type ListVideosPaginatedParams struct {
-	Uploader       *string       `db:"uploader" json:"Uploader"`
-	ChannelID      *string       `db:"channel_id" json:"ChannelID"`
-	DurationFilter *string       `db:"duration_filter" json:"DurationFilter"`
-	Tags           []string      `db:"tags" json:"Tags"`
-	TagIds         []pgtype.UUID `db:"tag_ids" json:"TagIds"`
-	DateFrom       pgtype.Date   `db:"date_from" json:"DateFrom"`
-	DateType       *string       `db:"date_type" json:"DateType"`
-	DateTo         pgtype.Date   `db:"date_to" json:"DateTo"`
-	HasClips       *bool         `db:"has_clips" json:"HasClips"`
-	HasMarkers     *bool         `db:"has_markers" json:"HasMarkers"`
-	SortOrder      interface{}   `db:"sort_order" json:"SortOrder"`
-	PageOffset     int32         `db:"page_offset" json:"PageOffset"`
-	PageLimit      int32         `db:"page_limit" json:"PageLimit"`
-	Tsquery        *string       `db:"tsquery" json:"Tsquery"`
-	Query          *string       `db:"query" json:"Query"`
+	Sources          []string      `db:"sources" json:"Sources"`
+	FieldClauses     []byte        `db:"field_clauses" json:"FieldClauses"`
+	RequiredAssets   []string      `db:"required_assets" json:"RequiredAssets"`
+	Uploader         *string       `db:"uploader" json:"Uploader"`
+	UploaderExcluded *bool         `db:"uploader_excluded" json:"UploaderExcluded"`
+	ChannelID        *string       `db:"channel_id" json:"ChannelID"`
+	CreatorID        pgtype.UUID   `db:"creator_id" json:"CreatorID"`
+	ChannelRowID     pgtype.UUID   `db:"channel_row_id" json:"ChannelRowID"`
+	DurationFilter   *string       `db:"duration_filter" json:"DurationFilter"`
+	Tags             []string      `db:"tags" json:"Tags"`
+	TagIds           []pgtype.UUID `db:"tag_ids" json:"TagIds"`
+	DateFrom         pgtype.Date   `db:"date_from" json:"DateFrom"`
+	DateType         *string       `db:"date_type" json:"DateType"`
+	DateTo           pgtype.Date   `db:"date_to" json:"DateTo"`
+	HasClips         *bool         `db:"has_clips" json:"HasClips"`
+	HasMarkers       *bool         `db:"has_markers" json:"HasMarkers"`
+	SortOrder        interface{}   `db:"sort_order" json:"SortOrder"`
+	PageOffset       int32         `db:"page_offset" json:"PageOffset"`
+	PageLimit        int32         `db:"page_limit" json:"PageLimit"`
+	Tsquery          *string       `db:"tsquery" json:"Tsquery"`
+	Query            *string       `db:"query" json:"Query"`
 }
 
 type ListVideosPaginatedRow struct {
-	ID                  pgtype.UUID          `db:"id" json:"ID"`
-	CreatedAt           pgtype.Timestamptz   `db:"created_at" json:"CreatedAt"`
-	UpdatedAt           pgtype.Timestamptz   `db:"updated_at" json:"UpdatedAt"`
-	Src                 string               `db:"src" json:"Src"`
-	ArchivedBy          pgtype.UUID          `db:"archived_by" json:"ArchivedBy"`
-	Title               string               `db:"title" json:"Title"`
-	Info                videoinfo.VideoInfo  `db:"info" json:"Info"`
-	Comments            []byte               `db:"comments" json:"Comments"`
-	VideoPath           *string              `db:"video_path" json:"VideoPath"`
-	ThumbnailPath       *string              `db:"thumbnail_path" json:"ThumbnailPath"`
-	Description         string               `db:"description" json:"Description"`
-	Tags                []string             `db:"tags" json:"Tags"`
-	Uploader            string               `db:"uploader" json:"Uploader"`
-	UploaderID          *string              `db:"uploader_id" json:"UploaderID"`
-	ChannelID           *string              `db:"channel_id" json:"ChannelID"`
-	UploadDate          pgtype.Date          `db:"upload_date" json:"UploadDate"`
-	DurationSeconds     *int32               `db:"duration_seconds" json:"DurationSeconds"`
-	ViewCount           *int64               `db:"view_count" json:"ViewCount"`
-	LikeCount           *int64               `db:"like_count" json:"LikeCount"`
-	ThumbGradientStart  *string              `db:"thumb_gradient_start" json:"ThumbGradientStart"`
-	ThumbGradientEnd    *string              `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
-	ThumbGradientAngle  *int32               `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
-	FileHash            *string              `db:"file_hash" json:"FileHash"`
-	FileSize            *int64               `db:"file_size" json:"FileSize"`
-	AssetsStatus        AssetMap             `db:"assets_status" json:"AssetsStatus"`
-	Search              string               `db:"search" json:"Search"`
-	ProbeData           *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
-	CommentsCheckedAt   pgtype.Timestamptz   `db:"comments_checked_at" json:"CommentsCheckedAt"`
-	ChannelURL          *string              `db:"channel_url" json:"ChannelUrl"`
-	UploaderURL         *string              `db:"uploader_url" json:"UploaderUrl"`
-	ChannelRowID        pgtype.UUID          `db:"channel_row_id" json:"ChannelRowID"`
-	Format              string               `db:"format" json:"Format"`
-	MetadataRefreshedAt pgtype.Timestamptz   `db:"metadata_refreshed_at" json:"MetadataRefreshedAt"`
-	LinksHarvestedAt    pgtype.Timestamptz   `db:"links_harvested_at" json:"LinksHarvestedAt"`
-	Media               string               `db:"media" json:"Media"`
-	TotalCount          int64                `db:"total_count" json:"TotalCount"`
-	ClipCount           interface{}          `db:"clip_count" json:"ClipCount"`
-	MarkerCount         interface{}          `db:"marker_count" json:"MarkerCount"`
-	LastClipAt          interface{}          `db:"last_clip_at" json:"LastClipAt"`
-	LastMarkerAt        interface{}          `db:"last_marker_at" json:"LastMarkerAt"`
-	ArchivedByUsername  string               `db:"archived_by_username" json:"ArchivedByUsername"`
+	ID                       pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt                pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	Title                    string             `db:"title" json:"Title"`
+	Uploader                 string             `db:"uploader" json:"Uploader"`
+	Description              string             `db:"description" json:"Description"`
+	Tags                     []string           `db:"tags" json:"Tags"`
+	Media                    string             `db:"media" json:"Media"`
+	Format                   string             `db:"format" json:"Format"`
+	UploadDate               pgtype.Date        `db:"upload_date" json:"UploadDate"`
+	DurationSeconds          *int32             `db:"duration_seconds" json:"DurationSeconds"`
+	ViewCount                *int64             `db:"view_count" json:"ViewCount"`
+	LikeCount                *int64             `db:"like_count" json:"LikeCount"`
+	CommentCount             int64              `db:"comment_count" json:"CommentCount"`
+	ThumbGradientStart       *string            `db:"thumb_gradient_start" json:"ThumbGradientStart"`
+	ThumbGradientEnd         *string            `db:"thumb_gradient_end" json:"ThumbGradientEnd"`
+	ThumbGradientAngle       *int32             `db:"thumb_gradient_angle" json:"ThumbGradientAngle"`
+	TotalCount               int64              `db:"total_count" json:"TotalCount"`
+	ClipCount                interface{}        `db:"clip_count" json:"ClipCount"`
+	MarkerCount              interface{}        `db:"marker_count" json:"MarkerCount"`
+	LastClipAt               interface{}        `db:"last_clip_at" json:"LastClipAt"`
+	LastMarkerAt             interface{}        `db:"last_marker_at" json:"LastMarkerAt"`
+	ArchivedByUsername       string             `db:"archived_by_username" json:"ArchivedByUsername"`
+	SearchMatchTitle         bool               `db:"search_match_title" json:"SearchMatchTitle"`
+	SearchMatchUploader      bool               `db:"search_match_uploader" json:"SearchMatchUploader"`
+	SearchMatchDescription   bool               `db:"search_match_description" json:"SearchMatchDescription"`
+	SearchMatchTags          bool               `db:"search_match_tags" json:"SearchMatchTags"`
+	SearchMatchComment       bool               `db:"search_match_comment" json:"SearchMatchComment"`
+	SearchMatchTranscript    bool               `db:"search_match_transcript" json:"SearchMatchTranscript"`
+	SearchMatchContextWindow bool               `db:"search_match_context_window" json:"SearchMatchContextWindow"`
+	SearchMatchSnippet       string             `db:"search_match_snippet" json:"SearchMatchSnippet"`
+	SearchMatchSnippetSource string             `db:"search_match_snippet_source" json:"SearchMatchSnippetSource"`
 }
 
 // ListVideosPaginated returns videos with filters, sorting, and pagination.
@@ -845,122 +1202,317 @@ type ListVideosPaginatedRow struct {
 //
 //	WITH params AS (
 //	    SELECT
-//	        NULLIF(btrim(COALESCE($14::text, '')), '') AS tsq,
-//	        NULLIF(btrim(COALESCE($15::text, '')), '') AS raw
+//	        NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
+//	        NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+//	),
+//	field_clauses AS (
+//	    SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
+//	    FROM jsonb_array_elements(COALESCE($2::jsonb, '[]'::jsonb))
+//	),
+//	field_hits AS (
+//	    SELECT fc.ordinality, fv.id AS video_id
+//	    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.title, '')) @@ phraseto_tsquery('simple', fc.phrase)
+//	    WHERE fc.field = 'title'
+//	    UNION ALL
+//	    SELECT fc.ordinality, fv.id AS video_id
+//	    FROM field_clauses fc JOIN videos fv ON fc.phrase <> '' AND strpos(lower(fv.src), lower(fc.phrase)) > 0
+//	    WHERE fc.field = 'url'
+//	    UNION ALL
+//	    SELECT fc.ordinality, fv.id AS video_id
+//	    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.description, '')) @@ phraseto_tsquery('simple', fc.phrase)
+//	    WHERE fc.field = 'description'
+//	    UNION ALL
+//	    SELECT fc.ordinality, fv.id AS video_id
+//	    FROM field_clauses fc JOIN videos fv ON to_tsvector('simple', COALESCE(fv.uploader, '')) @@ phraseto_tsquery('simple', fc.phrase)
+//	    WHERE fc.field = 'uploader'
+//	    UNION ALL
+//	    SELECT fc.ordinality, ft.video_id AS video_id
+//	    FROM field_clauses fc JOIN video_transcripts ft ON ft.search @@ phraseto_tsquery('simple', fc.phrase)
+//	    WHERE fc.field = 'transcript'
+//	    UNION ALL
+//	    SELECT fc.ordinality, fw.video_id AS video_id
+//	    FROM field_clauses fc JOIN context_windows fw ON NOT fw.stale AND fw.search @@ phraseto_tsquery('simple', fc.phrase)
+//	    WHERE fc.field = 'context'
+//	),
+//	field_matches AS (
+//	    SELECT video_id FROM field_hits
+//	    GROUP BY video_id
+//	    HAVING count(DISTINCT ordinality) = (SELECT count(*) FROM field_clauses)
 //	),
 //	hits AS (
-//	    SELECT v.id AS video_id, ts_rank_cd(v.search, to_tsquery('simple', p.tsq)) AS rank
+//	    SELECT
+//	        v.id AS video_id,
+//	        -- Title matches boost ×4 using the title tsvector, not whole v.search.
+//	        -- Description/tags/uploader stay ×1.
+//	        ts_rank_cd(v.search, to_tsquery('simple', p.tsq))
+//	            * CASE
+//	                WHEN to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) THEN 4
+//	                ELSE 1
+//	              END AS rank,
+//	        to_tsvector('simple', coalesce(v.title, '')) @@ to_tsquery('simple', p.tsq) AS title_match,
+//	        to_tsvector('simple', coalesce(v.uploader, '')) @@ to_tsquery('simple', p.tsq) AS uploader_match,
+//	        to_tsvector('simple', coalesce(v.description, '')) @@ to_tsquery('simple', p.tsq) AS description_match,
+//	        to_tsvector('simple', coalesce(array_to_string(v.tags, ' '), '')) @@ to_tsquery('simple', p.tsq) AS tags_match,
+//	        FALSE AS comment_match,
+//	        FALSE AS transcript_match,
+//	        FALSE AS context_window_match,
+//	        NULL::text AS snippet,
+//	        NULL::text AS snippet_source,
+//	        3::smallint AS snippet_priority
 //	    FROM videos v
 //	    CROSS JOIN params p
 //	    WHERE p.tsq IS NOT NULL AND v.search @@ to_tsquery('simple', p.tsq)
 //	    UNION ALL
-//	    SELECT v.id, ts_rank_cd(v.search, websearch_to_tsquery('simple', p.raw))
-//	    FROM videos v
-//	    CROSS JOIN params p
-//	    WHERE p.raw IS NOT NULL AND v.search @@ websearch_to_tsquery('simple', p.raw)
-//	    UNION ALL
-//	    SELECT vc.video_id, max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)))
+//	    SELECT
+//	        vc.video_id,
+//	        max(ts_rank_cd(vc.search, to_tsquery('simple', p.tsq))) * 1.5,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        TRUE,
+//	        FALSE,
+//	        FALSE,
+//	        NULL::text,
+//	        'comment'::text,
+//	        2::smallint
 //	    FROM video_comments vc
 //	    CROSS JOIN params p
 //	    WHERE p.tsq IS NOT NULL AND vc.search @@ to_tsquery('simple', p.tsq)
 //	    GROUP BY vc.video_id
 //	    UNION ALL
-//	    SELECT vt.video_id, max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)))
+//	    SELECT
+//	        vt.video_id,
+//	        max(ts_rank_cd(vt.search, to_tsquery('simple', p.tsq))) * 3,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        TRUE,
+//	        FALSE,
+//	        NULL::text,
+//	        'transcript'::text,
+//	        1::smallint
 //	    FROM video_transcripts vt
 //	    CROSS JOIN params p
 //	    WHERE p.tsq IS NOT NULL AND vt.search @@ to_tsquery('simple', p.tsq)
 //	    GROUP BY vt.video_id
 //	    UNION ALL
-//	    SELECT v.id, 0.05::real
-//	    FROM videos v
+//	    SELECT
+//	        cw.video_id,
+//	        max(ts_rank_cd(cw.search, to_tsquery('simple', p.tsq))) * 2,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        FALSE,
+//	        TRUE,
+//	        NULL::text,
+//	        'context_window'::text,
+//	        2::smallint
+//	    FROM context_windows cw
 //	    CROSS JOIN params p
-//	    WHERE p.raw IS NOT NULL AND (
-//	        strpos(lower(v.title), lower(p.raw)) > 0
-//	        OR strpos(lower(v.uploader), lower(p.raw)) > 0
-//	    )
+//	    WHERE p.tsq IS NOT NULL AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+//	    GROUP BY cw.video_id
 //	),
 //	ranked AS (
-//	    SELECT video_id, sum(rank) AS rank
+//	    SELECT
+//	        video_id,
+//	        sum(rank) AS rank,
+//	        bool_or(title_match) AS search_match_title,
+//	        bool_or(uploader_match) AS search_match_uploader,
+//	        bool_or(description_match) AS search_match_description,
+//	        bool_or(tags_match) AS search_match_tags,
+//	        bool_or(comment_match) AS search_match_comment,
+//	        bool_or(transcript_match) AS search_match_transcript,
+//	        bool_or(context_window_match) AS search_match_context_window,
+//	        (array_agg(snippet ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet,
+//	        (array_agg(snippet_source ORDER BY snippet_priority, rank DESC) FILTER (WHERE snippet IS NOT NULL AND snippet <> ''))[1] AS search_match_snippet_source
 //	    FROM hits
 //	    GROUP BY video_id
 //	)
 //	SELECT
-//	    v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media,
+//	    v.id,
+//	    v.created_at,
+//	    v.title,
+//	    v.uploader,
+//	    v.description,
+//	    v.tags,
+//	    v.media,
+//	    v.format,
+//	    v.upload_date,
+//	    v.duration_seconds,
+//	    v.view_count,
+//	    v.like_count,
+//	    v.comment_count,
+//	    v.thumb_gradient_start,
+//	    v.thumb_gradient_end,
+//	    v.thumb_gradient_angle,
 //	    COUNT(*) OVER() AS total_count,
 //	    COALESCE((SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id), 0) AS clip_count,
 //	    COALESCE((SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id), 0) AS marker_count,
 //	    COALESCE((SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id), '1970-01-01'::timestamptz) AS last_clip_at,
 //	    COALESCE((SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id), '1970-01-01'::timestamptz) AS last_marker_at,
-//	    COALESCE(u.user_name, 'unknown') AS archived_by_username
+//	    COALESCE(u.user_name, 'unknown') AS archived_by_username,
+//	    COALESCE(r.search_match_title, FALSE) AS search_match_title,
+//	    COALESCE(r.search_match_uploader, FALSE) AS search_match_uploader,
+//	    COALESCE(r.search_match_description, FALSE) AS search_match_description,
+//	    COALESCE(r.search_match_tags, FALSE) AS search_match_tags,
+//	    COALESCE(r.search_match_comment, FALSE) AS search_match_comment,
+//	    COALESCE(r.search_match_transcript, FALSE) AS search_match_transcript,
+//	    COALESCE(r.search_match_context_window, FALSE) AS search_match_context_window,
+//	    COALESCE(CASE
+//	        -- Expensive headline extraction is deliberately deferred to the rows
+//	        -- that survive ORDER BY/LIMIT instead of running for every library hit.
+//	        WHEN r.search_match_transcript THEN (
+//	            SELECT regexp_replace(regexp_replace(ts_headline('simple', vt.text, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+//	            FROM video_transcripts vt
+//	            WHERE vt.video_id = v.id AND vt.search @@ to_tsquery('simple', p.tsq)
+//	            ORDER BY ts_rank_cd(vt.search, to_tsquery('simple', p.tsq)) DESC
+//	            LIMIT 1
+//	        )
+//	        WHEN r.search_match_context_window THEN (
+//	            SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', cw.title, cw.summary), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+//	            FROM context_windows cw
+//	            WHERE cw.video_id = v.id AND NOT cw.stale AND cw.search @@ to_tsquery('simple', p.tsq)
+//	            ORDER BY ts_rank_cd(cw.search, to_tsquery('simple', p.tsq)) DESC
+//	            LIMIT 1
+//	        )
+//	        WHEN r.search_match_comment THEN (
+//	            SELECT regexp_replace(regexp_replace(ts_headline('simple', concat_ws(': ', vc.author, vc.text), to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+//	            FROM video_comments vc
+//	            WHERE vc.video_id = v.id AND vc.search @@ to_tsquery('simple', p.tsq)
+//	            ORDER BY ts_rank_cd(vc.search, to_tsquery('simple', p.tsq)) DESC
+//	            LIMIT 1
+//	        )
+//	        WHEN r.search_match_description THEN regexp_replace(regexp_replace(ts_headline('simple', v.description, to_tsquery('simple', p.tsq), 'MaxWords=24, MinWords=10, MaxFragments=1'), '</?b>', '', 'g'), '\s+', ' ', 'g')
+//	        WHEN r.search_match_tags THEN array_to_string(v.tags, ', ')
+//	        WHEN r.search_match_title THEN v.title
+//	        WHEN r.search_match_uploader THEN v.uploader
+//	    END, '')::text AS search_match_snippet,
+//	    COALESCE(CASE
+//	        WHEN r.search_match_transcript THEN 'transcript'
+//	        WHEN r.search_match_context_window THEN 'context_window'
+//	        WHEN r.search_match_comment THEN 'comment'
+//	        WHEN r.search_match_description THEN 'description'
+//	        WHEN r.search_match_tags THEN 'tags'
+//	        WHEN r.search_match_title THEN 'title'
+//	        WHEN r.search_match_uploader THEN 'uploader'
+//	    END, '')::text AS search_match_snippet_source
 //	FROM videos v
 //	LEFT JOIN users u ON v.archived_by = u.id
 //	LEFT JOIN ranked r ON r.video_id = v.id
 //	CROSS JOIN params p
 //	WHERE
+//	    -- Metadata-only catalog entries are not playable videos and never belong in card feeds.
+//	    v.media <> 'metadata'
 //	    -- Full-text / substring search (optional).
-//	    (p.raw IS NULL OR r.video_id IS NOT NULL)
-//	    -- Uploader filter: substring, case-insensitive (optional)
-//	    AND ($1::text IS NULL OR strpos(lower(v.uploader), lower($1)) > 0)
-//	    -- Channel filter (optional)
-//	    AND ($2::text IS NULL OR v.channel_id = $2)
+//	    AND (p.raw IS NULL OR r.video_id IS NOT NULL)
+//	    AND (COALESCE(cardinality($1::text[]),0)=0
+//	      OR ('title'=ANY($1::text[]) AND r.search_match_title)
+//	      OR ('description'=ANY($1::text[]) AND r.search_match_description)
+//	      OR ('tags'=ANY($1::text[]) AND r.search_match_tags)
+//	      OR ('comments'=ANY($1::text[]) AND r.search_match_comment)
+//	      OR ('transcript'=ANY($1::text[]) AND r.search_match_transcript)
+//	      OR ('context_windows'=ANY($1::text[]) AND r.search_match_context_window)
+//	      OR ('uploader'=ANY($1::text[]) AND r.search_match_uploader))
+//	    -- Resolve each scope once, then intersect by video (all scopes must match).
+//	    AND (COALESCE(jsonb_array_length($2::jsonb), 0) = 0
+//	         OR v.id IN (SELECT video_id FROM field_matches))
+//	    -- Require completed assets. Keep predicates separate so unused filters
+//	    -- disappear from the plan instead of adding per-video conditional subplans.
+//	    AND (NOT COALESCE('context' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM context_windows ac WHERE ac.video_id = v.id AND NOT ac.stale))
+//	    AND (NOT COALESCE('transcript' = ANY($3::text[]), FALSE) OR EXISTS (SELECT 1 FROM video_transcripts atx WHERE atx.video_id = v.id AND btrim(atx.text) <> ''))
+//	    AND (NOT COALESCE('thumbnail' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"thumbnail":true}'::jsonb)
+//	    AND (NOT COALESCE('preview' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"preview":true}'::jsonb)
+//	    AND (NOT COALESCE('waveform' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"waveform":true}'::jsonb)
+//	    AND (NOT COALESCE('seek' = ANY($3::text[]), FALSE) OR v.assets_status @> '{"seek":true}'::jsonb)
+//	    AND ($3::text[] IS NULL OR $3::text[] <@ ARRAY['context','transcript','thumbnail','preview','waveform','seek'])
+//	    -- Uploader combobox filter: indexed, case-insensitive prefix; optionally negate it.
+//	    AND (
+//	        $4::text IS NULL
+//	        OR (
+//	            COALESCE($5::boolean, FALSE) = FALSE
+//	            AND lower(v.uploader) LIKE lower($4) || '%'
+//	        )
+//	        OR (
+//	            COALESCE($5::boolean, FALSE) = TRUE
+//	            AND lower(v.uploader) NOT LIKE lower($4) || '%'
+//	        )
+//	    )
+//		-- Channel filter (optional)
+//		AND ($6::text IS NULL OR v.channel_id = $6)
+//	    -- First-class creator/channel filters.
+//	    AND ($7::uuid IS NULL OR EXISTS (
+//	        SELECT 1 FROM channels ch WHERE ch.id = v.channel_row_id AND ch.creator_id = $7
+//	    ))
+//	    AND ($8::uuid IS NULL OR v.channel_row_id = $8)
 //	    -- Duration filter: short=<5min, medium=5-30min, long=>30min
 //	    AND (
-//	        $3::text IS NULL
-//	        OR ($3 = 'short' AND v.duration_seconds < 300)
-//	        OR ($3 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
-//	        OR ($3 = 'long' AND v.duration_seconds >= 1800)
+//	        $9::text IS NULL
+//	        OR ($9 = 'short' AND v.duration_seconds < 300)
+//	        OR ($9 = 'medium' AND v.duration_seconds >= 300 AND v.duration_seconds < 1800)
+//	        OR ($9 = 'long' AND v.duration_seconds >= 1800)
 //	    )
 //	    -- Scraped tags filter (any tag matches)
-//	    AND ($4::text[] IS NULL OR v.tags && $4::text[])
+//	    AND ($10::text[] IS NULL OR v.tags && $10::text[])
 //	    -- User tag filter (video has any of the selected tag ids)
-//	    AND ($5::uuid[] IS NULL OR EXISTS (
+//	    AND ($11::uuid[] IS NULL OR EXISTS (
 //	        SELECT 1 FROM video_tags vt
-//	        WHERE vt.video_id = v.id AND vt.tag_id = ANY($5::uuid[])
+//	        WHERE vt.video_id = v.id AND vt.tag_id = ANY($11::uuid[])
 //	    ))
 //	    -- Date range (archived or published based on date_type)
 //	    AND (
-//	        $6::date IS NULL
-//	        OR ($7::text = 'published' AND v.upload_date >= $6)
-//	        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date >= $6)
+//	        $12::date IS NULL
+//	        OR ($13::text = 'published' AND v.upload_date >= $12)
+//	        OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date >= $12)
 //	    )
 //	    AND (
-//	        $8::date IS NULL
-//	        OR ($7::text = 'published' AND v.upload_date <= $8)
-//	        OR ($7::text IS DISTINCT FROM 'published' AND v.created_at::date <= $8)
+//	        $14::date IS NULL
+//	        OR ($13::text = 'published' AND v.upload_date <= $14)
+//	        OR ($13::text IS DISTINCT FROM 'published' AND v.created_at::date <= $14)
 //	    )
 //	    -- Has clips filter
-//	    AND ($9::boolean IS NULL OR $9 = FALSE
+//	    AND ($15::boolean IS NULL OR $15 = FALSE
 //	         OR EXISTS (SELECT 1 FROM clips c WHERE c.video_id = v.id))
 //	    -- Has markers filter
-//	    AND ($10::boolean IS NULL OR $10 = FALSE
+//	    AND ($16::boolean IS NULL OR $16 = FALSE
 //	         OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
 //	ORDER BY
-//	    CASE WHEN $11 = 'relevance' THEN r.rank END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
 //	    -- Date sorts (archived)
-//	    CASE WHEN $11 = 'newest' THEN v.created_at END DESC NULLS LAST,
-//	    CASE WHEN $11 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+//	    CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
 //	    -- Date sorts (published)
-//	    CASE WHEN $11 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-//	    CASE WHEN $11 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+//	    CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
 //	    -- Title sorts
-//	    CASE WHEN $11 = 'alpha' THEN v.title END ASC NULLS LAST,
-//	    CASE WHEN $11 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
+//	    CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
 //	    -- Duration sorts
-//	    CASE WHEN $11 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-//	    CASE WHEN $11 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+//	    CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
 //	    -- Activity sorts
-//	    CASE WHEN $11 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $11 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $11 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $11 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
 //	    -- Default fallback
 //	    v.created_at DESC
-//	LIMIT $13
-//	OFFSET $12
+//	LIMIT $19
+//	OFFSET $18
 func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPaginatedParams) ([]*ListVideosPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listVideosPaginated,
+		arg.Sources,
+		arg.FieldClauses,
+		arg.RequiredAssets,
 		arg.Uploader,
+		arg.UploaderExcluded,
 		arg.ChannelID,
+		arg.CreatorID,
+		arg.ChannelRowID,
 		arg.DurationFilter,
 		arg.Tags,
 		arg.TagIds,
@@ -985,46 +1537,88 @@ func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPagina
 		if err := rows.Scan(
 			&i.ID,
 			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Src,
-			&i.ArchivedBy,
 			&i.Title,
-			&i.Info,
-			&i.Comments,
-			&i.VideoPath,
-			&i.ThumbnailPath,
+			&i.Uploader,
 			&i.Description,
 			&i.Tags,
-			&i.Uploader,
-			&i.UploaderID,
-			&i.ChannelID,
+			&i.Media,
+			&i.Format,
 			&i.UploadDate,
 			&i.DurationSeconds,
 			&i.ViewCount,
 			&i.LikeCount,
+			&i.CommentCount,
 			&i.ThumbGradientStart,
 			&i.ThumbGradientEnd,
 			&i.ThumbGradientAngle,
-			&i.FileHash,
-			&i.FileSize,
-			&i.AssetsStatus,
-			&i.Search,
-			&i.ProbeData,
-			&i.CommentsCheckedAt,
-			&i.ChannelURL,
-			&i.UploaderURL,
-			&i.ChannelRowID,
-			&i.Format,
-			&i.MetadataRefreshedAt,
-			&i.LinksHarvestedAt,
-			&i.Media,
 			&i.TotalCount,
 			&i.ClipCount,
 			&i.MarkerCount,
 			&i.LastClipAt,
 			&i.LastMarkerAt,
 			&i.ArchivedByUsername,
+			&i.SearchMatchTitle,
+			&i.SearchMatchUploader,
+			&i.SearchMatchDescription,
+			&i.SearchMatchTags,
+			&i.SearchMatchComment,
+			&i.SearchMatchTranscript,
+			&i.SearchMatchContextWindow,
+			&i.SearchMatchSnippet,
+			&i.SearchMatchSnippetSource,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchUploaders = `-- name: SearchUploaders :many
+SELECT uploader, COUNT(*)::bigint AS video_count
+FROM videos
+WHERE media <> 'metadata'
+  AND uploader <> ''
+  AND (
+      NULLIF(btrim($1::text), '') IS NULL
+      OR lower(uploader) LIKE lower(btrim($1::text)) || '%'
+  )
+GROUP BY uploader
+ORDER BY COUNT(*) DESC, uploader ASC
+LIMIT 50
+`
+
+type SearchUploadersRow struct {
+	Uploader   string `db:"uploader" json:"Uploader"`
+	VideoCount int64  `db:"video_count" json:"VideoCount"`
+}
+
+// SearchUploaders
+//
+//	SELECT uploader, COUNT(*)::bigint AS video_count
+//	FROM videos
+//	WHERE media <> 'metadata'
+//	  AND uploader <> ''
+//	  AND (
+//	      NULLIF(btrim($1::text), '') IS NULL
+//	      OR lower(uploader) LIKE lower(btrim($1::text)) || '%'
+//	  )
+//	GROUP BY uploader
+//	ORDER BY COUNT(*) DESC, uploader ASC
+//	LIMIT 50
+func (q *Queries) SearchUploaders(ctx context.Context, prefix string) ([]*SearchUploadersRow, error) {
+	rows, err := q.db.Query(ctx, searchUploaders, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*SearchUploadersRow
+	for rows.Next() {
+		var i SearchUploadersRow
+		if err := rows.Scan(&i.Uploader, &i.VideoCount); err != nil {
 			return nil, err
 		}
 		items = append(items, &i)

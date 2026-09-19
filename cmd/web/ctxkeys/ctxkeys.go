@@ -6,7 +6,9 @@ type Key int
 
 const (
 	// AccessLevel stores the user's authorization tier in the request context.
-	AccessLevel Key = iota
-	RegistrationEnabled     // bool: whether new user registration is allowed
-	StaticVersion           // string: short hash of all dist assets for cache-busting
+	AccessLevel          Key = iota
+	RegistrationEnabled      // bool: whether new user registration is allowed
+	StaticVersion            // string: short hash of all dist assets for cache-busting
+	InterfacePreferences     // map[string]any: per-user sound, motion, and appearance preferences
+	PageNavigation           // bool: render only the replaceable page content for SSE navigation
 )

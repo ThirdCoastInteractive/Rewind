@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: ghcr.io/thirdcoastinteractive/rewind-postgres-vector:${REWIND_VERSION:-latest}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
@@ -8,6 +8,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - ./bin/dev/postgres/data:/var/lib/postgresql/data
+    command:
+      [
+        "postgres",
+        "-c", "max_connections=300",
+        "-c", "shared_preload_libraries=pg_stat_statements",
+      ]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:?}"]
       interval: 10s
@@ -16,113 +22,8 @@ services:
     networks:
       - rewind-network
 
-  pg-migrator:
-    image: ghcr.io/thirdcoastinteractive/rewind-pg-migrator:latest
-    environment:
-      WEBSERVER_PORT: 8080
-      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
-      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - rewind-network
-    restart: "no"
-
-  downloader:
-    image: ghcr.io/thirdcoastinteractive/rewind-downloader:latest
-    deploy:
-      replicas: 2
-    restart: unless-stopped
-    environment:
-      WEBSERVER_PORT: 8080
-      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
-      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
-      SPOOL_DIR: /spool
-      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-2}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
-    volumes:
-      - ./bin/spool:/spool
-    depends_on:
-      postgres:
-        condition: service_healthy
-      pg-migrator:
-        condition: service_completed_successfully
-    networks:
-      - rewind-network
-
-  # Transcription uses whisper.cpp. Weights are downloaded into /models at
-  # runtime (never baked into the image). Pick a hardware tag:
-  #   rewind-ingest:latest      CPU (Alpine)
-  #   rewind-ingest:cuda        NVIDIA (set INGEST_RUNTIME=runtime-cuda when building)
-  #   rewind-ingest:rocm        AMD
-  ingest:
-    image: ghcr.io/thirdcoastinteractive/rewind-ingest:latest
-    deploy:
-      replicas: 3
-      # NVIDIA: use the :cuda image, NVIDIA Container Toolkit, and:
-      # resources:
-      #   reservations:
-      #     devices:
-      #       - capabilities: [gpu]
-    restart: unless-stopped
-    environment:
-      WEBSERVER_PORT: 8080
-      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
-      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
-      SPOOL_DIR: /spool
-      INGEST_WORKERS: ${INGEST_WORKERS:-2}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
-      WHISPER_ENABLED: ${WHISPER_ENABLED:-true}
-      WHISPER_CMD: ${WHISPER_CMD:-whisper-cli}
-      # large-v3 = best multilingual; large-v3-turbo = much faster; small = default
-      WHISPER_MODEL: ${WHISPER_MODEL:-small}
-      WHISPER_MODEL_DIR: /models
-      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
-      # ISO 639-1, or "auto" to let whisper.cpp detect
-      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
-      # transcribe = same language; translate = English output via -tr
-      WHISPER_TASK: ${WHISPER_TASK:-transcribe}
-      WHISPER_ARGS: ${WHISPER_ARGS:-}
-      WHISPER_TIMEOUT_SECONDS: ${WHISPER_TIMEOUT_SECONDS:-0}
-      SEEK_ENABLE_XFINE: true
-      SEEK_ENABLE_XXFINE: true
-    volumes:
-      - ./bin/spool:/spool
-      - ./bin/download:/downloads
-      - ./bin/models:/models
-    depends_on:
-      postgres:
-        condition: service_healthy
-      pg-migrator:
-        condition: service_completed_successfully
-    networks:
-      - rewind-network
-
-  encoder:
-    image: ghcr.io/thirdcoastinteractive/rewind-encoder:latest
-    deploy:
-      replicas: 3
-    restart: unless-stopped
-    environment:
-      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
-      DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
-      ENCODER_WORKERS: ${ENCODER_WORKERS:-2}
-      EXPORTS_DIR: /exports
-      DOWNLOADS_DIR: /downloads
-    volumes:
-      - ./bin/download:/downloads
-      - ./bin/exports:/exports
-    depends_on:
-      postgres:
-        condition: service_healthy
-      pg-migrator:
-        condition: service_completed_successfully
-    networks:
-      - rewind-network
-
-  web:
-    image: ghcr.io/thirdcoastinteractive/rewind-web:latest
+  rewind:
+    image: ghcr.io/thirdcoastinteractive/rewind:${REWIND_VERSION:-latest}
     restart: unless-stopped
     environment:
       WEBSERVER_PORT: 8080
@@ -130,19 +31,79 @@ services:
       DATABASE_RETRIES: ${DATABASE_RETRIES:?set DATABASE_RETRIES in .env}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      SFU_PORT: 8081
+      SFU_SIGNAL_URL: ws://127.0.0.1:8081/signal
+      STUN_URLS: ${STUN_URLS:-stun:stun.l.google.com:19302}
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_PASSWORD: ${TURN_PASSWORD:-}
+      SFU_NAT_IP: ${SFU_NAT_IP:-}
+      SPOOL_DIR: /spool
+      DOWNLOADS_DIR: /downloads
+      EXPORTS_DIR: /exports
+      FONTS_DIR: /fonts
+      VISION_URL: http://rewind-ml:3003
+      VISION_TOKEN: ${VISION_TOKEN:-${ENCRYPTION_KEY}}
     volumes:
       - ./bin/spool:/spool
       - ./bin/download:/downloads
       - ./bin/exports:/exports
+      - ./bin/fonts:/fonts
     depends_on:
       postgres:
         condition: service_healthy
-      pg-migrator:
-        condition: service_completed_successfully
     ports:
       - "${WEBSERVER_PORT:?set WEBSERVER_PORT in .env}:8080"
+      - "50000-50100:50000-50100/udp"
     networks:
       - rewind-network
+
+  rewind-ml:
+    image: ghcr.io/thirdcoastinteractive/rewind-ml:${REWIND_VERSION:-latest}${ML_IMAGE_SUFFIX:-}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_DSN: ${DATABASE_DSN:?set DATABASE_DSN in .env}
+      DATABASE_RETRIES: ${DATABASE_RETRIES:-10}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      DOWNLOADS_DIR: /downloads
+      WHISPER_CMD: whisper-cli
+      WHISPER_MODEL_DIR: /models/whisper
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
+      WHISPER_TASK: ${WHISPER_TASK:-transcribe}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://127.0.0.1:11434}
+      OLLAMA_MODELS: /models/ollama
+      OLLAMA_NOPRUNE: "true"
+      OLLAMA_NO_CLOUD: "true"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_LLM_LIBRARY: ${OLLAMA_LLM_LIBRARY:-}
+      CONTEXT_MODEL: ${CONTEXT_MODEL:-qwen3.8:27b}
+      VISION_URL: http://127.0.0.1:3003
+      VISION_TOKEN: ${VISION_TOKEN:-${ENCRYPTION_KEY}}
+      VISION_DEVICE: ${VISION_DEVICE:-cpu}
+      VISION_MODEL_DIR: /models/vision
+      TEXTCLS_URL: http://127.0.0.1:3004
+      TEXTCLS_APP_DIR: /opt/textcls
+      TEXTCLS_MODEL_DIR: /models/textcls
+      TEXTCLS_DEVICE: ${TEXTCLS_DEVICE:-cpu}
+      VISUAL_BACKFILL_ENABLED: ${VISUAL_BACKFILL_ENABLED:-false}
+      RUNTIME_DIR: /runtime
+      OLLAMA_VERSION: ${OLLAMA_VERSION:-0.33.2}
+      ML_RUNTIME: ${ML_RUNTIME:-runtime-cpu}
+    volumes:
+      - ./bin/download:/downloads
+      - ./bin/models/whisper:/models/whisper
+      - ./bin/models/ollama:/models/ollama
+      - ./bin/models/vision:/models/vision
+      - ./bin/models/textcls:/models/textcls
+      - ./bin/runtime:/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [rewind-network]
 
 networks:
   rewind-network:

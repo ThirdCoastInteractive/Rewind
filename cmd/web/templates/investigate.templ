@@ -1,0 +1,523 @@
+package templates
+
+import (
+	"fmt"
+
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+// InvestigateIndexData is the desk homepage payload.
+type InvestigateIndexData struct {
+	Username  string
+	Notice    string
+	Watchlist []InvestigateWatchItem
+	Flags     []InvestigateFlagItem
+	Campaigns []InvestigateCampaignItem
+	Graph     InvestigateGraph
+}
+
+type InvestigateWatchItem struct {
+	CommenterID  string
+	DisplayName  string
+	AuthorID     string
+	Source       string
+	Note         string
+	CommentCount int64
+	LastSeen     string
+}
+
+type InvestigateFlagItem struct {
+	ID            string
+	Kind          string
+	CommenterID   string
+	CommenterName string
+	VideoID       string
+	CampaignID    string
+	PeerID        string
+	Score         float64
+	Evidence      string
+	CreatedAt     string
+}
+
+type InvestigateCampaignItem struct {
+	ID             string
+	Kind           string
+	NormalizedText string
+	CommentCount   int64
+	CommenterCount int64
+	VideoCount     int64
+	FirstSeen      string
+	LastSeen       string
+	Evidence       string
+}
+
+type InvestigateSearchHit struct {
+	ID           string
+	DisplayName  string
+	AuthorID     string
+	AuthorURL    string
+	CommentCount int64
+}
+
+type CommenterDossier struct {
+	ID               string
+	Source           string
+	AuthorID         string
+	AuthorURL        string
+	DisplayName      string
+	FirstSeen        string
+	LastSeen         string
+	CommentCount     int64
+	MeanSentiment    *float64
+	MeanToxicity     *float64
+	Watching         bool
+	Names            []CommenterNameHist
+	Flags            []InvestigateFlagItem
+	Campaigns        []InvestigateCampaignItem
+	StyleSuggestions []CommenterLinkItem
+	RecentComments   []CommenterCommentItem
+	Graph            InvestigateGraph
+}
+
+type CommenterNameHist struct {
+	DisplayName string
+	FirstSeen   string
+	LastSeen    string
+	N           int64
+}
+
+type CommenterLinkItem struct {
+	OtherID   string
+	OtherName string
+	Kind      string
+	Score     float64
+	Evidence  string
+}
+
+type CommenterCommentItem struct {
+	VideoID    string
+	VideoTitle string
+	Text       string
+	TimeLabel  string
+}
+
+type InvestigateCampaignDetail struct {
+	ID             string
+	Kind           string
+	NormalizedText string
+	CommentCount   int64
+	CommenterCount int64
+	VideoCount     int64
+	FirstSeen      string
+	LastSeen       string
+	Evidence       string
+	Members        []CampaignMemberItem
+	Graph          InvestigateGraph
+}
+
+type CampaignMemberItem struct {
+	VideoID     string
+	VideoTitle  string
+	Text        string
+	Author      string
+	CommenterID string
+	TimeLabel   string
+}
+
+templ investigateCaveat() {
+	<p class="text-xs font-mono text-white/30 mt-6">
+		Harvested scores and style matches are observations, not proof of a real-world identity.
+	</p>
+}
+
+templ Investigate(data InvestigateIndexData) {
+	@Layout("Investigate", data.Username) {
+		@Container("wide") {
+			<div class="investigate-desk" data-signals="{investigateQuery: ''}">
+				<header class="mb-4">
+					<h1 class="page-heading text-xl tracking-tight mb-0.5">Investigate</h1>
+					<p class="text-xs font-mono text-white/60">Actors, campaigns, and flags as a graph. Cards are the working set. Observe — do not moderate.</p>
+					if data.Notice != "" {
+						<p class="rw-notice mt-2" role="status">{ data.Notice }</p>
+					}
+					<div class="mt-3 flex flex-wrap gap-2 items-end">
+						<form method="POST" action="/investigate/x-replies" class="flex flex-wrap gap-2 items-center min-w-0 flex-1">
+							<label class="rw-field min-w-0 flex-1">
+								<span>Index X replies</span>
+								<input type="url" name="url" required placeholder="https://x.com/user/status/…"/>
+							</label>
+							<button type="submit" class="btn-primary btn-sm">Index</button>
+						</form>
+						<label class="rw-field w-72">
+							<span>Find commenter</span>
+							<input
+								type="search"
+								placeholder="Name, author id, URL"
+								data-bind="investigateQuery"
+								data-on:input__debounce.300ms="@get('/investigate')"
+							/>
+						</label>
+					</div>
+					<p class="rw-footnote mt-1">Public replies only. Archive the post first. Empty extractor output fails visibly.</p>
+					@InvestigateSearchResults(nil)
+				</header>
+				<section class="investigate-graph-panel mb-6" aria-label="Investigation graph">
+					<div class="flex items-center justify-between gap-2 mb-2">
+						<h2 class="sub-heading mb-0">Nodes and edges</h2>
+						<p class="font-mono text-xs text-white/40">commenter · campaign · style · flag · same-actor</p>
+					</div>
+					<div
+						id="investigate-graph"
+						class="investigate-graph"
+						data-investigate-graph={ investigateGraphJSON(data.Graph) }
+					></div>
+					if len(data.Graph.Nodes) == 0 {
+						<p class="font-mono text-xs text-white/40 mt-2">No actors yet. Watch a commenter or wait for flags to seed the graph.</p>
+					} else {
+						<p class="font-mono text-xs text-white/40 mt-2">Working set of connected actors. Cards below are the full list. Click a node to open it.</p>
+					}
+				</section>
+				<section class="mb-6">
+					<h2 class="sub-heading mb-2">Watchlist</h2>
+					if len(data.Watchlist) == 0 {
+						<div class="entity-card">
+							<p class="font-mono text-sm text-white/50">No watchlist</p>
+							<p class="entity-card-notes">Open a dossier and watch a commenter to pin them here.</p>
+						</div>
+					} else {
+						<div class="entity-card-grid">
+							for _, w := range data.Watchlist {
+								@investigateActorCard(w)
+							}
+						</div>
+					}
+				</section>
+				<section class="mb-6">
+					<h2 class="sub-heading mb-2">Open flags</h2>
+					if len(data.Flags) == 0 {
+						<div class="entity-card">
+							<p class="font-mono text-sm text-white/50">No open flags</p>
+						</div>
+					} else {
+						<div class="entity-card-grid">
+							for _, f := range data.Flags {
+								@investigateFlagCard(f, "/investigate")
+							}
+						</div>
+					}
+				</section>
+				<section class="mb-6">
+					<h2 class="sub-heading mb-2">Campaigns</h2>
+					if len(data.Campaigns) == 0 {
+						<div class="entity-card">
+							<p class="font-mono text-sm text-white/50">No campaigns</p>
+						</div>
+					} else {
+						<div class="entity-card-grid">
+							for _, camp := range data.Campaigns {
+								@investigateCampaignCard(camp)
+							}
+						</div>
+					}
+				</section>
+				@investigateCaveat()
+			</div>
+			<script src={ versionedAsset(ctx, "/static/dist/investigate-graph.js") }></script>
+		}
+	}
+}
+
+templ InvestigateSearchResults(hits []InvestigateSearchHit) {
+	<div id="investigate-search-results" class="mt-3">
+		if len(hits) > 0 {
+			<div class="entity-card-grid">
+				for _, h := range hits {
+					<a href={ templ.SafeURL("/investigate/commenters/" + h.ID) } class="entity-card">
+						<div class="entity-card-title">
+							if h.DisplayName != "" {
+								{ h.DisplayName }
+							} else {
+								{ h.AuthorID }
+							}
+						</div>
+						<div class="entity-card-meta">{ h.AuthorID } · { format.Itoa64(h.CommentCount) } comments</div>
+					</a>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ investigateActorCard(w InvestigateWatchItem) {
+	<a href={ templ.SafeURL("/investigate/commenters/" + w.CommenterID) } class="entity-card">
+		<div class="entity-card-title">
+			if w.DisplayName != "" {
+				{ w.DisplayName }
+			} else {
+				{ w.AuthorID }
+			}
+		</div>
+		<div class="entity-card-notes">
+			if w.Source != "" {
+				{ w.Source }
+			} else {
+				commenter
+			}
+			· { w.AuthorID }
+		</div>
+		<div class="entity-card-meta">{ format.Itoa64(w.CommentCount) } comments · last { w.LastSeen }</div>
+		if w.Note != "" {
+			<div class="entity-card-notes">{ w.Note }</div>
+		}
+	</a>
+}
+
+templ investigateCampaignCard(camp InvestigateCampaignItem) {
+	<a href={ templ.SafeURL("/investigate/campaigns/" + camp.ID) } class="entity-card">
+		<div class="flex items-center gap-2 mb-1">
+			<span class="badge">{ camp.Kind }</span>
+		</div>
+		<div class="entity-card-title">
+			if camp.NormalizedText != "" {
+				{ camp.NormalizedText }
+			} else {
+				{ camp.Kind }
+			}
+		</div>
+		<div class="entity-card-meta">
+			{ format.Itoa64(camp.CommentCount) } comments · { format.Itoa64(camp.CommenterCount) } actors · { format.Itoa64(camp.VideoCount) } videos
+		</div>
+	</a>
+}
+
+templ investigateFlagCard(f InvestigateFlagItem, redirect string) {
+	<div class="entity-card">
+		<div class="flex items-center justify-between gap-2">
+			<span class="badge">{ f.Kind }</span>
+			<form method="POST" action={ templ.SafeURL("/api/investigate/flags/" + f.ID + "/dismiss") }>
+				<input type="hidden" name="redirect" value={ redirect }/>
+				<button type="submit" class="ghost-btn-sm text-white/50 border-white/20 hover:border-white hover:text-white">Dismiss</button>
+			</form>
+		</div>
+		if f.CommenterID != "" {
+			<a href={ templ.SafeURL("/investigate/commenters/" + f.CommenterID) } class="entity-card-title mt-2 block hover:underline">
+				if f.CommenterName != "" {
+					{ f.CommenterName }
+				} else {
+					{ f.CommenterID }
+				}
+			</a>
+		}
+		<div class="entity-card-meta">
+			if f.CampaignID != "" {
+				<a href={ templ.SafeURL("/investigate/campaigns/" + f.CampaignID) } class="hover:text-white/80">campaign</a>
+				<span>· </span>
+			}
+			if f.VideoID != "" {
+				<a href={ templ.SafeURL("/videos/" + f.VideoID) } class="hover:text-white/80">video</a>
+				<span>· </span>
+			}
+			score { fmt.Sprintf("%.2f", f.Score) } · { f.CreatedAt }
+		</div>
+		if f.Evidence != "" {
+			<p class="entity-card-notes">{ f.Evidence }</p>
+		}
+	</div>
+}
+
+templ InvestigateCommenter(d CommenterDossier, username string) {
+	@Layout(d.DisplayName, username) {
+		@Container("wide") {
+			<p class="text-xs font-mono text-white/40 mb-1"><a href="/investigate" class="hover:text-white/70">Investigate</a></p>
+			<div class="entity-card mb-4">
+				<div class="flex items-start justify-between gap-3 flex-wrap">
+					<div class="min-w-0">
+						<div class="entity-card-title text-lg">
+							if d.DisplayName != "" {
+								{ d.DisplayName }
+							} else {
+								{ d.AuthorID }
+							}
+						</div>
+						<div class="entity-card-notes">
+							{ d.Source } · { d.AuthorID }
+							if d.AuthorURL != "" {
+								· <a href={ templ.SafeURL(d.AuthorURL) } target="_blank" rel="noopener" class="hover:text-white/80">profile</a>
+							}
+						</div>
+						<div class="entity-card-meta">
+							first { d.FirstSeen } · last { d.LastSeen } · { format.Itoa64(d.CommentCount) } comments
+							if d.MeanSentiment != nil {
+								· sentiment { fmt.Sprintf("%.2f", *d.MeanSentiment) }
+							}
+							if d.MeanToxicity != nil {
+								· toxicity { fmt.Sprintf("%.2f", *d.MeanToxicity) }
+							}
+						</div>
+					</div>
+					if d.Watching {
+						<form method="POST" action={ templ.SafeURL("/api/investigate/commenters/" + d.ID + "/unwatch") }>
+							<button type="submit" class="ghost-btn-sm">Unwatch</button>
+						</form>
+					} else {
+						<form method="POST" action={ templ.SafeURL("/api/investigate/commenters/" + d.ID + "/watch") }>
+							<button type="submit" class="btn-primary btn-sm">Watch</button>
+						</form>
+					}
+				</div>
+			</div>
+			<section class="investigate-graph-panel mb-6" aria-label="Neighborhood">
+				<h2 class="sub-heading mb-2">Neighborhood</h2>
+				<div id="investigate-graph" class="investigate-graph" data-investigate-graph={ investigateGraphJSON(d.Graph) }></div>
+			</section>
+			if len(d.Names) > 0 {
+				<section class="mb-6">
+					<h2 class="sub-heading mb-2">Names</h2>
+					<div class="entity-card-grid">
+						for _, n := range d.Names {
+							<div class="entity-card">
+								<div class="entity-card-title">{ n.DisplayName }</div>
+								<div class="entity-card-meta">n={ format.Itoa64(n.N) } · { n.FirstSeen } → { n.LastSeen }</div>
+							</div>
+						}
+					</div>
+				</section>
+			}
+			<section class="mb-6">
+				<h2 class="sub-heading mb-2">Flags</h2>
+				if len(d.Flags) == 0 {
+					<p class="font-mono text-xs text-white/40">No open flags</p>
+				} else {
+					<div class="entity-card-grid">
+						for _, f := range d.Flags {
+							@investigateFlagCard(f, "/investigate/commenters/"+d.ID)
+						}
+					</div>
+				}
+			</section>
+			<section class="mb-6">
+				<h2 class="sub-heading mb-2">Campaigns</h2>
+				if len(d.Campaigns) == 0 {
+					<p class="font-mono text-xs text-white/40">No campaigns</p>
+				} else {
+					<div class="entity-card-grid">
+						for _, camp := range d.Campaigns {
+							@investigateCampaignCard(camp)
+						}
+					</div>
+				}
+			</section>
+			<section class="mb-6">
+				<h2 class="sub-heading mb-2">Style neighbors</h2>
+				<p class="font-mono text-xs text-white/40 mb-2">Style matches are observations. “Same actor” is a user assertion only.</p>
+				if len(d.StyleSuggestions) == 0 {
+					<p class="font-mono text-xs text-white/40">No style suggestions</p>
+				} else {
+					<div class="entity-card-grid">
+						for _, s := range d.StyleSuggestions {
+							<div class="entity-card">
+								<a href={ templ.SafeURL("/investigate/commenters/" + s.OtherID) } class="entity-card-title hover:underline">
+									if s.OtherName != "" {
+										{ s.OtherName }
+									} else {
+										{ s.OtherID }
+									}
+								</a>
+								<div class="entity-card-meta">score { fmt.Sprintf("%.3f", s.Score) }</div>
+								if s.Evidence != "" {
+									<p class="entity-card-notes">{ s.Evidence }</p>
+								}
+								<form method="POST" action={ templ.SafeURL("/api/investigate/commenters/" + d.ID + "/link") } class="mt-2">
+									<input type="hidden" name="other_id" value={ s.OtherID }/>
+									<button type="submit" class="btn-primary btn-sm">same actor</button>
+								</form>
+							</div>
+						}
+					</div>
+				}
+			</section>
+			<section class="mb-6">
+				<h2 class="sub-heading mb-2">Evidence</h2>
+				if len(d.RecentComments) == 0 {
+					<p class="font-mono text-xs text-white/40">No comments linked yet.</p>
+				} else {
+					<div class="entity-card-grid">
+						for _, c := range d.RecentComments {
+							<a href={ templ.SafeURL("/videos/" + c.VideoID) } class="entity-card">
+								<div class="entity-card-title">
+									if c.VideoTitle != "" {
+										{ c.VideoTitle }
+									} else {
+										{ c.VideoID }
+									}
+								</div>
+								<div class="entity-card-meta">{ c.TimeLabel }</div>
+								<p class="entity-card-notes">{ c.Text }</p>
+							</a>
+						}
+					</div>
+				}
+			</section>
+			@investigateCaveat()
+			<script src={ versionedAsset(ctx, "/static/dist/investigate-graph.js") }></script>
+		}
+	}
+}
+
+templ InvestigateCampaign(d InvestigateCampaignDetail, username string) {
+	@Layout("Campaign", username) {
+		@Container("wide") {
+			<p class="text-xs font-mono text-white/40 mb-1"><a href="/investigate" class="hover:text-white/70">Investigate</a></p>
+			<div class="entity-card mb-4">
+				<div class="flex items-center gap-2 mb-2"><span class="badge">{ d.Kind }</span></div>
+				<div class="entity-card-title text-lg">
+					if d.NormalizedText != "" {
+						{ d.NormalizedText }
+					} else {
+						Campaign
+					}
+				</div>
+				<div class="entity-card-meta">
+					{ format.Itoa64(d.CommentCount) } comments · { format.Itoa64(d.CommenterCount) } actors · { format.Itoa64(d.VideoCount) } videos
+					· { d.FirstSeen } → { d.LastSeen }
+				</div>
+				if d.Evidence != "" {
+					<p class="entity-card-notes">{ d.Evidence }</p>
+				}
+			</div>
+			<section class="investigate-graph-panel mb-6" aria-label="Campaign neighborhood">
+				<h2 class="sub-heading mb-2">Neighborhood</h2>
+				<div id="investigate-graph" class="investigate-graph" data-investigate-graph={ investigateGraphJSON(d.Graph) }></div>
+			</section>
+			<section class="mb-6">
+				<h2 class="sub-heading mb-2">Members</h2>
+				if len(d.Members) == 0 {
+					<p class="font-mono text-xs text-white/40">No members</p>
+				} else {
+					<div class="entity-card-grid">
+						for _, m := range d.Members {
+							<div class="entity-card">
+								if m.CommenterID != "" {
+									<a href={ templ.SafeURL("/investigate/commenters/" + m.CommenterID) } class="entity-card-title hover:underline">{ m.Author }</a>
+								} else {
+									<div class="entity-card-title">{ m.Author }</div>
+								}
+								<a href={ templ.SafeURL("/videos/" + m.VideoID) } class="entity-card-meta block hover:text-white/80">
+									if m.VideoTitle != "" {
+										{ m.VideoTitle }
+									} else {
+										{ m.VideoID }
+									}
+									· { m.TimeLabel }
+								</a>
+								<p class="entity-card-notes">{ m.Text }</p>
+							</div>
+						}
+					</div>
+				}
+			</section>
+			@investigateCaveat()
+			<script src={ versionedAsset(ctx, "/static/dist/investigate-graph.js") }></script>
+		}
+	}
+}

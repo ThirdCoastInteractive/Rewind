@@ -1,12 +1,15 @@
 package settings_api
 
 import (
+	"encoding/json"
 	"log/slog"
 
 	"github.com/labstack/echo/v4"
+	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/interfaceprefs"
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
@@ -18,21 +21,41 @@ func HandleSettingsInterface(sm *auth.SessionManager, dbc *db.DatabaseConnection
 			return c.Redirect(302, "/login")
 		}
 
-		// Interface preferences (sounds, motion) are stored in localStorage on client side
-		// This handler just acknowledges the save and redirects back
-		// Future: Could store in database if we want server-side preference sync
+		raw, _ := json.Marshal(map[string]bool{"sounds_enabled": c.FormValue("sounds_enabled") == "on", "reduced_motion": c.FormValue("reduced_motion") == "on"})
+		if err = dbc.Queries(c.Request().Context()).MergeInterfacePreferences(c.Request().Context(), &db.MergeInterfacePreferencesParams{UserID: userUUID, Preferences: raw}); err != nil {
+			return err
+		}
 
 		slog.Info("interface preferences updated",
 			"user", username,
 			"sounds_enabled", c.FormValue("sounds_enabled"))
 
-		// Get current cookies to redisplay settings page
-		cookies, err := dbc.Queries(c.Request().Context()).GetUserCookies(c.Request().Context(), userUUID)
-		if err != nil {
-			slog.Error("failed to fetch cookies", "error", err)
-		}
-		cookiesValue := generateCookiesFile(encMgr, cookies)
+		return c.Redirect(303, "/settings")
+	}
+}
 
-		return renderSettingsPage(c, sm, dbc, encMgr, sc, userUUID, username, cookiesValue, "Interface preferences saved", "")
+// HandleSettingsAppearance validates and persists only the changed appearance field.
+func HandleSettingsAppearance(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		owner, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return err
+		}
+		key, value := c.QueryParam("key"), c.QueryParam("value")
+		signal := ""
+		switch {
+		case key == "theme" && interfaceprefs.ValidTheme(value):
+			signal = "uiTheme"
+		case key == "color_mode" && interfaceprefs.ValidMode(value):
+			signal = "uiColorMode"
+		default:
+			return echo.NewHTTPError(400, "Unknown theme or color mode")
+		}
+		raw, _ := json.Marshal(map[string]string{key: value})
+		if err = dbc.Queries(c.Request().Context()).MergeInterfacePreferences(c.Request().Context(), &db.MergeInterfacePreferencesParams{UserID: owner, Preferences: raw}); err != nil {
+			return err
+		}
+		patch, _ := json.Marshal(map[string]string{signal: value, "appearanceStatus": "Appearance saved"})
+		return datastar.NewSSE(c.Response(), c.Request()).PatchSignals(patch)
 	}
 }

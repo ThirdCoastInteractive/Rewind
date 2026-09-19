@@ -8,23 +8,27 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
-// HandleAdminExportsRequeueErrors serves POST /admin/exports/requeue-errors, resetting all failed exports to queued.
+// HandleAdminExportsRequeueErrors serves POST /admin/exports/requeue-errors for the selected queue.
 func HandleAdminExportsRequeueErrors(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
+		kind := exportKind(c)
 
-		if err := q.RequeueAllErrorExports(ctx); err != nil {
-			slog.Error("failed to requeue error exports", "error", err)
-			return c.String(500, "failed to requeue exports")
+		if kind == "stitch" {
+			if err := q.RequeueAllErrorStitchExports(ctx); err != nil {
+				slog.Error("failed to requeue stitch error exports", "error", err)
+				return c.String(500, "failed to requeue exports")
+			}
+			_, _ = dbc.Exec(ctx, "SELECT pg_notify('stitch_jobs', 'requeue')")
+			return c.Redirect(303, "/admin/exports?"+exportKindQuery(kind)+"&alert=success&msg=Stitch+error+exports+requeued")
 		}
 
-		// Notify encoder workers
+		if err := q.RequeueAllErrorExports(ctx); err != nil {
+			slog.Error("failed to requeue clip error exports", "error", err)
+			return c.String(500, "failed to requeue exports")
+		}
 		_, _ = dbc.Exec(ctx, "SELECT pg_notify('clip_exports', 'requeue')")
-
-		slog.Info("requeued all error exports")
-		return c.Redirect(303, "/admin/exports?alert=success&msg=Error+exports+requeued")
+		return c.Redirect(303, "/admin/exports?"+exportKindQuery(kind)+"&alert=success&msg=Clip+error+exports+requeued")
 	}
 }
-
-// HandleAdminExportDelete deletes a single export.

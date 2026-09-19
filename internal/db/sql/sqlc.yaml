@@ -33,6 +33,8 @@ sql:
         query_parameter_limit: 1
         sql_package: "pgx/v5"
         overrides:
+          - db_type: "vector"
+            go_type: "string"
           # Custom domain type mappings
           - db_type: "asset_status_map"
             go_type:

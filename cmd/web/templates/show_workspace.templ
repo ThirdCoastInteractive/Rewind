@@ -1,0 +1,142 @@
+package templates
+
+import "fmt"
+
+func workspacePanelURL(noteID string, panel string) string {
+	url := "/show-notes/" + noteID + "/panel/" + panel
+	if panel == "call" {
+		url += "?publisher=take"
+	}
+	return url
+}
+
+func workspaceWebRTCRole(panel string) string {
+	if panel == "" || panel == "call" {
+		return "host"
+	}
+	return "viewer"
+}
+
+templ workspacePanelHeader(title string, noteID string, panel string) {
+	<header class="workspace-panel-header">
+		<span>{ title }</span>
+		<a href={ templ.SafeURL(workspacePanelURL(noteID, panel)) } target="_blank" rel="noopener" title="Pop out panel">
+			<i class="fa-sharp fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+		</a>
+	</header>
+}
+
+templ ShowWorkspaceContent(data ShowNoteData) {
+	<div
+		class="show-workspace flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden"
+		data-show-workspace
+		data-note-id={ data.ID }
+		data-user-id={ data.UserID }
+		data-username={ data.Username }
+		data-role={ data.Role }
+		data-panel={ data.Panel }
+		data-signals={ fmt.Sprintf("{_pLive:%t,_pCode:'%s',screenSharing:false,programOn:false,programVideoId:'',autoAdvance:false,videoPaused:false,videoVolume:1,videoMuted:false,videoLoop:false,videoT:0,videoDur:0,_contentState:''}", data.IsLive, data.Code) }
+		data-init={ fmt.Sprintf("@get('/api/show-notes/%s/producer/stream', {openWhenHidden:true}); @get('/api/show-notes/%s/scene/stream', {openWhenHidden:true})", data.ID, data.ID) }
+	>
+		<div class="shrink-0 flex items-center gap-2 border border-white/10 bg-neutral-950 px-2 py-1.5">
+			<a href="/show-notes" class="text-white/35 hover:text-white text-xs"><i class="fa-sharp fa-solid fa-arrow-left" aria-hidden="true"></i></a>
+			<input
+				class="min-w-0 flex-1 bg-transparent text-sm text-white outline-none"
+				value={ data.Title }
+				aria-label="Show title"
+				data-on:change={ fmt.Sprintf("@put('/api/show-notes/%s', {payload:{title:evt.target.value}})", data.ID) }
+			/>
+			<div class="hidden sm:flex gap-1">
+				<button type="button" data-layout="planning" class="btn-ghost btn-sm">Planning</button>
+				<button type="button" data-layout="recording" class="btn-ghost btn-sm">Recording</button>
+				<button type="button" data-layout="directing" class="btn-ghost btn-sm">Directing</button>
+			</div>
+			<span data-collab-status class="text-xs text-white/35 uppercase">Connecting</span>
+			if data.Role != "viewer" {
+				<button type="button" class="px-2 py-1 text-xs border border-green-500/50 text-green-400" data-show="!$_pLive" data-on:click={ fmt.Sprintf("@post('/api/show-notes/%s/live')", data.ID) }>Go live</button>
+				<button type="button" class="px-2 py-1 text-xs border border-red-500/50 text-red-400" data-show="$_pLive" data-on:click={ fmt.Sprintf("@post('/api/show-notes/%s/offline')", data.ID) }>End live</button>
+			}
+		</div>
+		<div class="show-workspace-grid">
+			<section class="workspace-panel" data-workspace-panel="notes">
+				@workspacePanelHeader("Notes", data.ID, "notes")
+				<div class="shrink-0 flex flex-wrap items-center gap-1 border-b border-white/10 p-1.5">
+					<button type="button" class="btn-ghost btn-sm" data-command="# ">H1</button>
+					<button type="button" class="btn-ghost btn-sm" data-command="- [Video](rewind://video/) @ 0:00">/video</button>
+					<button type="button" class="btn-ghost btn-sm" data-command="- [Clip](rewind://clip/) @ 0:00–0:30">/clip</button>
+					<button type="button" class="btn-ghost btn-sm" data-command="- [Marker](rewind://marker/) @ 0:00">/marker</button>
+					<button type="button" class="btn-ghost btn-sm" data-command="> Break — ">/break</button>
+					if data.Role != "viewer" {
+						<button type="button" class="btn-ghost btn-sm" data-selection-action="comment">Comment</button>
+						<button type="button" class="btn-ghost btn-sm" data-selection-action="ask">Ask room</button>
+					}
+					<span class="ml-auto text-xs text-white/25">Markdown · type / for commands</span>
+				</div>
+				<div data-editor class="show-workspace-editor flex-1 min-h-0 overflow-hidden"></div>
+			</section>
+			<section class="workspace-panel" data-workspace-panel="room">
+				@workspacePanelHeader("Conversation / Review", data.ID, "room")
+				<div class="flex border-b border-white/10 text-xs uppercase tracking-wider">
+					<button type="button" data-room-tab="room" class="flex-1 p-2 text-white border-b border-white">Room</button>
+					<button type="button" data-room-tab="review" class="flex-1 p-2 text-white/35">Review</button>
+				</div>
+				<div data-room-view="room" data-room-messages class="flex-1 min-h-0 overflow-y-auto"></div>
+				<div data-room-view="review" data-review-threads class="flex-1 min-h-0 overflow-y-auto hidden"></div>
+				<form data-room-form data-room-view="room" class="shrink-0 border-t border-white/10 p-2 flex gap-2">
+					<textarea rows="2" class="form-input flex-1 text-xs" placeholder="Message the room or ask an agent…"></textarea>
+					<button class="btn-primary btn-sm" type="submit">Send</button>
+				</form>
+			</section>
+			<section class="workspace-panel" data-workspace-panel="call">
+				@workspacePanelHeader("Call", data.ID, "call")
+				<div data-call-grid class="relative flex-1 min-h-0 grid grid-cols-2 auto-rows-fr gap-1 p-1 bg-black">
+					<div data-call-idle class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black p-4 text-center">
+						<i class="fa-sharp fa-solid fa-video-slash text-2xl text-white/45" aria-hidden="true"></i>
+						<div>
+							<p data-call-state class="font-mono text-xs uppercase tracking-wider text-white/70">Call is off</p>
+							<p class="mt-1 text-[11px] text-white/40">Camera and microphone are not in use.</p>
+						</div>
+						<button type="button" class="btn-primary btn-sm" data-call-start>Start call</button>
+					</div>
+				</div>
+				<div data-call-controls hidden class="hidden shrink-0 flex items-center justify-center gap-2 border-t border-white/10 p-2">
+					<button type="button" class="btn-ghost btn-sm" data-call-mic title="Mute microphone" aria-label="Mute microphone" aria-pressed="false"><i class="fa-sharp fa-solid fa-microphone" aria-hidden="true"></i></button>
+					<button type="button" class="btn-ghost btn-sm" data-call-camera title="Turn off camera" aria-label="Turn off camera" aria-pressed="false"><i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i></button>
+					<button type="button" class="btn-ghost btn-sm" data-call-screen title="Share screen" aria-label="Share screen"><i class="fa-sharp fa-solid fa-display" aria-hidden="true"></i></button>
+					<button type="button" class="btn-danger btn-sm" data-call-leave>Leave call</button>
+				</div>
+			</section>
+			<section class="workspace-panel" data-workspace-panel="program">
+				@workspacePanelHeader("Program monitor", data.ID, "program")
+				<div class="flex-1 min-h-0 relative bg-black overflow-hidden">
+					@liveSceneStage(data.ID)
+					@liveTransportBar(data.ID)
+				</div>
+			</section>
+			<section class="workspace-panel" data-workspace-panel="controls">
+				@workspacePanelHeader("Director controls", data.ID, "controls")
+				<div class="grid grid-cols-2 min-h-0 flex-1">
+					<div class="border-r border-white/10 p-2 overflow-y-auto">
+						<div class="text-xs text-white/35 uppercase mb-2">Scenes & sources</div>
+						<div id="scene-tabs" class="text-xs"></div>
+						<div id="scene-sources" class="text-xs mt-3"></div>
+						<div id="scene-props" class="text-xs mt-3"></div>
+					</div>
+					<div class="p-2 overflow-y-auto">
+						<div class="text-xs text-white/35 uppercase mb-2">Rundown</div>
+						<div data-init={ fmt.Sprintf("@get('/api/show-notes/%s/content-sources')", data.ID) }>
+							@LiveContentSourceList(nil, data.ID)
+						</div>
+					</div>
+				</div>
+			</section>
+		</div>
+		<div id="webrtc-room" class="hidden" data-room={ data.ID } data-role={ workspaceWebRTCRole(data.Panel) } data-auto-connect={ fmt.Sprint(data.Panel == "program" || data.Panel == "controls") } data-user-id={ data.UserID } data-username={ data.Username }></div>
+		<div id="scene-editor-root" class="hidden" data-note-id={ data.ID } data-client-id={ data.ClientID } data-user-id={ data.UserID } data-scene-b64={ data.SceneB64 }></div>
+		<script src={ versionedAsset(ctx, sceneScript()) }></script>
+		<script src={ versionedAsset(ctx, "/static/dist/webrtc-room.js") }></script>
+		<script src={ versionedAsset(ctx, "/static/dist/producer-scene-editor.js") }></script>
+		<script src={ versionedAsset(ctx, "/static/dist/show-workspace.js") }></script>
+		@liveTransportPoll()
+	</div>
+}

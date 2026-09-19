@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleArchive serves POST /jobs/:id/archive, marking a download job as archived.
 func HandleArchive(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -32,7 +33,7 @@ func HandleArchive(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 			return c.String(500, "failed to archive job")
 		}
 
-		return c.JSON(200, map[string]any{"archived": true})
+		return jobActionResponse(c, map[string]any{"archived": true}, "Job archived. Video files are kept.")
 	}
 }
 

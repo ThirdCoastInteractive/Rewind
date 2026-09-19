@@ -1,3 +1,4 @@
+import { pageTimeout, pageFrame, pageFetch } from './page-scope.js';
 import { clamp, isFiniteNumber, formatTimecode, formatFrameTimecode } from './utils.js';
 
 /**
@@ -44,7 +45,7 @@ export class SeekThumbnails {
     const videoID = this.editor.videoID;
     if (!videoID) return;
     try {
-      const res = await fetch(
+      const res = await pageFetch(
         `/api/videos/${encodeURIComponent(videoID)}/seek/seek.json`,
         { headers: { Accept: 'application/json' } },
       );
@@ -69,7 +70,7 @@ export class SeekThumbnails {
     const videoID = this.editor.videoID;
     const p = (async () => {
       try {
-        const res = await fetch(
+        const res = await pageFetch(
           `/api/videos/${encodeURIComponent(videoID)}/seek/levels/${encodeURIComponent(levelName)}/seek.vtt`,
           { headers: { Accept: 'text/vtt' } },
         );
@@ -332,7 +333,7 @@ export class SeekThumbnails {
     const obj = kind === 'work' ? this.workTooltip : this.overviewTooltip;
     if (obj && obj.tip && !obj.tip.classList.contains('hidden')) {
       if (this._raf) return;
-      this._raf = requestAnimationFrame(() => {
+      this._raf = pageFrame(() => {
         this._raf = null;
         void this.updateTooltip(kind, evt);
       });
@@ -341,7 +342,7 @@ export class SeekThumbnails {
 
     // Otherwise, delay showing by 300ms
     if (this._showTimer) return;
-    this._showTimer = setTimeout(() => {
+    this._showTimer = pageTimeout(() => {
       this._showTimer = null;
       if (this._pendingKind === kind && this._pendingEvt) {
         void this.updateTooltip(kind, this._pendingEvt);

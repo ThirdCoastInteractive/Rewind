@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
@@ -54,6 +55,16 @@ func CompileFilters(specs []FilterSpec, clipCrops crops.CropArray) ([]Option, er
 // compileFilter converts a single FilterSpec into one or more ffmpeg Options.
 func compileFilter(spec FilterSpec, clipCrops crops.CropArray) ([]Option, error) {
 	switch spec.Type {
+	case "ass", "subtitles":
+		filename, _ := spec.Params["filename"].(string)
+		if filename == "" {
+			return nil, fmt.Errorf("%s filter requires filename", spec.Type)
+		}
+		value := spec.Type + "=filename='" + strings.ReplaceAll(filename, "'", "\\'") + "'"
+		if fontsdir, _ := spec.Params["fontsdir"].(string); fontsdir != "" {
+			value += ":fontsdir='" + strings.ReplaceAll(fontsdir, "'", "\\'") + "'"
+		}
+		return []Option{Filter(value)}, nil
 
 	// === Video - Spatial ===
 
@@ -340,15 +351,19 @@ func compileFilter(spec FilterSpec, clipCrops crops.CropArray) ([]Option, error)
 		}
 		return []Option{AudioFilter(filter)}, nil
 
+	case "match_loudness":
+		return nil, nil
+
 	case "normalize":
 		mode, _ := spec.Params["mode"].(string)
 		switch mode {
 		case "rms":
-			return []Option{AudioFilter("dynaudnorm")}, nil
+			return []Option{AudioFilter("dynaudnorm=f=150:g=15")}, nil
 		case "peak":
-			return []Option{AudioFilter("dynaudnorm=p=1")}, nil
+			return []Option{AudioFilter("dynaudnorm=p=1:m=15")}, nil
 		default: // "loudnorm" default
-			return []Option{AudioFilter("loudnorm")}, nil
+			target := paramFloat(spec.Params, "target", DefaultLoudnessI)
+			return []Option{AudioFilter(LoudnormFilter(target, nil))}, nil
 		}
 
 	case "equalizer":

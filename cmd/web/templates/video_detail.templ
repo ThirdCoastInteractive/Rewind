@@ -52,23 +52,58 @@ templ VideoDetailPage(video VideoDetail, clips []*db.Clip, username string, keyb
 }
 
 templ VideoDetailContent(video VideoDetail, clips []*db.Clip, keybindings map[string]string) {
-	@Container("wide") {
+	<div class="watch-page mx-auto w-full max-w-wide px-2 py-1" data-watch-page>
 		@videoDetailNav(video)
-		@videoPlayer(video)
+		@videoMetadataCard(video)
+		<div class="video-detail-grid watch-view-grid">
+			<div class="min-w-0">
+				@videoPlayer(video)
+			</div>
+			<div class="min-w-0">
+				@videoTranscriptAndClips(video, clips)
+			</div>
+		</div>
+		<div class="video-detail-grid">
+			<div class="min-w-0">
+				@videoDescriptionCard(video)
+			</div>
+			<div class="min-w-0">
+				@videoTagsCard(video)
+			</div>
+		</div>
 		<link rel="stylesheet" href="/static/dist/video-player.css"/>
 		@KeybindingsData(keybindings)
 		<script src="/static/dist/video-player.js"></script>
-		@videoMetadataCard(video)
-		@videoTagsCard(video)
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start mb-4">
-			@videoDescriptionCard(video)
-			@videoTranscriptAndClips(video, clips)
+		<div class="video-detail-grid mt-6 pt-6 border-t border-white/10">
+			<section class="min-w-0" aria-label="Archive details">
+				@videoInfoCard(video)
+				@videoStreamsCard(video)
+			</section>
+			<section class="min-w-0" aria-label="Manage archive">
+				@videoDetailSection("Manage archive", "Downloads and asset repair") {
+					@videoActionButtons(video)
+					@videoRegenButtons(video)
+					@VideoProcessingNotice("")
+					<div id="video-processing" class="mt-4 text-xs">Loading generated data status…</div>
+				}
+				@videoJobsCard(video)
+			</section>
 		</div>
-		@videoInfoCard(video)
-		@videoStreamsCard(video)
-		@videoJobsCard(video)
 		@videoRedownloadScript()
-	}
+	</div>
+}
+
+// videoDetailSection keeps watch-page content directly accessible.
+templ videoDetailSection(title, description string) {
+	<section class="mb-6">
+		<header class="mb-3">
+			<h2 class="font-bold text-sm">{ title }</h2>
+			<p class="mt-1 text-xs text-white/50">{ description }</p>
+		</header>
+		<div>
+			{ children... }
+		</div>
+	</section>
 }
 
 // videoTagsCard shows the video's user tags with add/remove controls.
@@ -93,16 +128,18 @@ templ videoTagsCard(video VideoDetail) {
 
 // videoDetailNav renders the top navigation bar with back + action buttons.
 templ videoDetailNav(video VideoDetail) {
-	<div class="mb-4 flex flex-col sm:flex-row gap-2 sm:gap-0 sm:justify-between sm:items-center">
+	<div class="mb-4 flex flex-wrap gap-2 justify-between items-center">
 		@components.LinkButton("/videos", "ghost", "sm", "arrow-left", false) {
 			BACK TO VIDEOS
 		}
-		<div class="flex flex-col sm:flex-row gap-2">
+		<div class="flex flex-wrap gap-2">
+			if video.HasMedia {
+				@components.LinkButton("/api/videos/"+video.ID+"/download", "ghost", "sm", "download", false) {
+					DOWNLOAD
+				}
+			}
 			@components.LinkButton("/videos/"+video.ID+"/cut", "ghost", "sm", "scissors", false) {
 				OPEN CUT
-			}
-			@components.LinkButton("/producer?video="+video.ID, "primary", "sm", "tv", false) {
-				OPEN IN PRODUCER
 			}
 		</div>
 	</div>
@@ -141,7 +178,7 @@ templ videoPlayer(video VideoDetail) {
 				playsinline
 			>
 				<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
-				<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>
+				<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt?source=transcript" } srclang="en" label="English" default/>
 				Your browser does not support the video tag.
 			</video>
 			@components.VideoPlayerControls()
@@ -156,17 +193,19 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 		class="mb-4"
 		data-video-panel
 		data-video-id={ video.ID }
-		data-signals="{videoPanelTab: 'comments'}"
-		data-init={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }
+		data-signals="{videoPanelTab: 'markers'}"
 	>
 		@components.Card(false) {
+			@components.CardHeader("EXPLORE VIDEO", "Navigate, read, and clip")
 			<div class="flex items-center flex-wrap border-b-2 border-white/10">
-				@videoPanelTabButton("comments", fmt.Sprintf("Comments (%s)", format.Number(int(video.CommentCount))))
+				@videoPanelTabButton("markers", "Chapters & markers")
 				@videoPanelTabButton("transcript", "Transcript")
 				@videoPanelTabButton("clips", "Clips")
-				@videoPanelTabButton("markers", "Markers")
+				@videoPanelTabButton("comments", fmt.Sprintf("Comments (%s)", format.Number(int(video.CommentCount))))
+				@videoPanelTabButton("context", "Context")
 			</div>
 			@components.CardBody(true) {
+				@GenerationRetry(video.ID)
 				<div data-show="$videoPanelTab == 'transcript'" data-transcript-panel data-video-id={ video.ID }>
 					<input
 						type="text"
@@ -177,14 +216,28 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 					<div
 						class="space-y-2 max-h-96 overflow-auto"
 						data-transcript-list
-						data-init={ fmt.Sprintf("@get('/api/videos/%s/transcript/render')", video.ID) }
+						data-on-intersect__once={ fmt.Sprintf("@get('/api/videos/%s/transcript/render')", video.ID) }
 					>
 						<div id="transcript-list-inner">
 							<div class="text-xs text-white/40 font-mono">Loading…</div>
 						</div>
 					</div>
 				</div>
-				<div data-show="$videoPanelTab == 'clips'">
+				<div data-show="$videoPanelTab == 'context'" data-signals="{contextSearch: '', contextClipping: false}">
+					<div class="flex gap-2 mb-3"><button type="button" class="btn-ghost btn-sm" data-indicator:context-queuing data-attr:disabled="$contextQueuing" data-on:click={ fmt.Sprintf("@post('/api/videos/%s/context-windows/generate?render=1')", video.ID) }>Generate context</button><a href="#video-processing" class="text-xs underline">Processing status</a></div>
+					<label class="block text-xs mb-2" for="context-search">Search this video's context</label>
+					<input id="context-search" type="search" class="w-full px-3 py-2 text-xs border-2 bg-black text-white border-white/20 mb-3" placeholder="Topics, people, or phrases�" data-bind="contextSearch" data-on:input__debounce.250ms={ fmt.Sprintf("@get('/api/videos/%s/context-windows?render=1&q=' + encodeURIComponent($contextSearch))", video.ID) }/>
+					<div
+						data-context-list
+						data-init={ fmt.Sprintf("@get('/api/videos/%s/context-windows?render=1')", video.ID) }
+						data-on-interval__duration.5s={ fmt.Sprintf("if ($videoPanelTab == 'context') @get('/api/videos/%s/context-windows?render=1&q=' + encodeURIComponent($contextSearch))", video.ID) }
+					>
+						<div id="context-window-results" class="space-y-3 max-h-96 overflow-auto">
+							<p class="text-xs text-white/50">Loading context�</p>
+						</div>
+					</div>
+				</div>
+				<div data-show="$videoPanelTab == 'clips'" data-on-intersect__once={ fmt.Sprintf("@get('/api/videos/%s/clips/export-status')", video.ID) }>
 					<div class="flex flex-wrap gap-2 mb-3">
 						<div class="text-xs text-white/40 self-center font-mono mr-2">Shift+I / O / C</div>
 						<button type="button" data-clip-set-in class="ghost-btn-sm">
@@ -210,15 +263,17 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 					</div>
 				</div>
 				<div data-show="$videoPanelTab == 'markers'">
-					<div class="space-y-2" data-markers-list data-init={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", video.ID) }>
+					<p class="text-xs font-mono text-white/50 mb-3">Select a time to jump to a chapter or marker. Only SponsorBlock skip segments are skipped automatically.</p>
+					<div class="space-y-2 max-h-96 overflow-auto" data-markers-list data-init={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", video.ID) }>
 						<div class="text-xs text-white/40 font-mono">Loading…</div>
 					</div>
 				</div>
 				<div
 					data-show="$videoPanelTab == 'comments'"
+					class="max-h-96 overflow-auto"
 					data-comments-list
 					data-signals="{commentSearch: '', commentPage: 0}"
-					data-init={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", video.ID) }
+					data-on-intersect__once={ fmt.Sprintf("@get('/api/videos/%s/comments/render')", video.ID) }
 				>
 					<div class="text-white/40 font-mono text-xs">Loading comments…</div>
 				</div>
@@ -231,7 +286,8 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 templ videoPanelTabButton(tab string, label string) {
 	<button
 		type="button"
-		class="px-4 py-2 text-xs font-mono uppercase tracking-wider transition-colors"
+		class="px-3 py-3 text-xs font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+		data-attr:aria-pressed={ fmt.Sprintf("$videoPanelTab == '%s'", tab) }
 		data-class={ fmt.Sprintf("{'text-white border-b-2 border-white -mb-0.5': $videoPanelTab == '%s', 'text-white/40 hover:text-white/70': $videoPanelTab != '%s'}", tab, tab) }
 		data-on:click={ fmt.Sprintf("$videoPanelTab = '%s'", tab) }
 	>
@@ -239,45 +295,36 @@ templ videoPanelTabButton(tab string, label string) {
 	</button>
 }
 
-// videoMetadataCard renders the title, source URL, actions, and regen buttons.
+// videoMetadataCard puts the title and creator above the viewing workspace.
 templ videoMetadataCard(video VideoDetail) {
-	@components.Card(false) {
-		@components.CardBody(true) {
-			<h1 class="page-heading text-xl mb-3">{ video.Title }</h1>
-			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-				<div>
-					<p class="section-label mb-1">SOURCE URL</p>
-					<a href={ templ.SafeURL(video.Src) } target="_blank" rel="noopener" class="text-white hover:text-white/80 break-all font-mono">
-						{ video.Src }
-					</a>
-				</div>
-				<div>
-					<p class="section-label mb-1">ARCHIVED</p>
-					<p class="text-white/80 font-mono">{ video.CreatedAt }</p>
-				</div>
-			</div>
-			@videoActionButtons(video)
-			@videoRegenButtons(video)
-		}
-	}
+	<header class="mb-5 pt-2">
+		<h1 class="text-xl sm:text-2xl font-bold text-white leading-tight mb-3">{ video.Title }</h1>
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-mono text-white/50">
+			if video.Info.Uploader != "" {
+				<a href={ templ.SafeURL(channelViewURL(video.Info.Uploader)) } class="text-white/80 hover:text-white underline underline-offset-4" title="Browse this channel">{ video.Info.Uploader }</a>
+			}
+			if video.Info.Duration > 0 {
+				<span>{ format.Duration(video.Info.Duration) }</span>
+			}
+			if strings.TrimSpace(video.Src) != "" {
+				<a href={ templ.SafeURL(video.Src) } target="_blank" rel="noopener" class="text-white/80 hover:text-white underline underline-offset-4">Original source ↗</a>
+			}
+			<span>Archived { video.CreatedAt }</span>
+		</div>
+	</header>
 }
 
 // videoActionButtons renders download, redownload, and delete buttons.
 templ videoActionButtons(video VideoDetail) {
-	<div class="mt-4 pt-4 border-t-2 border-white/10">
+	<div>
 		<div
 			class="flex flex-wrap gap-2"
 			data-signals={ regenSignals(video) }
 		>
-			if video.HasMedia {
-				@components.LinkButton("/api/videos/"+video.ID+"/download", "primary", "sm", "download", false) {
-					DOWNLOAD VIDEO
-				}
-			}
 			<button
 				type="button"
 				onclick={ templ.JSFuncCall("redownloadVideo", video.ID) }
-				class="btn-ghost btn-md"
+				class="btn-ghost btn-sm"
 			>
 				<i class="fa-sharp fa-solid fa-rotate"></i>
 				FORCE REDOWNLOAD
@@ -287,7 +334,7 @@ templ videoActionButtons(video VideoDetail) {
 				data-on:click="!$deleteArmed ? ($deleteArmed = true) : (confirm('Delete this video from the database? This cannot be undone.') ? @delete($deleteDisk ? $deleteUrlDisk : $deleteUrl) : ($deleteArmed = false, $deleteDisk = false))"
 				data-indicator:_deleting
 				data-attr:disabled="$_deleting"
-				class="btn-ghost btn-md"
+				class="btn-ghost btn-sm"
 			>
 				<i class="fa-sharp fa-solid fa-trash"></i>
 				<span
@@ -314,12 +361,13 @@ templ videoRegenButtons(video VideoDetail) {
 	<div class="mt-4 pt-4 border-t-2 border-white/10">
 		<p class="section-label mb-2">REGENERATE ASSETS</p>
 		<div class="flex flex-wrap gap-2">
-			@regenButton(video.ID, "", "REGENERATE ALL", "wand-magic-sparkles", "_regenAll")
+			@regenButton(video.ID, "", "ALL MEDIA ASSETS", "wand-magic-sparkles", "_regenAll")
 			@regenButton(video.ID, "thumbnail", "THUMBNAIL", "image", "_regenThumb")
 			@regenButton(video.ID, "preview", "PREVIEW", "film", "_regenPreview")
 			@regenButton(video.ID, "seek", "SEEK SPRITES", "grip", "_regenSeek")
 			@regenButton(video.ID, "waveform", "WAVEFORM", "wave-square", "_regenWaveform")
-			@regenButton(video.ID, "captions", "CAPTIONS", "closed-captioning", "_regenCaptions")
+			@regenButton(video.ID, "captions", "CAPTIONS / TRANSCRIPT", "closed-captioning", "_regenCaptions")
+			@regenButton(video.ID, "streams", "STREAM MANIFEST", "film", "_regenStreams")
 		</div>
 	</div>
 }
@@ -327,13 +375,10 @@ templ videoRegenButtons(video VideoDetail) {
 // videoDescriptionCard renders the video description (if present).
 templ videoDescriptionCard(video VideoDetail) {
 	if strings.TrimSpace(video.Description) != "" {
-		@components.Card(false) {
-			@components.CardHeader("DESCRIPTION", "")
-			@components.CardBody(true) {
-				<div class="text-sm text-white/80 whitespace-pre-wrap break-words leading-relaxed">
-					{ video.Description }
-				</div>
-			}
+		@videoDetailSection("Description", "Original notes and links from the creator") {
+			<div class="text-sm text-white/80 whitespace-pre-wrap break-words leading-relaxed">
+				{ video.Description }
+			</div>
 		}
 	}
 }
@@ -403,12 +448,13 @@ templ videoStreamsCard(video VideoDetail) {
 // videoJobsCard renders the download jobs list.
 templ videoJobsCard(video VideoDetail) {
 	@components.Card(false) {
-		@components.CardHeader("DOWNLOAD JOBS", "All download attempts for this video")
+		@components.CardHeader("DOWNLOAD AND ASSET JOBS", "Download and regeneration history · refreshes every 5 seconds")
 		@components.CardBody(true) {
 			<div
 				id="video-jobs-list"
 				class="space-y-2 text-xs"
 				data-init={ fmt.Sprintf("@get('/api/videos/%s/jobs')", video.ID) }
+				data-on-interval__duration.5s={ fmt.Sprintf("@get('/api/videos/%s/jobs')", video.ID) }
 			>
 				<div class="text-white/40 font-mono">Loading jobs...</div>
 			</div>
@@ -434,7 +480,7 @@ templ videoRedownloadScript() {
 				
 				if (response.ok) {
 					const data = await response.json();
-					window.location.href = `/jobs/${data.job_id}`;
+					window.RewindNavigation.navigate(`/jobs/${data.job_id}`);
 				} else {
 					const text = await response.text();
 					alert(`Failed to create redownload job: ${text}`);
@@ -540,23 +586,21 @@ func qualityChipsToComponent(chips []videoinfo.QualityChip) []components.Quality
 
 // regenSignals builds the data-signals JSON for delete + regen buttons.
 func regenSignals(video VideoDetail) string {
-	allActive := video.ActiveRegenScopes[""]
-	isActive := func(scope string) bool {
-		return allActive || video.ActiveRegenScopes[scope]
-	}
 
 	signals := map[string]interface{}{
-		"deleteArmed":   false,
-		"deleteDisk":    false,
-		"deleteUrl":     "/api/videos/" + video.ID,
-		"deleteUrlDisk": "/api/videos/" + video.ID + "?delete_disk=1",
+		"_regenStreams":  false,
+		"contextQueuing": false,
+		"deleteArmed":    false,
+		"deleteDisk":     false,
+		"deleteUrl":      "/api/videos/" + video.ID,
+		"deleteUrlDisk":  "/api/videos/" + video.ID + "?delete_disk=1",
 
-		"_regenAll":      isActive(""),
-		"_regenThumb":    isActive("thumbnail"),
-		"_regenPreview":  isActive("preview"),
-		"_regenSeek":     isActive("seek"),
-		"_regenWaveform": isActive("waveform"),
-		"_regenCaptions": isActive("captions"),
+		"_regenAll":      false,
+		"_regenThumb":    false,
+		"_regenPreview":  false,
+		"_regenSeek":     false,
+		"_regenWaveform": false,
+		"_regenCaptions": false,
 	}
 
 	j, err := templ.JSONString(signals)
@@ -571,15 +615,16 @@ templ regenButton(videoID, scope, label, icon, signal string) {
 	<button
 		type="button"
 		if scope == "" {
-			data-on:click={ fmt.Sprintf("$%s = true; @post('/api/videos/%s/regenerate-assets')", signal, videoID) }
+			data-on:click={ fmt.Sprintf("@post('/api/videos/%s/regenerate-assets?render=1')", videoID) }
 		} else {
-			data-on:click={ fmt.Sprintf("$%s = true; @post('/api/videos/%s/regenerate-assets?scope=%s')", signal, videoID, scope) }
+			data-on:click={ fmt.Sprintf("@post('/api/videos/%s/regenerate-assets?render=1&scope=%s')", videoID, scope) }
 		}
+		data-indicator={ signal }
 		data-attr:disabled={ "$" + signal }
 		class="btn-ghost btn-sm disabled:opacity-50 disabled:cursor-not-allowed"
 	>
 		<i class={ "fa-sharp fa-solid fa-" + icon } data-class:fa-spin={ "$" + signal }></i>
 		<span data-show={ "!$" + signal }>{ label }</span>
-		<span data-show={ "$" + signal }>WORKING...</span>
+		<span data-show={ "$" + signal }>QUEUING...</span>
 	</button>
 }

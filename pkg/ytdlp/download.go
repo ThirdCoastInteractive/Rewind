@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -40,14 +41,14 @@ func (c *Client) Download(ctx context.Context, url string, destDir string, extra
 		// Regex, anchored by yt-dlp as `^en.*$`. Plain "en" would miss regional and
 		// auto-generated variants (e.g. Rumble exposes its captions as "en-auto",
 		// YouTube uses "en-US"/"en-orig") — "en.*" catches every English track.
-		"--sub-lang", "en.*",
+		"--sub-lang", "en.*,live_chat",
 		"--progress",
 		"--progress-delta", "5",
 		"--newline",
 		"--no-colors",
 		"--no-video-multistreams",
-		"--audio-multistreams",
-		"--format", formatSelector(c.MaxHeight),
+		"--no-audio-multistreams",
+		"--format", formatSelector(c.MaxHeight, c.Live),
 	}
 	args = append(args, extraArgs...)
 	args = append(args, url)
@@ -59,14 +60,88 @@ func (c *Client) Download(ctx context.Context, url string, destDir string, extra
 	return nil
 }
 
+// LiveOpts configures yt-dlp flags for live HLS/EVENT streams.
+type LiveOpts struct {
+	FromStart bool
+	Wait      int // seconds; 0 means omit --wait-for-video
+}
+
+// LiveDownloadArgs returns yt-dlp flags for native HLS live capture.
+// Does not include -f/--format; live format selection goes through Client.Live.
+func LiveDownloadArgs(opts LiveOpts) []string {
+	args := make([]string, 0, 8)
+	if opts.FromStart {
+		args = append(args, "--live-from-start")
+	} else {
+		args = append(args, "--no-live-from-start")
+	}
+	args = append(args,
+		"--downloader", "native",
+		"--hls-use-mpegts",
+		"--skip-unavailable-fragments",
+	)
+	if opts.Wait > 0 {
+		args = append(args, "--wait-for-video", strconv.Itoa(opts.Wait))
+	}
+	return args
+}
+
+// StripRewindExtraArgs removes --rewind-media-url <url> pairs.
+// Returns the media URL (empty if none) and the remaining args.
+func StripRewindExtraArgs(extra []string) (mediaURL string, rest []string) {
+	rest = make([]string, 0, len(extra))
+	for i := 0; i < len(extra); i++ {
+		if extra[i] == "--rewind-media-url" {
+			if i+1 < len(extra) {
+				mediaURL = extra[i+1]
+				i++
+			}
+			continue
+		}
+		rest = append(rest, extra[i])
+	}
+	return mediaURL, rest
+}
+
+// ParseLiveExtraArgs extracts live-related flags from extra args.
+// Remaining args exclude --live-from-start, --no-live-from-start, and
+// --wait-for-video <n> so LiveDownloadArgs can re-add them without duplicates.
+func ParseLiveExtraArgs(extra []string) (opts LiveOpts, hasLiveHint bool, rest []string) {
+	rest = make([]string, 0, len(extra))
+	for i := 0; i < len(extra); i++ {
+		switch extra[i] {
+		case "--live-from-start":
+			opts.FromStart = true
+			hasLiveHint = true
+			continue
+		case "--no-live-from-start":
+			opts.FromStart = false
+			hasLiveHint = true
+			continue
+		case "--wait-for-video":
+			hasLiveHint = true
+			if i+1 < len(extra) {
+				if n, err := strconv.Atoi(extra[i+1]); err == nil {
+					opts.Wait = n
+				}
+				i++
+			}
+			continue
+		}
+		rest = append(rest, extra[i])
+	}
+	return opts, hasLiveHint, rest
+}
+
 // formatSelector builds the yt-dlp -f expression, optionally capped to maxHeight
 // pixels of vertical resolution. maxHeight <= 0 means no cap.
 //
-// The primary branch takes the best video plus every audio-only (multi-language)
-// stream; it falls back to the best muxed stream. Two filters make this robust:
+// When live is true, a muxed stream is required: bestvideo+bestaudio merge fails
+// on HLS EVENT playlists (ffmpeg from fragment 0). Use best, or best[height<=N]/worst.
 //
-//   - [vcodec=none] on mergeall restricts the merge to audio-only tracks, so we
-//     add audio without pulling in extra video streams.
+// For VOD, the primary branch takes the best video plus the best audio stream; it
+// falls back to the best muxed stream. The preview filter makes this robust:
+//
 //   - [format_id!*=timeline] excludes Rumble's "timeline-*" seekbar preview — a
 //     ~180p clip that is the only strict video-only format Rumble exposes. Left
 //     in, it hijacks bestvideo: yt-dlp merges it with whatever audio track is
@@ -79,14 +154,20 @@ func (c *Client) Download(ctx context.Context, url string, destDir string, extra
 // or below the cap does the trailing /worst fire — grabbing the smallest
 // rendition available (least overage) so the video is still archived. That beats
 // a /best fallback, which would grab the largest and blow past the cap the most.
-func formatSelector(maxHeight int) string {
+func formatSelector(maxHeight int, live bool) string {
+	if live {
+		if maxHeight <= 0 {
+			return "best"
+		}
+		return fmt.Sprintf("best[height<=%d]/worst", maxHeight)
+	}
 	const noPreview = "[format_id!*=timeline]"
 	if maxHeight <= 0 {
-		return "bestvideo" + noPreview + "+mergeall[vcodec=none]/best"
+		return "bestvideo" + noPreview + "+bestaudio/best"
 	}
 	h := maxHeight
 	return fmt.Sprintf(
-		"bestvideo[height<=%d]%s+mergeall[vcodec=none]/best[height<=%d]/worst",
+		"bestvideo[height<=%d]%s+bestaudio/best[height<=%d]/worst",
 		h, noPreview, h,
 	)
 }

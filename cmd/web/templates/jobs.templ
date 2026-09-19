@@ -1,469 +1,330 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// Jobs renders the jobs workspace.
 templ Jobs(jobs []*db.DownloadJob, username string) {
-	@Layout("My Jobs", username) {
+	@Layout("Jobs", username) {
 		@JobsContent(jobs)
 	}
 }
 
+// JobsContent owns local controls and the page-scoped DataStar subscription.
 templ JobsContent(jobs []*db.DownloadJob) {
 	@Container("") {
-		<div class="mb-4">
-			<div class="flex items-center justify-between">
+		<div
+			id="jobs-workspace"
+			data-signals="{jobsTab: (['captions','context','visual'].includes(new URLSearchParams(location.search).get('tab')) ? 'processing' : (new URLSearchParams(location.search).get('tab') === 'processing' ? 'processing' : 'downloads')), jobsStatus: 'all', mlKind: (new URLSearchParams(location.search).get('tab') === 'captions' ? 'transcribe' : (new URLSearchParams(location.search).get('tab') === 'context' ? 'context_windows' : (new URLSearchParams(location.search).get('tab') === 'visual' ? 'visual_index' : 'all'))), mlStatus: 'all', jobsSearch: '', job_ids: [], jobsSelecting: false, jobsBusy: false, jobsNotice: '', jobsLastSync: 0, jobsHeartbeat: 0, jobsClock: Date.now(), clearingMl: false}"
+			data-on:datastar-fetch="if (evt.detail.el.closest('#jobs-workspace') && evt.detail.el.id !== 'jobs-live') { if (evt.detail.type === 'started') { $jobsBusy = true; $jobsNotice = '' }; if (evt.detail.type === 'finished') $jobsBusy = false; if (evt.detail.type === 'error') $jobsNotice = 'Could not complete the request. Check your connection and try again.' }"
+		>
+			<div class="flex flex-wrap items-start justify-between gap-4 mb-6">
 				<div>
-					<h1 class="page-heading text-xl tracking-tight mb-0.5">Download Jobs</h1>
-					<p class="text-xs font-mono text-white/60">All submitted download jobs and their status</p>
+					<p class="text-xs font-mono uppercase tracking-widest text-white/50 mb-2">Archive activity</p>
+					<h1 class="page-heading text-3xl mb-2">Jobs</h1>
+					<p class="text-sm text-white/60">Follow downloads and video processing as they happen.</p>
 				</div>
-				<button
-					id="toggle-checkboxes-btn"
-					type="button"
-					onclick={ templ.ComponentScript{Call: "toggleCheckboxes()"} }
-					class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white"
-				>
-					<i class="fa-sharp fa-solid fa-check-square mr-1" aria-hidden="true"></i>
-					Select Mode
-				</button>
-			</div>
-		</div>
-		<div id="bulk-actions-bar" class="hidden mb-4 p-2 border-2 border-white/20 bg-white/5">
-			<div class="flex items-center justify-between gap-4">
-				<div class="flex items-center gap-2">
-					<input
-						type="checkbox"
-						id="select-all-checkbox"
-						class="job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer"
-						style="display: none;"
-						onchange={ templ.ComponentScript{Call: "toggleSelectAll(event)"} }
-					/>
-					<span id="selection-count" class="text-xs font-mono text-white">0 selected</span>
+				<div class="text-right text-xs font-mono" data-on-interval__duration.1000ms="$jobsClock = Date.now()">
+					<div class="flex items-center gap-2" role="status">
+						<span class="w-2 h-2 rounded-full bg-white/40" data-class="{'bg-emerald-400': $jobsLastSync > 0 && $jobsClock - $jobsHeartbeat < 45000}"></span>
+						<span data-text="$jobsLastSync === 0 ? 'Connecting…' : ($jobsClock - $jobsHeartbeat < 45000 ? 'Live · push updates' : 'Reconnecting…')">Connecting…</span>
+					</div>
+					<p class="text-white/50 mt-1" data-show="$jobsLastSync > 0" data-text="'Last update ' + new Date($jobsLastSync).toLocaleTimeString()"></p>
 				</div>
-				<button
-					id="bulk-archive-btn"
-					type="button"
-					onclick={ templ.ComponentScript{Call: "bulkArchiveJobs()"} }
-					class="btn-secondary btn-sm"
-				>
-					Archive Selected
-				</button>
 			</div>
-		</div>
-		<div class="flex gap-0 mb-4 border-b-2 border-white/10">
-			<button
-				class="tab-button tab-btn-active"
-				data-status="all"
-			>
-				All
-			</button>
-			<button
-				class="tab-button tab-btn-inactive"
-				data-status="queued"
-			>
-				Queued
-			</button>
-			<button
-				class="tab-button tab-btn-inactive"
-				data-status="processing"
-			>
-				Processing
-			</button>
-			<button
-				class="tab-button tab-btn-inactive"
-				data-status="succeeded"
-			>
-				Succeeded
-			</button>
-			<button
-				class="tab-button tab-btn-inactive"
-				data-status="failed"
-			>
-				Failed
-			</button>
-		</div>
-		if jobs == nil {
-			<div id="jobs-list" class="border-2 border-white/10" data-init="@get('/api/jobs/index')">
-				<div class="p-2 text-xs font-mono text-white/40">Loading…</div>
+			<div id="jobs-live" data-init="@get('/api/jobs/index?live=1', {retry: 'always'})"></div>
+			<p role="status" class="border border-white/20 bg-white/5 p-3 mb-4 text-sm" data-show="$jobsNotice !== ''" data-text="$jobsNotice"></p>
+			<div class="flex flex-wrap gap-2 border-b border-white/10 mb-6" role="group" aria-label="Job queues">
+				<button type="button" class="tab-button" data-class:tab-btn-active="$jobsTab === 'downloads'" data-attr:aria-pressed="$jobsTab === 'downloads'" data-on:click="$jobsTab = 'downloads'">Downloads</button>
+				<button type="button" class="tab-button" data-class:tab-btn-active="$jobsTab === 'processing'" data-attr:aria-pressed="$jobsTab === 'processing'" data-on:click="$jobsTab = 'processing'">Video processing</button>
 			</div>
-		} else {
-			@JobsList(jobs)
-		}
+			<section data-show="$jobsTab === 'downloads'" aria-label="Download jobs">
+				<div id="jobs-summary" class="mb-5 text-sm text-white/50">Loading download activity…</div>
+				<div class="flex flex-wrap items-end gap-3 mb-4">
+					<label class="flex-1 min-w-0">
+						<span class="block text-xs font-mono text-white/60 mb-2">Search downloads</span>
+						<input id="jobs-search" type="search" data-bind:jobs-search placeholder="Search URL, source, or job ID" class="w-full bg-black border border-white/20 p-3 text-sm"/>
+					</label>
+					<button type="button" class="ghost-btn-sm" data-attr:aria-pressed="$jobsSelecting" data-on:click="$jobsSelecting = !$jobsSelecting; $job_ids = []" data-text="$jobsSelecting ? 'Done selecting' : 'Select jobs'">Select jobs</button>
+				</div>
+				<div class="flex flex-wrap items-center gap-3 p-3 mb-4 border border-white/20 bg-white/5" data-show="$jobsSelecting">
+					<span class="text-sm font-mono" data-text="$job_ids.length + ' selected'"></span>
+					<button type="button" class="ghost-btn-sm" data-on:click="$job_ids = $jobsVisibleIds">Select visible</button>
+					<button type="button" class="ghost-btn-sm" data-on:click="$job_ids = []">Clear</button>
+					<button type="button" class="btn-secondary btn-sm disabled:opacity-50" data-attr:disabled="$jobsBusy || $job_ids.length === 0" data-on:click="@post('/api/jobs/archive?render=1')" data-text="$jobsBusy ? 'Archiving…' : 'Archive selected'">Archive selected</button>
+					<span class="text-xs text-white/50">Archiving hides job history. Video files are kept.</span>
+				</div>
+				if jobs == nil {
+					<div id="jobs-list" class="p-8 border border-white/10 text-sm text-white/50">Loading jobs…</div>
+				} else {
+					@JobsList(jobs)
+				}
+			</section>
+			<section data-show="$jobsTab === 'processing'" aria-label="Video processing jobs">
+				<h2 class="text-lg font-bold mb-2">Video processing</h2>
+				<p class="text-sm text-white/60 mb-4">Captions, context, and visual index — split by kind. Counts include succeeded jobs, not just the live queue.</p>
+				<div id="ml-jobs-list" class="p-8 border border-white/10 text-sm text-white/50">Loading processing activity…</div>
+			</section>
+		</div>
 	}
-	<script>
-		// Multi-select state
-		const selectedJobs = new Set();
-		let checkboxesVisible = false;
-		let lastCheckedIndex = null;
-
-		function toggleCheckboxes() {
-			checkboxesVisible = !checkboxesVisible;
-			const checkboxes = document.querySelectorAll('.job-checkbox');
-			const btn = document.getElementById('toggle-checkboxes-btn');
-			
-			checkboxes.forEach(checkbox => {
-				checkbox.style.display = checkboxesVisible ? 'block' : 'none';
-			});
-			
-			if (checkboxesVisible) {
-				btn.classList.remove('text-white/60', 'border-white/40');
-				btn.classList.add('text-white', 'border-white');
-			} else {
-				btn.classList.remove('text-white', 'border-white');
-				btn.classList.add('text-white/60', 'border-white/40');
-				// Clear selections when hiding
-				selectedJobs.clear();
-				checkboxes.forEach(checkbox => checkbox.checked = false);
-				updateSelectionUI();
-			}
-		}
-
-		function updateSelectionUI() {
-			const count = selectedJobs.size;
-			const bar = document.getElementById('bulk-actions-bar');
-			const countText = document.getElementById('selection-count');
-			
-			if (count > 0) {
-				bar.classList.remove('hidden');
-				countText.textContent = `${count} selected`;
-			} else {
-				bar.classList.add('hidden');
-			}
-
-			// Update select-all checkbox state
-			const allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');
-			const selectAllCheckbox = document.getElementById('select-all-checkbox');
-			if (selectAllCheckbox) {
-				selectAllCheckbox.checked = allCheckboxes.length > 0 && allCheckboxes.length === selectedJobs.size;
-				selectAllCheckbox.indeterminate = selectedJobs.size > 0 && selectedJobs.size < allCheckboxes.length;
-			}
-		}
-
-		function toggleJobSelection(event, jobId) {
-			event.stopPropagation();
-			
-			const allCheckboxes = Array.from(document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)'));
-			const currentIndex = allCheckboxes.findIndex(cb => cb.dataset.jobId === jobId);
-			
-			// Shift-click range selection
-			if (event.shiftKey && lastCheckedIndex !== null && currentIndex !== -1) {
-				const start = Math.min(lastCheckedIndex, currentIndex);
-				const end = Math.max(lastCheckedIndex, currentIndex);
-				const shouldSelect = event.target.checked;
-				
-				for (let i = start; i <= end; i++) {
-					const checkbox = allCheckboxes[i];
-					checkbox.checked = shouldSelect;
-					if (shouldSelect) {
-						selectedJobs.add(checkbox.dataset.jobId);
-					} else {
-						selectedJobs.delete(checkbox.dataset.jobId);
-					}
-				}
-			} else {
-				// Normal click
-				if (event.target.checked) {
-					selectedJobs.add(jobId);
-				} else {
-					selectedJobs.delete(jobId);
-				}
-			}
-			
-			if (currentIndex !== -1) {
-				lastCheckedIndex = currentIndex;
-			}
-			
-			updateSelectionUI();
-		}
-
-		function toggleSelectAll(event) {
-			const allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');
-			const shouldSelect = event.target.checked;
-			
-			selectedJobs.clear();
-			allCheckboxes.forEach(checkbox => {
-				checkbox.checked = shouldSelect;
-				if (shouldSelect) {
-					selectedJobs.add(checkbox.dataset.jobId);
-				}
-			});
-			updateSelectionUI();
-		}
-
-		async function bulkArchiveJobs() {
-			if (selectedJobs.size === 0) return;
-			
-			const count = selectedJobs.size;
-			if (!confirm(`Archive ${count} job${count > 1 ? 's' : ''}?`)) return;
-
-			const btn = document.getElementById('bulk-archive-btn');
-			btn.disabled = true;
-			btn.textContent = 'Archiving...';
-
-			try {
-				const response = await fetch('/api/jobs/archive', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ job_ids: Array.from(selectedJobs) })
-				});
-
-				if (response.ok) {
-					// Remove archived jobs from view
-					selectedJobs.forEach(jobId => {
-						const card = document.getElementById(`job-card-${jobId}`);
-						if (card) card.remove();
-					});
-					selectedJobs.clear();
-					updateSelectionUI();
-				} else {
-					const text = await response.text();
-					alert('Failed to archive jobs: ' + text);
-				}
-			} catch (error) {
-				alert('Error: ' + error.message);
-			} finally {
-				btn.disabled = false;
-				btn.textContent = 'Archive Selected';
-			}
-		}
-
-		async function archiveJob(event, jobId) {
-			event.preventDefault();
-			event.stopPropagation();
-			if (!confirm('Archive this job?')) return;
-
-			const btn = event.target;
-			btn.disabled = true;
-
-			try {
-				const response = await fetch(`/api/jobs/${jobId}/archive`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-				});
-
-				if (response.ok) {
-					const card = document.getElementById(`job-card-${jobId}`);
-					if (card) card.remove();
-				} else {
-					const text = await response.text();
-					alert('Failed to archive job: ' + text);
-				}
-			} catch (error) {
-				alert('Error: ' + error.message);
-			} finally {
-				btn.disabled = false;
-			}
-		}
-
-		function applyJobsFilter(filterStatus) {
-			document.querySelectorAll('.job-card').forEach(card => {
-				const cardStatus = (card.getAttribute('data-status') || '').toLowerCase();
-				if (filterStatus === 'all' || cardStatus === filterStatus) {
-					card.style.display = 'block';
-				} else {
-					card.style.display = 'none';
-				}
-			});
-		}
-
-		function setActiveTab(activeButton) {
-			const tabButtons = document.querySelectorAll('.tab-button');
-			tabButtons.forEach(btn => {
-				if (btn === activeButton) {
-					btn.classList.remove('tab-btn-inactive');
-					btn.classList.add('tab-btn-active');
-				} else {
-					btn.classList.remove('tab-btn-active');
-					btn.classList.add('tab-btn-inactive');
-				}
-			});
-		}
-
-		async function postJobAction(jobId, action) {
-			const response = await fetch(`/api/jobs/${jobId}/${action}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-			});
-			if (!response.ok) {
-				const text = await response.text();
-				throw new Error(text || `Failed to ${action} job`);
-			}
-			return response.json().catch(() => ({}));
-		}
-
-		// Called by onclick handlers from templ.JSFuncCall
-		async function retryJob(event, jobId) {
-			event.preventDefault();
-			event.stopPropagation();
-			const btn = event.target;
-			btn.disabled = true;
-			try {
-				await postJobAction(jobId, 'retry');
-				// No reload; SSE will refresh the job card
-			} catch (err) {
-				console.error(err);
-				alert(err.message || 'Failed to retry job');
-			} finally {
-				btn.disabled = false;
-			}
-		}
-
-		async function cancelJob(event, jobId) {
-			event.preventDefault();
-			event.stopPropagation();
-			if (!confirm('Are you sure you want to cancel this job?')) {
-				return;
-			}
-			const btn = event.target;
-			btn.disabled = true;
-			try {
-				await postJobAction(jobId, 'cancel');
-				// No reload; SSE will refresh the job card
-			} catch (err) {
-				console.error(err);
-				alert(err.message || 'Failed to cancel job');
-			} finally {
-				btn.disabled = false;
-			}
-		}
-
-		function upsertJobCardHTML(html) {
-			if (!html) return;
-			const parser = new DOMParser();
-			const doc = parser.parseFromString(html, 'text/html');
-			const node = doc.body.firstElementChild;
-			if (!node) return;
-			const id = node.getAttribute('id');
-			if (!id) return;
-			
-			// Preserve checkbox visibility when updating cards
-			const checkbox = node.querySelector('.job-checkbox');
-			if (checkbox && checkboxesVisible) {
-				checkbox.style.display = 'block';
-			}
-			
-			const existing = document.getElementById(id);
-			if (existing) {
-				existing.replaceWith(node);
-			} else {
-				const list = document.getElementById('jobs-list');
-				if (list) list.prepend(node);
-			}
-		}
-
-		document.addEventListener('DOMContentLoaded', function() {
-			// Tabs
-			document.querySelectorAll('.tab-button').forEach(button => {
-				button.addEventListener('click', function() {
-					const filterStatus = this.getAttribute('data-status');
-					setActiveTab(this);
-					applyJobsFilter(filterStatus || 'all');
-				});
-			});
-
-			// Live updates via SSE
-			try {
-				const es = new EventSource('/api/jobs/stream');
-				es.addEventListener('download_job', (evt) => {
-					try {
-						const payload = JSON.parse(evt.data);
-						upsertJobCardHTML(payload.jobs_card_html);
-						const active = document.querySelector('.tab-button.tab-btn-active');
-						const status = active ? active.getAttribute('data-status') : 'all';
-						applyJobsFilter(status || 'all');
-					} catch (e) {
-						console.warn('bad SSE payload', e);
-					}
-				});
-			} catch (e) {
-				console.warn('SSE unavailable', e);
-			}
-		});
-	</script>
 }
 
-templ JobsList(jobs []*db.DownloadJob) {
-	<div id="jobs-list" class="border-2 border-white/10">
-		if len(jobs) > 0 {
-			for _, job := range jobs {
-				@DownloadJobCard(job)
+// JobsSummary renders status counts for the loaded download window.
+templ JobsSummary(jobs []*db.DownloadJob) {
+	<div id="jobs-summary" class="mb-5">
+		<div class="grid grid-cols-2 md:grid-cols-5 gap-2" role="group" aria-label="Filter downloads by status">
+			for _, status := range []string{"all", "processing", "queued", "failed", "succeeded"} {
+				<button
+					type="button"
+					class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40 transition-colors"
+					data-class={ fmt.Sprintf("{'border-white/60': $jobsStatus === '%s'}", status) }
+					data-attr:aria-pressed={ fmt.Sprintf("$jobsStatus === '%s'", status) }
+					data-on:click={ fmt.Sprintf("$jobsStatus = '%s'; $job_ids = []", status) }
+				>
+					<span class="block text-xs font-mono uppercase tracking-wide text-white/60">{ status }</span>
+					<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(jobCount(jobs, status)) }</span>
+				</button>
 			}
-		} else {
-			<div class="p-8">
-				@EmptyState("inbox", "No jobs", "No download jobs have been submitted.")
-			</div>
-		}
+		</div>
+		<p class="text-xs text-white/50 mt-3">Latest 100 unarchived downloads · counts and search apply to this window</p>
 	</div>
 }
 
+// JobsList renders stable job rows and a reactive filtered empty state.
+templ JobsList(jobs []*db.DownloadJob) {
+	<div id="jobs-list" data-computed:jobs-visible-ids={ visibleJobIDs(jobs) }>
+		<p class="text-xs font-mono text-white/50 mb-3" data-text="$jobsVisibleIds.length + ' downloads shown'"></p>
+		<div class="border border-white/10 divide-y divide-white/10">
+			for _, job := range jobs {
+				@DownloadJobCard(job)
+			}
+		</div>
+		<div class="p-10 border border-white/10 text-center" data-show="$jobsVisibleIds.length === 0">
+			<h3 class="font-bold mb-2">No matching downloads</h3>
+			<p class="text-sm text-white/60 mb-4">New downloads will appear here automatically.</p>
+			<button type="button" class="ghost-btn-sm" data-on:click="$jobsStatus = 'all'; $jobsSearch = ''">Clear filters</button>
+		</div>
+	</div>
+}
+
+// DownloadJobCard renders a job without nesting buttons inside its detail link.
 templ DownloadJobCard(job *db.DownloadJob) {
-	<a
-		href={ templ.SafeURL("/jobs/" + job.ID.String()) }
-		id={ "job-card-" + job.ID.String() }
-		class="job-card block border-b-2 border-white/10 p-2 hover:bg-white/5 transition-colors cursor-pointer"
-		data-status={ job.Status }
-	>
-		<div class="flex items-center gap-3">
-			<div class="flex-shrink-0" onclick={ templ.ComponentScript{Call: "event.stopPropagation()"} }>
-				<input
-					type="checkbox"
-					class="job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer"
-					style="display: none;"
-					data-job-id={ job.ID.String() }
-					onchange={ templ.JSFuncCall("toggleJobSelection", templ.JSExpression("event"), job.ID.String()) }
-				/>
-			</div>
-			<div class="flex-shrink-0">
-				@StatusBadge(job.Status)
-			</div>
+	<article id={ "job-card-" + job.ID.String() } class="job-card grid grid-cols-1 lg:grid-cols-3 p-4 hover:bg-white/5 transition-colors" data-status={ job.Status } data-show={ jobMatches(job) }>
+		<div class="flex items-start gap-3 lg:col-span-2">
+			<input
+				type="checkbox"
+				class="w-4 h-4 mt-1 shrink-0"
+				data-show="$jobsSelecting"
+				value={ job.ID.String() }
+				aria-label={ "Select " + job.URL }
+				data-effect={ fmt.Sprintf("el.checked = $job_ids.includes('%s')", job.ID.String()) }
+				data-on:change={ fmt.Sprintf("$job_ids = evt.target.checked ? [...new Set([...$job_ids, '%s'])] : $job_ids.filter(id => id !== '%s')", job.ID.String(), job.ID.String()) }
+			/>
 			<div class="flex-1 min-w-0">
-				<p class="text-xs font-mono text-white truncate">{ job.URL }</p>
-			</div>
-			<div class="flex items-center gap-4 text-xs font-mono text-white/60">
-				<span>{ job.CreatedAt.Time.Format("Jan 2 15:04") }</span>
-				<span>×{ fmt.Sprintf("%d", job.Attempts) }</span>
-			</div>
-			<div class="flex items-center gap-2">
-				if job.Status == "failed" || job.Status == "succeeded" {
-					<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
-						<button
-							type="button"
-							onclick={ templ.JSFuncCall("retryJob", templ.JSExpression("event"), job.ID.String()) }
-							class="btn-secondary btn-sm"
-						>
-							RETRY
-						</button>
-					</div>
-				}
-				if job.Status == "processing" {
-					<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
-						<button
-							type="button"
-							onclick={ templ.JSFuncCall("cancelJob", templ.JSExpression("event"), job.ID.String()) }
-							class="btn-primary btn-sm"
-						>
-							CANCEL
-						</button>
-					</div>
-				}
-				<div onclick={ templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"} }>
-					<button
-						type="button"
-						onclick={ templ.JSFuncCall("archiveJob", templ.JSExpression("event"), job.ID.String()) }
-						class="btn-ghost btn-sm"
-						title="Archive job (soft delete)"
-					>
-						ARCHIVE
-					</button>
+				<div class="flex flex-wrap items-center gap-3 mb-2">
+					@StatusBadge(job.Status)
+					<span class="text-sm font-semibold">{ jobSource(job) }</span>
+					if job.Refresh {
+						<span class="text-xs text-white/50">Refresh</span>
+					}
+				</div>
+				<a href={ templ.SafeURL("/jobs/" + job.ID.String()) } class="block text-sm font-mono break-all hover:underline">{ job.URL }</a>
+				<div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-white/50">
+					<span>{ jobStage(job) }</span>
+					<time datetime={ job.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00") }>{ job.CreatedAt.Time.Format("Jan 2 · 15:04") }</time>
+					<span>{ fmt.Sprintf("%d attempts", job.Attempts) }</span>
 				</div>
 			</div>
 		</div>
+		<div class="flex flex-wrap items-start gap-2 mt-3 lg:mt-0 lg:justify-end">
+			<a class="ghost-btn-sm" href={ templ.SafeURL("/jobs/" + job.ID.String()) }>View logs</a>
+			if job.VideoID.Valid {
+				<a class="ghost-btn-sm" href={ templ.SafeURL("/videos/" + job.VideoID.String()) }>Open video</a>
+			}
+			if job.Status == "failed" || job.Status == "succeeded" {
+				<button type="button" class="btn-secondary btn-sm disabled:opacity-50" data-attr:disabled="$jobsBusy" data-on:click={ fmt.Sprintf("@post('/api/jobs/%s/retry?render=1')", job.ID.String()) }>Retry</button>
+			}
+			if job.Status == "processing" {
+				<button type="button" class="ghost-btn-sm disabled:opacity-50" data-attr:disabled="$jobsBusy" data-on:click={ fmt.Sprintf("if (confirm('Cancel this download?')) @post('/api/jobs/%s/cancel?render=1')", job.ID.String()) }>Cancel</button>
+			}
+			<button type="button" class="ghost-btn-sm disabled:opacity-50" data-attr:disabled="$jobsBusy" title="Hide this job from history; keep video files" data-on:click={ fmt.Sprintf("@post('/api/jobs/%s/archive?render=1')", job.ID.String()) }>Archive</button>
+		</div>
 		if job.LastError != nil && *job.LastError != "" {
-			<div class="mt-1 ml-8 text-xs font-mono text-white/60 truncate">
-				ERROR: { *job.LastError }
-			</div>
+			<details id={ "job-error-" + job.ID.String() } data-preserve-attr="open" class="lg:col-span-3 mt-3 border-l-2 border-red-400/60 pl-3 text-xs">
+				<summary class="cursor-pointer text-red-300">Download error · show details</summary>
+				<pre class="whitespace-pre-wrap break-all text-white/60 mt-2">{ *job.LastError }</pre>
+			</details>
 		}
-	</a>
+	</article>
+}
+
+// MLJobsList renders processing jobs with stable disclosures for live patches.
+templ MLJobsList(jobs []*db.ListRecentMLJobsRow, health []*db.MlRuntimeHealth, counts []*db.CountMLJobsRow, notice string) {
+	<div id="ml-jobs-list">
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4" role="group" aria-label="Filter processing by kind">
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'all'}" data-on:click="$mlKind = 'all'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">All</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "all")) }</span>
+			</button>
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'transcribe'}" data-on:click="$mlKind = 'transcribe'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">Captions</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "transcribe")) }</span>
+			</button>
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'context_windows'}" data-on:click="$mlKind = 'context_windows'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">Context</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "context_windows")) }</span>
+			</button>
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'visual_index'}" data-on:click="$mlKind = 'visual_index'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">Visual</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "visual_index")) }</span>
+			</button>
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'comment_classify'}" data-on:click="$mlKind = 'comment_classify'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">Comment tone</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "comment_classify")) }</span>
+			</button>
+			<button type="button" class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40" data-class="{'border-white/60': $mlKind === 'speech_tone'}" data-on:click="$mlKind = 'speech_tone'">
+				<span class="block text-xs font-mono uppercase tracking-wide text-white/60">Speech tone</span>
+				<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByKind(counts, "speech_tone")) }</span>
+			</button>
+		</div>
+		<div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4" role="group" aria-label="Filter processing by status">
+			for _, status := range []string{"all", "processing", "queued", "succeeded", "failed"} {
+				<button
+					type="button"
+					class="text-left p-4 border border-white/10 bg-white/5 hover:border-white/40"
+					data-class={ fmt.Sprintf("{'border-white/60': $mlStatus === '%s'}", status) }
+					data-on:click={ fmt.Sprintf("$mlStatus = '%s'", status) }
+				>
+					<span class="block text-xs font-mono uppercase tracking-wide text-white/60">{ status }</span>
+					<span class="block text-2xl font-mono mt-2">{ fmt.Sprint(mlCountByStatus(counts, status)) }</span>
+				</button>
+			}
+		</div>
+		<div class="flex flex-wrap items-center justify-between gap-3 p-4 border border-white/10 bg-white/5 mb-4">
+			<div>
+				<p class="text-sm font-mono">{ mlQueueSummary(counts) }</p>
+				<p class="text-xs text-white/50 mt-1">Kind cards are live work only. Status cards include history. List is the latest 100.</p>
+			</div>
+			<button type="button" class="ghost-btn-sm disabled:opacity-50" data-indicator:clearing-ml data-attr:disabled="$clearingMl" data-on:click="if (confirm('Cancel all queued and in-flight video processing?')) @post('/api/ml/jobs/clear?render=1')">Cancel queue</button>
+		</div>
+		if notice != "" {
+			<p role="status" class="text-sm mb-3">{ notice }</p>
+		}
+		if len(health) > 0 {
+			<details id="ml-runtime-health" data-preserve-attr="open" class="border border-white/10 p-4 mb-4">
+				<summary class="text-sm cursor-pointer">Worker health</summary>
+				<ul class="text-xs font-mono text-white/60 mt-3 space-y-2">
+					for _, h := range health {
+						if healthHasError(h) {
+							<li>{ fmt.Sprintf("%s · failures %d · %s", mlRuntimeHeadline(h.Kind), h.Failures, mlErrorCopy(h.LastError).Headline) }</li>
+						} else {
+							<li>{ fmt.Sprintf("%s · failures %d", mlRuntimeHeadline(h.Kind), h.Failures) }</li>
+						}
+					}
+				</ul>
+			</details>
+		}
+		<div class="border border-white/10 divide-y divide-white/10">
+			if len(jobs) == 0 {
+				<p class="p-8 text-sm text-white/50">No processing jobs. Requested work will appear automatically.</p>
+			}
+			for _, j := range jobs {
+				{{ detail := mlJobNotice(j.Kind, j.Status, j.Attempts, j.LastError) }}
+				<article id={ "ml-job-" + j.ID.String() } class="p-4 flex flex-wrap items-start justify-between gap-3" data-show={ mlJobMatches(j.Kind, j.Status) }>
+					<div class="flex-1 min-w-0">
+						<p class="font-mono text-xs text-white/60 mb-2">{ mlJobHeadline(j.Kind, j.Status, j.Attempts, j.LastError) }</p>
+						<a href={ templ.SafeURL("/videos/" + j.VideoID.String()) } class="text-sm font-semibold break-words hover:underline">{ j.VideoTitle }</a>
+						if p := mlJobProgress(j.Checkpoint); p != "" {
+							<p class="text-xs font-mono text-white/70 mt-2">{ p }</p>
+						}
+						if detail.Headline != "" {
+							<p class="text-xs mt-2">{ detail.Headline }</p>
+						}
+						if detail.Detail != "" {
+							<details id={ "ml-error-" + j.ID.String() } data-preserve-attr="open" class="text-xs text-white/50 mt-2">
+								<summary class="cursor-pointer">Details</summary>
+								<p class="break-all font-mono mt-2">{ detail.Detail }</p>
+							</details>
+						}
+					</div>
+					if mlJobRetryable(j.Status) || j.Status == "superseded" {
+						<button type="button" class="ghost-btn-sm disabled:opacity-50" data-attr:disabled="$jobsBusy" data-on:click={ fmt.Sprintf("@post('/api/ml-jobs/%s/retry?render=jobs')", j.ID.String()) }>Retry</button>
+					}
+				</article>
+			}
+		</div>
+	</div>
+}
+
+func jobSource(job *db.DownloadJob) string {
+	if job.BatchLabel != nil && strings.TrimSpace(*job.BatchLabel) != "" {
+		return *job.BatchLabel
+	}
+	u, err := url.Parse(job.URL)
+	if err == nil && u.Hostname() != "" {
+		return strings.TrimPrefix(u.Hostname(), "www.")
+	}
+	return "Download"
+}
+
+func jobJSON(value any) string {
+	b, _ := json.Marshal(value)
+	return string(b)
+}
+
+func jobMatches(job *db.DownloadJob) string {
+	return fmt.Sprintf("($jobsStatus === 'all' || $jobsStatus === %s) && %s.includes($jobsSearch.trim().toLowerCase())", jobJSON(string(job.Status)), jobJSON(strings.ToLower(job.URL+" "+jobSource(job)+" "+job.ID.String())))
+}
+
+func visibleJobIDs(jobs []*db.DownloadJob) string {
+	parts := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		parts = append(parts, fmt.Sprintf("((%s) ? %s : null)", jobMatches(job), jobJSON(job.ID.String())))
+	}
+	return "[" + strings.Join(parts, ",") + "].filter(Boolean)"
+}
+
+func mlJobMatches(kind, status string) string {
+	kindExpr := fmt.Sprintf("($mlKind === 'all' || $mlKind === %s)", jobJSON(kind))
+	statusGroup := status
+	switch status {
+	case "queued", "retry_wait":
+		statusGroup = "queued"
+	case "processing", "waiting_model", "waiting_assets":
+		statusGroup = "processing"
+	}
+	return fmt.Sprintf("%s && ($mlStatus === 'all' || $mlStatus === %s)", kindExpr, jobJSON(statusGroup))
+}
+
+func jobCount(jobs []*db.DownloadJob, status string) int {
+	if status == "all" {
+		return len(jobs)
+	}
+	n := 0
+	for _, job := range jobs {
+		if string(job.Status) == status {
+			n++
+		}
+	}
+	return n
+}
+
+func jobStage(job *db.DownloadJob) string {
+	switch job.Status {
+	case "queued":
+		return "Waiting for a download worker"
+	case "processing":
+		return "Downloading · open logs for live output"
+	case "succeeded":
+		return "Download complete"
+	case "failed":
+		return "Download failed · review the error below"
+	default:
+		return string(job.Status)
+	}
 }

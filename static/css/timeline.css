@@ -21,13 +21,13 @@
 }
 
 .timeline-clip:hover {
-  border-color: rgba(255, 255, 255, 0.6);
-  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgb(var(--rw-ink-rgb) / 0.6);
+  background-color: rgb(var(--rw-ink-rgb) / 0.15);
 }
 
 .timeline-clip.selected {
-  border-color: rgba(255, 255, 255, 0.8);
-  background-color: rgba(255, 255, 255, 0.2);
+  border-color: rgb(var(--rw-ink-rgb) / 0.8);
+  background-color: rgb(var(--rw-ink-rgb) / 0.2);
   z-index: 5;
 }
 
@@ -39,7 +39,7 @@
   bottom: 0;
   width: 8px;
   cursor: ew-resize;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgb(var(--rw-ink-rgb) / 0.3);
   opacity: 0;
   transition: opacity 150ms ease-out;
 }
@@ -96,7 +96,7 @@
 }
 
 .work-window:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgb(var(--rw-ink-rgb) / 0.1);
 }
 
 .work-handle-left,
@@ -106,7 +106,7 @@
 
 .work-handle-left:hover,
 .work-handle-right:hover {
-  background-color: rgba(255, 255, 255, 0.5);
+  background-color: rgb(var(--rw-ink-rgb) / 0.5);
 }
 
 /* Playhead lines */

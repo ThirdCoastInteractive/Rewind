@@ -1,25 +1,10 @@
 package templates
 
 import (
-	"strconv"
 	"strings"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
-
-// downloadQualityOptions lists the selectable caps for the max-download-resolution
-// dropdown. Value "0" means no cap (best available); others are vertical pixels.
-func downloadQualityOptions() []components.SelectOption {
-	return []components.SelectOption{
-		{Value: "0", Label: "Unlimited (best available)"},
-		{Value: "2160", Label: "4K — 2160p"},
-		{Value: "1440", Label: "2K — 1440p"},
-		{Value: "1080", Label: "Full HD — 1080p"},
-		{Value: "720", Label: "HD — 720p"},
-		{Value: "480", Label: "SD — 480p"},
-		{Value: "360", Label: "360p"},
-	}
-}
 
 type AdminUserRow struct {
 	ID       string
@@ -90,10 +75,11 @@ templ AdminHomeContent(alertType string, alertMsg string, metrics DashboardMetri
 		}
 		<!-- Navigation Cards -->
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-			@components.AdminNavCard("/settings", "INSTANCE SETTINGS", "Enable or disable user registration.")
+			@components.AdminNavCard("/admin/settings", "INSTANCE", "Workers, models, transcription, registration, and live service config.")
 			@components.AdminNavCard("/admin/users", "USERS", "View users, manage roles, and enable/disable accounts.")
-			@components.AdminNavCard("/admin/exports", "CLIP EXPORTS", "Manage export queue, view status, cleanup files.")
+			@components.AdminNavCard("/admin/exports", "EXPORTS", "Clip and stitch export queues, status, and cleanup.")
 			@components.AdminNavCard("/admin/asset-health", "ASSET HEALTH", "View asset generation errors and retry failed videos.")
+			@components.AdminNavCard("/admin/database", "DATABASE", "Postgres activity, slow statements, and connection pool stats.")
 		</div>
 		<!-- Stat Cards -->
 		<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
@@ -137,9 +123,12 @@ templ adminChartCard(title, chartID, extraClasses string) {
 templ adminJobStatusCard(jobStatuses []JobStatusRow) {
 	<div class="info-box">
 		<div class="section-label mb-3">JOB STATUS</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
 			@adminJobTypeColumn("DOWNLOAD", jobStatuses, "download")
 			@adminJobTypeColumn("INGEST", jobStatuses, "ingest")
+			@adminJobTypeColumn("CLIP EXPORT", jobStatuses, "clip_export")
+			@adminJobTypeColumn("STITCH", jobStatuses, "stitch")
+			@adminJobTypeColumn("ML", jobStatuses, "ml")
 		</div>
 	</div>
 }
@@ -178,23 +167,41 @@ func adminJobStatusDot(status string) string {
 	}
 }
 
-templ AdminSettings(username string, registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32, alertType string, alertMsg string) {
-	@Layout("Admin Settings", username) {
-		@AdminSettingsContent(registrationEnabled, clipExportStorageLimit, adminEmails, maxDownloadHeight, alertType, alertMsg)
+templ AdminSettings(username string, registrationEnabled bool, adminEmails []string, alertType string, alertMsg string) {
+	@Layout("Instance", username) {
+		@AdminSettingsContent(registrationEnabled, adminEmails, alertType, alertMsg)
 	}
 }
 
-templ AdminSettingsContent(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32, alertType string, alertMsg string) {
+templ AdminSettingsContent(registrationEnabled bool, adminEmails []string, alertType string, alertMsg string) {
 	@Container("") {
-		@components.AdminPageHeader("ADMIN SETTINGS", "/admin")
-		if alertMsg != "" {
-			@Alert(alertType, alertMsg)
-		}
-		@AdminSettingsForm(registrationEnabled, clipExportStorageLimit, adminEmails, maxDownloadHeight)
+		<div class="settings-workspace">
+			@components.AdminPageHeader("INSTANCE", "/admin")
+			<p class="text-white/60 text-xs font-mono mb-4">Service-wide configuration. These apply to the whole Rewind instance, not a single account.</p>
+			if alertMsg != "" {
+				@Alert(alertType, alertMsg)
+			}
+			<div class="settings-layout">
+				<nav class="settings-nav" aria-label="Instance sections">
+					<a href="#settings-agent">Agent</a>
+					<a href="#settings-models">Models &amp; ML</a>
+					<a href="#settings-downloads">Downloads</a>
+					<a href="#settings-processing">Processing &amp; exports</a>
+					<a href="#settings-access">Access</a>
+				</nav>
+				<div class="settings-main">
+					<div id="live-settings" data-init="@get('/api/settings/live?render=1')">Loading operational settings…</div>
+					<section id="settings-access" class="settings-section">
+						<header class="rw-section-heading"><div><h2>Access</h2><p>Who can join this instance.</p></div><span class="rw-badge">Instance</span></header>
+						@AdminAccessForm(registrationEnabled, adminEmails)
+					</section>
+				</div>
+			</div>
+		</div>
 	}
 }
 
-templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string, adminEmails []string, maxDownloadHeight int32) {
+templ AdminAccessForm(registrationEnabled bool, adminEmails []string) {
 	<form method="POST" action="/admin/settings" class="space-y-4">
 		@components.Card(false) {
 			@components.CardHeader("REGISTRATION", "When disabled, new users cannot register.")
@@ -203,40 +210,7 @@ templ AdminSettingsForm(registrationEnabled bool, clipExportStorageLimit string,
 			}
 		}
 		@components.Card(false) {
-			@components.CardHeader("DOWNLOAD QUALITY", "Caps the resolution of newly downloaded videos to save bandwidth and disk. Applies to all sources and future downloads; existing videos are unaffected.")
-			@components.CardBody(true) {
-				<div>
-					<label class="form-label mb-1" for="max_download_height">MAX RESOLUTION</label>
-					@components.Select("", "max_download_height", downloadQualityOptions(), strconv.Itoa(int(maxDownloadHeight)), templ.Attributes{})
-					<p class="mt-1 text-xs text-white/40 font-mono">Downloads the highest quality at or below the limit. If every rendition is larger than the limit, the smallest one is used.</p>
-				</div>
-				@components.FormButton("primary", "md", "", false) {
-					SAVE
-				}
-			}
-		}
-		@components.Card(false) {
-			@components.CardHeader("CLIP EXPORTS", "Storage cap for exported clips. When the cap is exceeded, the oldest exports (least-recently accessed) are deleted until under the limit.")
-			@components.CardBody(true) {
-				<div>
-					<label class="form-label mb-1" for="clip_export_storage_limit">EXPORT STORAGE LIMIT</label>
-					<input
-						id="clip_export_storage_limit"
-						name="clip_export_storage_limit"
-						type="text"
-						value={ clipExportStorageLimit }
-						placeholder="e.g., 10G, 500M, 1K"
-						class={ "form-input" }
-					/>
-					<p class="mt-1 text-xs text-white/40 font-mono">Enter size like 10G, 500M, 1K. Leave empty for unlimited.</p>
-				</div>
-				@components.FormButton("primary", "md", "", false) {
-					SAVE
-				}
-			}
-		}
-		@components.Card(false) {
-			@components.CardHeader("ADMIN EMAILS", "List of email addresses to automatically promote to admin role upon registration.")
+			@components.CardHeader("ADMIN EMAILS", "Email addresses promoted to admin on registration.")
 			@components.CardBody(true) {
 				<div>
 					<label class="form-label mb-1" for="admin_emails">ADMIN EMAILS (COMMA-SEPARATED)</label>
@@ -345,9 +319,11 @@ templ AdminUsersContent(users []AdminUserRow, alertType string, alertMsg string)
 
 // AdminExportRow represents an export for the admin table
 type AdminExportRow struct {
+	Kind         string
 	ID           string
 	ClipID       string
 	VideoID      string
+	ProjectID    string
 	Status       string
 	Variant      string
 	FilePath     string
@@ -359,6 +335,7 @@ type AdminExportRow struct {
 	ClipLabel    string
 	ClipDuration float64
 	VideoTitle   string
+	Title        string
 }
 
 // AdminExportStats holds export statistics
@@ -370,19 +347,23 @@ type AdminExportStats struct {
 	TotalSizeBytes  int64
 }
 
-templ AdminExports(username string, stats *AdminExportStats, alertType string, alertMsg string) {
-	@Layout("Admin Exports", username) {
-		@AdminExportsContent(stats, alertType, alertMsg)
+templ AdminExports(username string, kind string, clipTotal, stitchTotal int64, stats *AdminExportStats, alertType string, alertMsg string) {
+	@Layout("Exports", username) {
+		@AdminExportsContent(kind, clipTotal, stitchTotal, stats, alertType, alertMsg)
 	}
 }
 
-templ AdminExportsContent(stats *AdminExportStats, alertType string, alertMsg string) {
+templ AdminExportsContent(kind string, clipTotal, stitchTotal int64, stats *AdminExportStats, alertType string, alertMsg string) {
 	@Container("wide") {
-		@components.AdminPageHeader("CLIP EXPORTS", "/admin")
+		@components.AdminPageHeader("EXPORTS", "/admin")
+		<p class="text-sm text-white/60 mb-4">Clip cuts and stitch renders, split by queue. Deleting an export removes the rendered file only — archive videos stay put.</p>
 		if alertMsg != "" {
 			@Alert(alertType, alertMsg)
 		}
-		<!-- Stats Cards -->
+		<div class="flex gap-2 border-b border-white/10 mb-6" role="tablist" aria-label="Export queues">
+			<a href="/admin/exports?kind=clips" class={ "tab-button", templ.KV("tab-btn-active", kind != "stitch") }>Clips ({ format.Itoa64(clipTotal) })</a>
+			<a href="/admin/exports?kind=stitch" class={ "tab-button", templ.KV("tab-btn-active", kind == "stitch") }>Stitch ({ format.Itoa64(stitchTotal) })</a>
+		</div>
 		if stats != nil {
 			<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
 				@AdminExportStatCard("QUEUED", stats.QueuedCount, "white/60")
@@ -395,31 +376,29 @@ templ AdminExportsContent(stats *AdminExportStats, alertType string, alertMsg st
 				</div>
 			</div>
 		}
-		<!-- Bulk Actions -->
 		<div class="flex flex-wrap gap-2 mb-4">
-			<form method="POST" action="/admin/exports/requeue-errors" onsubmit="return confirm('Requeue all failed exports?')">
+			<form method="POST" action={ templ.SafeURL("/admin/exports/requeue-errors?kind=" + kind) } onsubmit="return confirm('Requeue all failed exports in this queue?')">
 				@components.FormButton("primary", "sm", "", false) {
 					REQUEUE ERRORS
 				}
 			</form>
-			<form method="POST" action="/admin/exports/delete/ready" onsubmit="return confirm('Delete all ready exports and their files?')">
+			<form method="POST" action={ templ.SafeURL("/admin/exports/delete/ready?kind=" + kind) } onsubmit="return confirm('Delete ready exports and their files in this queue?')">
 				@components.FormButton("danger", "sm", "", false) {
 					DELETE READY
 				}
 			</form>
-			<form method="POST" action="/admin/exports/delete/error" onsubmit="return confirm('Delete all error exports?')">
+			<form method="POST" action={ templ.SafeURL("/admin/exports/delete/error?kind=" + kind) } onsubmit="return confirm('Delete error exports in this queue?')">
 				@components.FormButton("danger", "sm", "", false) {
 					DELETE ERRORS
 				}
 			</form>
-			<form method="POST" action="/admin/exports/delete-all" onsubmit="return confirm('DELETE ALL EXPORTS? This cannot be undone!')">
+			<form method="POST" action={ templ.SafeURL("/admin/exports/delete-all?kind=" + kind) } onsubmit="return confirm('DELETE ALL EXPORTS in this queue? Rendered files only. Archive videos are kept.')">
 				@components.FormButton("danger", "sm", "", false) {
 					DELETE ALL
 				}
 			</form>
 		</div>
-		<!-- Exports Table -->
-		<div id="exports-table" data-init="@get('/admin/exports/index')">
+		<div id="exports-table" data-init={ "@get('/admin/exports/index?kind=" + kind + "')" }>
 			<div class="text-white/60 font-mono text-sm py-8 text-center">Loading exports...</div>
 		</div>
 	}
@@ -432,19 +411,19 @@ templ AdminExportStatCard(label string, count int64, color string) {
 	</div>
 }
 
-templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, total int, page int, pageSize int) {
+templ AdminExportsTable(kind string, exports []*AdminExportRow, stats *AdminExportStats, total int, page int, pageSize int) {
 	<div id="exports-table">
 		if len(exports) == 0 {
-			<div class="text-white/60 font-mono text-sm py-8 text-center border-2 border-white/10">No exports found</div>
+			<div class="text-white/60 font-mono text-sm py-8 text-center border-2 border-white/10">No exports in this queue</div>
 		} else {
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm font-mono">
 					<thead>
 						<tr class="border-b-2 border-white/20 text-left">
 							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">STATUS</th>
-							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">CLIP</th>
-							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">VIDEO</th>
-							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">VARIANT</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">TITLE</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">SOURCE</th>
+							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">OUTPUT</th>
 							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">SIZE</th>
 							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">PROGRESS</th>
 							<th class="py-2 px-2 text-xs uppercase tracking-wider text-white/60">ACTIONS</th>
@@ -456,16 +435,11 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 								<td class="py-2 px-2">
 									@AdminExportStatusBadge(exp.Status)
 								</td>
-								<td class="py-2 px-2 max-w-32">
-									<a href={ templ.SafeURL("/videos/" + exp.VideoID + "/cut#clip=" + exp.ClipID) } class="text-white/80 hover:text-white underline" title={ exp.ClipLabel }>
-										{ format.Truncate(exp.ClipLabel, 20) }
-									</a>
-									<div class="text-xs text-white/40">{ format.Duration(exp.ClipDuration) }</div>
+								<td class="py-2 px-2 max-w-48">
+									@adminExportTitle(exp)
 								</td>
 								<td class="py-2 px-2 max-w-48">
-									<a href={ templ.SafeURL("/videos/" + exp.VideoID) } class="text-white/60 hover:text-white underline" title={ exp.VideoTitle }>
-										{ format.Truncate(exp.VideoTitle, 30) }
-									</a>
+									@adminExportSource(exp)
 								</td>
 								<td class="py-2 px-2 text-white/60">{ exp.Variant }</td>
 								<td class="py-2 px-2 text-white/60">
@@ -488,11 +462,14 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 								</td>
 								<td class="py-2 px-2">
 									<div class="flex gap-1">
+										if exp.Kind == "stitch" && exp.Status == "ready" {
+											<a href={ templ.SafeURL("/api/stitch/" + exp.ID + "/download") } class="px-2 py-1 text-xs border border-white/20 hover:border-white/40 text-white/80">Download</a>
+										}
 										if exp.Status == "error" || exp.Status == "ready" {
 											<button
 												type="button"
 												class="px-2 py-1 text-xs border border-white/20 hover:border-white/40 text-white/80"
-												data-on:click={ "@post('/admin/exports/" + exp.ID + "/requeue'); setTimeout(() => location.reload(), 500)" }
+												data-on:click={ "await @post('/admin/exports/" + exp.ID + "/requeue?kind=" + kind + "'); @get('/admin/exports/index?kind=" + kind + "')" }
 											>
 												REQUEUE
 											</button>
@@ -500,7 +477,7 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 										<button
 											type="button"
 											class="px-2 py-1 text-xs border border-red-500/50 hover:border-red-500 text-red-400"
-											data-on:click={ "@delete('/admin/exports/" + exp.ID + "'); setTimeout(() => location.reload(), 500)" }
+											data-on:click={ "await @delete('/admin/exports/" + exp.ID + "?kind=" + kind + "'); @get('/admin/exports/index?kind=" + kind + "')" }
 										>
 											DELETE
 										</button>
@@ -511,12 +488,11 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 					</tbody>
 				</table>
 			</div>
-			<!-- Pagination -->
 			if total > pageSize {
 				<div class="flex justify-center gap-2 mt-4">
 					if page > 1 {
 						<a
-							href={ templ.SafeURL("/admin/exports?page=" + format.Itoa(page-1)) }
+							href={ templ.SafeURL("/admin/exports?kind=" + kind + "&page=" + format.Itoa(page-1)) }
 							class="px-3 py-1 border-2 border-white/20 hover:border-white/40 text-white/80 font-mono text-sm"
 						>
 							PREV
@@ -527,7 +503,7 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 					</span>
 					if page * pageSize < total {
 						<a
-							href={ templ.SafeURL("/admin/exports?page=" + format.Itoa(page+1)) }
+							href={ templ.SafeURL("/admin/exports?kind=" + kind + "&page=" + format.Itoa(page+1)) }
 							class="px-3 py-1 border-2 border-white/20 hover:border-white/40 text-white/80 font-mono text-sm"
 						>
 							NEXT
@@ -537,6 +513,33 @@ templ AdminExportsTable(exports []*AdminExportRow, stats *AdminExportStats, tota
 			}
 		}
 	</div>
+}
+
+templ adminExportTitle(exp *AdminExportRow) {
+	if exp.Kind == "stitch" {
+		if exp.ProjectID != "" {
+			<a href={ templ.SafeURL("/stitch/" + exp.ProjectID) } class="text-white/80 hover:text-white underline" title={ exp.Title }>
+				{ format.Truncate(exp.Title, 28) }
+			</a>
+		} else {
+			<span title={ exp.Title }>{ format.Truncate(exp.Title, 28) }</span>
+		}
+	} else {
+		<a href={ templ.SafeURL("/videos/" + exp.VideoID + "/cut#clip=" + exp.ClipID) } class="text-white/80 hover:text-white underline" title={ exp.ClipLabel }>
+			{ format.Truncate(exp.ClipLabel, 20) }
+		</a>
+		<div class="text-xs text-white/40">{ format.Duration(exp.ClipDuration) }</div>
+	}
+}
+
+templ adminExportSource(exp *AdminExportRow) {
+	if exp.Kind == "stitch" {
+		<span class="text-white/60">Stitch</span>
+	} else {
+		<a href={ templ.SafeURL("/videos/" + exp.VideoID) } class="text-white/60 hover:text-white underline" title={ exp.VideoTitle }>
+			{ format.Truncate(exp.VideoTitle, 30) }
+		</a>
+	}
 }
 
 templ AdminExportStatusBadge(status string) {

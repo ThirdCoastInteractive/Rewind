@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // ETagMode determines how ETags are computed.
@@ -159,7 +160,10 @@ func (fs *FileServer) ServeDiskFileWithCache(c echo.Context, absPath string, con
 // It checks both /downloads (prod) and /download (dev) paths.
 func GetVideoDirForID(ctx context.Context, videoID string) (string, error) {
 	_ = ctx
-	// Prefer /downloads (prod). Also allow /download (dev/workspaces).
+	if dir, err := plugin.VideoDir(videoID); err == nil {
+		return dir, nil
+	}
+	// Tests and legacy layouts without a blob plugin.
 	candidates := []string{
 		filepath.Join(string(filepath.Separator)+"downloads", videoID),
 		filepath.Join(string(filepath.Separator)+"download", videoID),

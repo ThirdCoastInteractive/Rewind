@@ -1,3 +1,4 @@
+import { listen as pageListen, pageTimeout, pageFrame, pageFetch, PageMutationObserver, PageResizeObserver, onPageCleanup } from './lib/page-scope.js';
 import {
   clamp, isFiniteNumber, clampNumber, parseAspectRatio,
   formatTime, formatTimecode, formatFrameTimecode,
@@ -53,6 +54,11 @@ import { MulticamEngine } from './lib/multicam.js';
       this.btnCreateClip = document.querySelector('[data-cut-create-clip]');
       this.btnPlaySelection = document.querySelector('[data-cut-play-selection]');
       this.btnLoop = document.querySelector('[data-cut-loop]');
+      this.contextListEl = document.querySelector('[data-cut-context-list]');
+      this.contextTitleEl = document.querySelector('[data-cut-context-title]');
+      this.btnContextCreate = document.querySelector('[data-cut-context-create]');
+      this.btnContextUpdate = document.querySelector('[data-cut-context-update]');
+      this.btnContextDelete = document.querySelector('[data-cut-context-delete]');
 
       // Transport controls
       this.btnTransportStart = document.querySelector('[data-cut-transport-start]');
@@ -97,6 +103,8 @@ import { MulticamEngine } from './lib/multicam.js';
 
       this.markers = [];
       this.clips = [];
+      this.contextWindows = [];
+      this.selectedContextWindowID = null;
 
       // Event-driven clip data store - replaces polling loops
       this.clipBank = new ClipBank(this.videoID);
@@ -158,10 +166,11 @@ import { MulticamEngine } from './lib/multicam.js';
       // clip:selected - seek, set in/out, center work window
       this.clipBank.addEventListener('clip:selected', (e) => {
         const { clip, seekTime } = e.detail;
+        if (this.selectedClipId !== clip.id) this.cropOverlay.setSelectedCropId(null);
         this.selectClip(clip, seekTime);
         // Load multicam state for this clip (shot list comes from server via SSE panel patch)
         if (this.multicam) {
-          requestAnimationFrame(() => {
+          pageFrame(() => {
             this.multicam.loadForClip(clip.id, clip.shotList || []);
           });
         }
@@ -172,6 +181,7 @@ import { MulticamEngine } from './lib/multicam.js';
         // Don't call clearSelectedClip() here - that would mergePatch the signal
         // back to empty, creating a loop. Just clear local JS state.
         this.selectedClipId = null;
+        this.cropOverlay.setSelectedCropId(null);
         this.editMode = false;
         this.pendingClipStart = null;
         this.pendingClipEnd = null;
@@ -185,7 +195,7 @@ import { MulticamEngine } from './lib/multicam.js';
       // Video element event listeners (loadedmetadata, timeupdate, play/pause/ended)
       this._attachVideoListeners();
 
-      window.addEventListener('resize', () => this.render());
+      pageListen(window, 'resize', () => this.render());
       this.initColorSwatches();
 
       // Crop overlay pointer interaction
@@ -202,14 +212,15 @@ import { MulticamEngine } from './lib/multicam.js';
 
       // Document-level drag handlers (work-pan, overview-pan, clip trim,
       // overview drag, work selection drag) - see lib/drag-handlers.js
-      document.addEventListener('mousemove', (e) => this.handleDocumentMouseMove(e));
-      document.addEventListener('mouseup', () => this.handleDocumentMouseUp());
+      pageListen(document, 'mousemove', (e) => this.handleDocumentMouseMove(e));
+      pageListen(document, 'mouseup', () => this.handleDocumentMouseUp());
 
       // Buttons (set in/out, create, loop, transport, etc.)
       this._attachButtons();
+      this._attachContextWindowButtons();
 
       // Keyboard shortcuts (delegated to Controls class - see lib/keyboard.js)
-      document.addEventListener('keydown', (e) => this.controls.handleKeyDown(e));
+      pageListen(document, 'keydown', (e) => this.controls.handleKeyDown(e));
     }
 
     // Transport methods (seekRelative, transportGoToStart, transportGoToEnd,
@@ -242,7 +253,175 @@ import { MulticamEngine } from './lib/multicam.js';
 
     async load() {
       if (!this.videoID) return;
-      await Promise.all([this.loadMarkers(), this.clipBank.reload(), this.seekThumbs.loadManifest(), this.loadWaveformAssets()]);
+      await Promise.all([this.loadMarkers(), this.clipBank.reload(), this.seekThumbs.loadManifest(), this.loadWaveformAssets(), this.loadContextWindows()]);
+      this.render();
+      const params = new URLSearchParams(window.location.search);
+      const clipID = params.get('clip');
+      if (clipID) {
+        this.root.querySelector('[data-clip-row][data-clip-id="' + CSS.escape(clipID) + '"]')?.click();
+      } else {
+        const context = this.contextWindows.find(item => item.id === params.get('context'));
+        if (context) this.selectContextWindow(context);
+      }
+    }
+
+    _attachContextWindowButtons() {
+      this.btnContextCreate?.addEventListener('click', () => this.createContextWindow());
+      this.btnContextUpdate?.addEventListener('click', () => this.updateContextWindow());
+      this.btnContextDelete?.addEventListener('click', () => this.deleteContextWindow());
+    }
+
+    async loadContextWindows() {
+      if (!this.videoID) return;
+      try {
+        const res = await pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/context-windows`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Context Windows request failed (${res.status})`);
+        this.contextWindows = (await res.json()).map((raw) => ({
+          id: String(raw.ID ?? raw.id ?? ''),
+          start: Number(raw.StartTs ?? raw.start_ts ?? 0),
+          end: Number(raw.EndTs ?? raw.end_ts ?? 0),
+          title: String(raw.Title ?? raw.title ?? 'Context'),
+          summary: String(raw.Summary ?? raw.summary ?? ''),
+          topics: Array.isArray(raw.Topics ?? raw.topics) ? (raw.Topics ?? raw.topics).map((item) => String(item ?? '').trim()).filter(Boolean) : [],
+          entities: Array.isArray(raw.Entities ?? raw.entities) ? (raw.Entities ?? raw.entities).map((item) => String(item ?? '').trim()).filter(Boolean) : [],
+          stale: Boolean(raw.EvidenceStale ?? raw.evidence_stale ?? false),
+          kind: String(raw.Kind ?? raw.kind ?? 'window'),
+          parentId: String(raw.ParentID ?? raw.parent_id ?? ''),
+          hook: String(raw.Hook ?? raw.hook ?? ''),
+        })).filter((item) => item.id && item.end > item.start);
+      } catch (error) {
+        console.warn('Failed to load Context Windows:', error);
+        this.contextWindows = [];
+      }
+      this.renderContextWindowList();
+    }
+
+    renderContextWindowList() {
+      if (!this.contextListEl) return;
+      this.contextListEl.replaceChildren();
+      const windows = this.contextWindows.filter((item) => item.kind !== 'short');
+      if (!windows.length) {
+        const empty = document.createElement('p');
+        empty.className = 'font-mono text-xs text-white/40';
+        empty.textContent = 'No Context Windows yet.';
+        this.contextListEl.appendChild(empty);
+        return;
+      }
+      const shortsByParent = new Map();
+      this.contextWindows.forEach((item) => {
+        if (item.kind !== 'short' || !item.parentId) return;
+        const list = shortsByParent.get(item.parentId) || [];
+        list.push(item);
+        shortsByParent.set(item.parentId, list);
+      });
+      windows.forEach((item) => {
+        this.contextListEl.appendChild(this.contextWindowButton(item, false));
+        (shortsByParent.get(item.id) || []).forEach((sh) => {
+          this.contextListEl.appendChild(this.contextWindowButton(sh, true));
+        });
+      });
+    }
+
+    contextWindowButton(item, isShort) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = isShort
+        ? 'w-full border-2 p-2 text-left font-mono text-xs ml-3'
+        : 'w-full border-2 p-2 text-left font-mono text-xs';
+      const selected = item.id === this.selectedContextWindowID;
+      button.classList.add(selected
+        ? (isShort ? 'border-cyan-300/70' : 'border-amber-300/70')
+        : (isShort ? 'border-cyan-400/30' : 'border-white/10'));
+      const title = document.createElement('span');
+      title.className = 'block text-white';
+      title.textContent = (isShort ? 'Short · ' : '') + item.title + (item.stale ? ' · evidence stale' : '');
+      const range = document.createElement('span');
+      range.className = isShort ? 'block text-cyan-300/70' : 'block text-white/40';
+      range.textContent = `${formatTime(item.start)}–${formatTime(item.end)}`;
+      const tooltip = [item.title];
+      if (item.hook) tooltip.push(item.hook);
+      if (item.topics?.length) tooltip.push(`Topics: ${item.topics.join(', ')}`);
+      if (item.entities?.length) tooltip.push(`Entities: ${item.entities.join(', ')}`);
+      button.title = tooltip.join('\n');
+      button.append(title, range);
+      if (isShort && item.hook) {
+        const hook = document.createElement('span');
+        hook.className = 'block text-white/50 italic';
+        hook.textContent = item.hook;
+        button.append(hook);
+      }
+      button.addEventListener('click', () => this.selectContextWindow(item));
+      return button;
+    }
+
+    selectContextWindow(item) {
+      // Load the window's range only. Clip creation is a separate CREATE action.
+      if (this.selectedClipId) {
+        this.clearSelectedClip();
+      }
+      this.selectedContextWindowID = item.id;
+      this.inPoint = item.start;
+      this.outPoint = item.end;
+      this.workHeadTime = item.start;
+      if (this.contextTitleEl) this.contextTitleEl.value = item.title;
+      if (this.btnContextUpdate) this.btnContextUpdate.disabled = false;
+      if (this.btnContextDelete) this.btnContextDelete.disabled = false;
+      if (this.video) this.video.currentTime = item.start;
+      this.setWorkWindow(item.start, item.end);
+      this.renderContextWindowList();
+    }
+
+    contextRange() {
+      if (!isFiniteNumber(this.inPoint) || !isFiniteNumber(this.outPoint)) return null;
+      const start = Math.min(this.inPoint, this.outPoint);
+      const end = Math.max(this.inPoint, this.outPoint);
+      return end > start ? { start, end } : null;
+    }
+
+    async createContextWindow() {
+      const range = this.contextRange();
+      const title = this.contextTitleEl?.value?.trim();
+      if (!range || !title) return;
+      const res = await pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/context-windows`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: range.start, end: range.end, title, boundary_quality: 'manual' }),
+      });
+      if (!res.ok) return;
+      const created = await res.json();
+      await this.loadContextWindows();
+      const id = String(created.ID ?? created.id ?? '');
+      const item = this.contextWindows.find((window) => window.id === id);
+      if (item) this.selectContextWindow(item);
+      this.render();
+    }
+
+    async updateContextWindow() {
+      const range = this.contextRange();
+      const title = this.contextTitleEl?.value?.trim();
+      if (!this.selectedContextWindowID || !range || !title) return;
+      const res = await pageFetch(`/api/context-windows/${encodeURIComponent(this.selectedContextWindowID)}`, {
+        method: 'PUT',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: range.start, end: range.end, title, boundary_quality: 'manual' }),
+      });
+      if (!res.ok) return;
+      await this.loadContextWindows();
+      const item = this.contextWindows.find((window) => window.id === this.selectedContextWindowID);
+      if (item) this.selectContextWindow(item);
+      this.render();
+    }
+
+    async deleteContextWindow() {
+      if (!this.selectedContextWindowID) return;
+      const res = await pageFetch(`/api/context-windows/${encodeURIComponent(this.selectedContextWindowID)}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      this.selectedContextWindowID = null;
+      if (this.btnContextUpdate) this.btnContextUpdate.disabled = true;
+      if (this.btnContextDelete) this.btnContextDelete.disabled = true;
+      await this.loadContextWindows();
       this.render();
     }
 
@@ -259,7 +438,7 @@ import { MulticamEngine } from './lib/multicam.js';
       if (evt && evt.altKey) return rawTime;
 
       let t = rawTime;
-      const zeroCross = this.findNearestZeroCrossingTime(t, 0.5);
+      const zeroCross = this.findNearestZeroCrossingTime(t, 5);
       if (isFiniteNumber(zeroCross)) {
         t = zeroCross;
       }
@@ -283,7 +462,7 @@ import { MulticamEngine } from './lib/multicam.js';
 
     async loadMarkers() {
       try {
-        const res = await fetch(`/api/videos/${encodeURIComponent(this.videoID)}/markers`, {
+        const res = await pageFetch(`/api/videos/${encodeURIComponent(this.videoID)}/markers`, {
           headers: { 'Accept': 'application/json' }
         });
         if (!res.ok) return;
@@ -390,7 +569,7 @@ import { MulticamEngine } from './lib/multicam.js';
     onAutosaveCheck(dirty, autoSave, clipId) {
       if (dirty && autoSave && clipId) {
         if (!this._formAutoSaveTimer) {
-          this._formAutoSaveTimer = setTimeout(() => {
+          this._formAutoSaveTimer = pageTimeout(() => {
             this._formAutoSaveTimer = null;
             const trigger = document.querySelector('[data-cut-autosave-trigger]');
             if (trigger) trigger.click();
@@ -414,6 +593,12 @@ import { MulticamEngine } from './lib/multicam.js';
     const editor = new CutPageEditor(root);
     // Make cutEditor globally accessible for template onclick handlers
     window.cutEditor = editor;
+    onPageCleanup(() => {
+      editor.video?.pause();
+      editor.filterPreview?.destroy();
+      editor.audioTools?.destroy();
+      delete window.cutEditor;
+    });
 
     // Called by CropRow templ component via data-on:click.
     // Reads crop data from data-* attributes - no inline JS escaping needed.
@@ -490,7 +675,7 @@ import { MulticamEngine } from './lib/multicam.js';
         };
         editor.video.addEventListener('play', startOnPlay);
         // Also handle resize
-        new ResizeObserver(resizeCanvases).observe(
+        new PageResizeObserver(resizeCanvases).observe(
           document.querySelector('[data-audio-tools]') || document.body
         );
       }
@@ -501,8 +686,8 @@ import { MulticamEngine } from './lib/multicam.js';
           editor.updateCropSurfaceLayout();
           editor.renderCropOverlay();
         };
-        new ResizeObserver(updateCropLayout).observe(editor.video);
-        window.addEventListener('resize', updateCropLayout);
+        new PageResizeObserver(updateCropLayout).observe(editor.video);
+        pageListen(window, 'resize', updateCropLayout);
       }
     }
 
@@ -514,7 +699,7 @@ import { MulticamEngine } from './lib/multicam.js';
     {
       const clipBankEl = document.querySelector('[data-clip-bank]');
       if (clipBankEl) {
-        new MutationObserver(() => {
+        new PageMutationObserver(() => {
           editor.clipBank.scheduleReload();
         }).observe(clipBankEl, { childList: true, subtree: true });
       }
@@ -525,7 +710,7 @@ import { MulticamEngine } from './lib/multicam.js';
     // clipBank.handleSignalPatch(). No polling loop needed.
 
     // DataStar signal watcher for seek position
-    const seekObserver = new MutationObserver(() => {
+    const seekObserver = new PageMutationObserver(() => {
       const seekTo = document.body.dataset.seekTo;
       if (seekTo !== undefined && seekTo !== '') {
         const timestamp = parseFloat(seekTo);
@@ -553,7 +738,7 @@ import { MulticamEngine } from './lib/multicam.js';
   autoInitFilterDials();
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    pageListen(document, 'DOMContentLoaded', init);
   } else {
     init();
   }

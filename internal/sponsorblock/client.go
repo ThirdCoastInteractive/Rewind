@@ -14,6 +14,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/useragent"
 )
 
 const defaultBaseURL = "https://sponsor.ajay.app"
@@ -103,6 +104,7 @@ func (c *Client) GetSkipSegments(ctx context.Context, params SkipSegmentsParams)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", useragent.Get())
 
 	resp, err := c.http.Do(req)
 	if err != nil {

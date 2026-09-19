@@ -36,7 +36,7 @@ func ExtensionLoginSuccess() templ.Component {
 		var templ_7745c5c3_Var2 templ.SafeURL
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(versionedAsset(ctx, "/static/dist/main.css"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/extension_login_success.templ`, Line: 10, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `extension_login_success.templ`, Line: 10, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -78,7 +78,7 @@ func ExtensionLoginSuccessWithToken(token string, extensionID string) templ.Comp
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(versionedAsset(ctx, "/static/dist/main.css"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/extension_login_success.templ`, Line: 32, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `extension_login_success.templ`, Line: 32, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -91,7 +91,7 @@ func ExtensionLoginSuccessWithToken(token string, extensionID string) templ.Comp
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(token)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/extension_login_success.templ`, Line: 34, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `extension_login_success.templ`, Line: 34, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -104,7 +104,7 @@ func ExtensionLoginSuccessWithToken(token string, extensionID string) templ.Comp
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(extensionID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/extension_login_success.templ`, Line: 34, Col: 144}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `extension_login_success.templ`, Line: 34, Col: 144}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {

@@ -1,0 +1,119 @@
+package templates
+
+import (
+	"encoding/json"
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/modelruntime"
+)
+
+templ AgentPanel() {
+	<aside id="rewind-agent" aria-label="Rewind assistant" class="agent-drawer" data-signals="{agentConversation:'',agentPrompt:'',agentPage:window.location.pathname,agentStatus:'',_agentLoaded:false,_agentHistory:false}" data-attr:aria-hidden="$agentOpen ? 'false' : 'true'" aria-hidden="true" inert data-attr:inert="!$agentOpen" data-effect="if ($agentOpen && !$_agentLoaded) { $_agentLoaded = true; @get('/api/agent/current') }">
+		<header class="agent-drawer-header">
+			<div><h2>Rewind assistant</h2><p>Work with your archive</p></div>
+			<button type="button" class="agent-close" aria-label="Close assistant" data-on:click="$agentOpen = false">×</button>
+		</header>
+		<div class="agent-drawer-body">
+			<p class="agent-page-context">Page context: <span data-text="$agentPage"></span></p>
+			<div class="flex gap-2 text-sm">
+				<button class="border border-white/30 p-2" data-on:click="$_agentHistory = !$_agentHistory; if ($_agentHistory) { @get('/api/agent/conversations?render=1') }" data-attr:aria-expanded="$_agentHistory ? 'true' : 'false'">Saved conversations</button>
+				<button class="border border-white/30 p-2" data-on:click="$_agentHistory = false; @get('/api/agent/current?new=1')">New</button>
+			</div>
+			<div class="agent-content-scroll">
+				<div data-show="$_agentHistory" style="display:none"><div id="agent-conversations"></div></div>
+				<div data-show="!$_agentHistory">
+					<div id="agent-run-watch"><p class="text-sm text-white/60">Ask Rewind to find evidence, select clips, or assemble a stitch project.</p></div>
+				</div>
+			</div>
+			<p role="status" class="text-xs" data-text="$agentStatus"></p>
+			<nav aria-label="Assistant workspace" class="flex gap-4 text-xs">
+				<a href="/compilations" class="underline">Plans</a>
+				<a href="/stitch" class="underline">Stitch projects</a>
+				<a href="/jobs" class="underline">Jobs</a>
+			</nav>
+			<label class="text-sm">Message<textarea data-bind:agent-prompt maxlength="16000" rows="3" class="block w-full bg-black border border-white/30 p-2"></textarea></label>
+			<button class="border border-white p-2" data-on:click="@post('/api/agent/message')" data-indicator:agent-sending data-attr:disabled="$agentSending">Send</button>
+			<p class="text-xs text-white/60">Runs continue while closed. Manage submitted jobs in Jobs.</p>
+		</div>
+	</aside>
+}
+
+templ AgentConversations(rows []*db.AgentConversation) {
+	<div id="agent-conversations">
+		for _,row:=range rows {
+			<button class="block text-left p-2 w-full hover:bg-white/10" data-on:click={ fmt.Sprintf("$_agentHistory = false; @get('/api/agent/conversations/%s?render=1')", row.ID.String()) }>{ row.Title }</button>
+		}
+	</div>
+}
+
+templ AgentRunWatch(id string) {
+	<div id="agent-run-watch">
+		if id!="" {
+			<div data-init={ fmt.Sprintf("@get('/api/agent/runs/%s/events?render=1')", id) }><div id="agent-run-view">Connecting to saved run…</div></div>
+		}
+	</div>
+}
+
+templ AgentRunView(run *db.AgentRun, messages []modelruntime.Message, events []*db.AgentEvent) {
+	<div id="agent-run-view" class="space-y-3">
+		<p class="text-xs">{ run.Runtime } — { run.Status } · { fmt.Sprint(run.Calls) } tool calls</p>
+		for _,message:=range messages {
+			if message.Role=="user"||message.Role=="assistant" {
+				if message.Content!="" {
+					<div class="border-l-2 border-white/30 pl-2"><strong class="text-xs">{ message.Role }</strong><p class="text-sm whitespace-pre-wrap break-words">{ message.Content }</p></div>
+				}
+			}
+		}
+		if run.Status=="running" {
+			<p class="text-sm whitespace-pre-wrap break-words" aria-live="polite">{ agentStreamingText(events) }</p>
+		}
+		<details id={ "agent-activity-" + run.ID.String() } data-preserve-attr="open">
+			<summary class="text-xs cursor-pointer">Stream and tool activity</summary>
+			for _,event:=range events {
+				<p class="text-xs whitespace-pre-wrap break-words">{ agentEventText(event) }</p>
+			}
+		</details>
+		if run.LastError!="" {
+			<p role="status" class="text-sm">{ run.LastError }</p>
+		}
+		for _,artifact:=range agentArtifacts(run.Artifacts) {
+			<a class="block underline text-sm" href={ templ.SafeURL(artifact["path"]) }>{ artifact["label"] }: { artifact["path"] }</a>
+		}
+		if run.Status=="running"||run.Status=="queued"||run.Status=="waiting_capacity" {
+			<button class="border border-white p-2" data-on:click={ fmt.Sprintf("@post('/api/agent/runs/%s/stop')", run.ID.String()) }>Stop</button>
+		}
+		if run.Status=="limited"||run.Status=="interrupted"||run.Status=="cancelled" {
+			<button class="border border-white p-2" data-on:click={ fmt.Sprintf("@post('/api/agent/runs/%s/continue')", run.ID.String()) }>Continue</button>
+		}
+	</div>
+}
+
+func agentEventText(event *db.AgentEvent) string {
+	var data map[string]any
+	if json.Unmarshal(event.Data, &data) != nil {
+		return event.Kind
+	}
+	if text, ok := data["text"].(string); ok {
+		return text
+	}
+	return fmt.Sprint(data["name"], " ", data["status"])
+}
+
+func agentStreamingText(events []*db.AgentEvent) string {
+	text := ""
+	for _, event := range events {
+		if event.Kind == "inference" || event.Kind == "tool" {
+			text = ""
+		}
+		if event.Kind == "text" {
+			text += agentEventText(event)
+		}
+	}
+	return text
+}
+
+func agentArtifacts(raw []byte) []map[string]string {
+	var links []map[string]string
+	_ = json.Unmarshal(raw, &links)
+	return links
+}

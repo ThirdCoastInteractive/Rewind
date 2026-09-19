@@ -67,9 +67,15 @@ WHERE video_id = sqlc.arg(video_id)
 
 -- CountVideoComments returns total comments ingested for a video.
 -- name: CountVideoComments :one
-SELECT COUNT(*)
-FROM video_comments
-WHERE video_id = $1;
+SELECT COALESCE((SELECT comment_count FROM videos WHERE id = $1), 0)::bigint;
+
+-- RefreshVideoCommentCount caches the exact normalized comment total after an
+-- ingest batch. This avoids recounting a hot, actively-written table on reads.
+-- name: RefreshVideoCommentCount :exec
+UPDATE videos
+SET comment_count = (SELECT COUNT(*) FROM video_comments WHERE video_id = sqlc.arg(video_id)),
+    updated_at = NOW()
+WHERE id = sqlc.arg(video_id);
 
 -- ListVideoComments returns paginated top-level comments for a video.
 -- Top-level = parent_id IS NULL or parent_id = 'root'.
@@ -80,7 +86,7 @@ WHERE video_id = $1;
 -- ::text/::boolean casts on the COALESCE results give sqlc concrete Go types.
 -- name: ListVideoComments :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
        COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
        COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -101,7 +107,7 @@ OFFSET sqlc.arg(page_offset)::int;
 -- the same CommentRow component.
 -- name: ListVideoCommentReplies :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
        COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
        COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -120,7 +126,7 @@ LIMIT 50;
 -- sentinels for <mark> tags safely (see commentfmt.SafeHighlight).
 -- name: SearchVideoComments :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        ts_headline('simple', COALESCE(c.text, ''), plainto_tsquery('simple', sqlc.arg(query)::text),
                    'StartSel=' || chr(2) || ',StopSel=' || chr(3) || ',HighlightAll=TRUE')::text AS highlighted,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
@@ -138,6 +144,24 @@ WHERE c.video_id = sqlc.arg(video_id)
     OR COALESCE(c.text, '') ILIKE '%' || sqlc.arg(query) || '%'
     OR COALESCE(c.author, '') ILIKE '%' || sqlc.arg(query) || '%'
   )
+ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
+LIMIT sqlc.arg(page_size)::int
+OFFSET sqlc.arg(page_offset)::int;
+
+-- SearchCommentsScoped searches comments on one video, one uploader, or the
+-- whole library. video_id and uploader are optional independently.
+-- name: SearchCommentsScoped :many
+SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at, v.title, v.uploader
+FROM video_comments c
+JOIN videos v ON v.id = c.video_id
+WHERE (
+    c.search @@ plainto_tsquery('simple', sqlc.arg(query)::text)
+    OR COALESCE(c.text, '') ILIKE '%' || sqlc.arg(query) || '%'
+    OR COALESCE(c.author, '') ILIKE '%' || sqlc.arg(query) || '%'
+  )
+  AND (sqlc.narg('video_id')::uuid IS NULL OR c.video_id = sqlc.narg('video_id'))
+  AND (sqlc.narg('uploader')::text IS NULL OR v.uploader = sqlc.narg('uploader'))
 ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
 LIMIT sqlc.arg(page_size)::int
 OFFSET sqlc.arg(page_offset)::int;

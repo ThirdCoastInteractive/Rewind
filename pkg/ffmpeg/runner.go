@@ -60,6 +60,12 @@ func (p *Process) Stderr() string {
 // Start starts an ffmpeg process and returns a Process handle for lifecycle management.
 // The caller is responsible for calling Wait() or Kill() to clean up.
 func Start(ctx context.Context, args []string, progress chan<- Progress) (*Process, error) {
+	args = prepareArgs(ctx, args)
+	release, err := acquireHostShare(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	p := &Process{
@@ -73,10 +79,12 @@ func Start(ctx context.Context, args []string, progress chan<- Progress) (*Proce
 	if progress != nil {
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
+			release()
 			return nil, fmt.Errorf("ffmpeg: failed to create stdout pipe: %w", err)
 		}
 
 		if err := cmd.Start(); err != nil {
+			release()
 			return nil, fmt.Errorf("ffmpeg: failed to start: %w", err)
 		}
 
@@ -85,6 +93,7 @@ func Start(ctx context.Context, args []string, progress chan<- Progress) (*Proce
 		// Parse progress in background
 		go func() {
 			defer close(p.done)
+			defer release()
 
 			// Read progress
 			scanner := bufio.NewScanner(stdout)
@@ -103,6 +112,7 @@ func Start(ctx context.Context, args []string, progress chan<- Progress) (*Proce
 		}()
 	} else {
 		if err := cmd.Start(); err != nil {
+			release()
 			return nil, fmt.Errorf("ffmpeg: failed to start: %w", err)
 		}
 
@@ -111,6 +121,7 @@ func Start(ctx context.Context, args []string, progress chan<- Progress) (*Proce
 		// Wait in background
 		go func() {
 			defer close(p.done)
+			defer release()
 			p.err = cmd.Wait()
 			if p.err != nil {
 				p.err = &Error{

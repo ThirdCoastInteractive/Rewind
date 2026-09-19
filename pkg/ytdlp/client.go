@@ -111,6 +111,10 @@ type Client struct {
 	// (e.g. 1080). Zero means no cap: download the best available rendition.
 	MaxHeight int
 
+	// Live selects a muxed format suitable for HLS live streams instead of
+	// bestvideo+bestaudio merge (which fails on EVENT playlists).
+	Live bool
+
 	// LastPID is the process ID of the most recently executed command.
 	// Only populated after exec() is called.
 	LastPID int
@@ -148,7 +152,7 @@ func (c *Client) exec(ctx context.Context, args ...string) (stdout []byte, stder
 	// fingerprint (via curl_cffi, bundled in the yt-dlp_linux binary), and the
 	// User-Agent header keeps yt-dlp consistent with the rest of the app. Together
 	// they get past bot walls that a UA header alone won't.
-	fullArgs = append(fullArgs, "--impersonate", "chrome", "--user-agent", useragent.Get())
+	fullArgs = append(fullArgs, "--impersonate", "chrome", "--user-agent", useragent.Get(ctx))
 
 	// Create temporary cookies file if content is provided
 	var cookiesFile string
@@ -234,8 +238,27 @@ type Info struct {
 	ExtractorKey string            `json:"extractor_key"`
 	Uploader     string            `json:"uploader"`
 	Duration     float64           `json:"duration"`
+	IsLive       bool              `json:"is_live"`
+	LiveStatus   string            `json:"live_status"`
+	WasLive      bool              `json:"was_live"`
 	Entries      []json.RawMessage `json:"entries,omitempty"`
 	Raw          json.RawMessage   `json:"-"`
+}
+
+// CurrentlyLive reports whether the item is a live or upcoming stream.
+// post_live / was_live are treated as VOD (not currently live).
+func (i *Info) CurrentlyLive() bool {
+	if i == nil {
+		return false
+	}
+	if i.IsLive {
+		return true
+	}
+	switch i.LiveStatus {
+	case "is_live", "is_upcoming":
+		return true
+	}
+	return false
 }
 
 // RateLimitArgs spaces out yt-dlp HTTP requests so a metadata crawl of a

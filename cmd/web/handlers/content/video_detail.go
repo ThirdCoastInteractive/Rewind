@@ -1,6 +1,7 @@
 package content
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -8,11 +9,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
+	"thirdcoast.systems/rewind/internal/contextwindow"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -156,6 +159,14 @@ func HandleVideoDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		if rows, err := dbc.Queries(c.Request().Context()).GetUserKeybindings(c.Request().Context(), userUUID); err == nil {
 			keybindings = common.KeybindingsRowsToMap(rows)
 		}
+
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := contextwindow.EnqueueIfMissing(ctx, dbc, videoUUID); err != nil {
+				slog.Warn("watch enqueue context windows", "video_id", videoUUID, "error", err)
+			}
+		}()
 
 		return templates.VideoDetailPage(video, clips, username, keybindings).Render(c.Request().Context(), c.Response())
 	}

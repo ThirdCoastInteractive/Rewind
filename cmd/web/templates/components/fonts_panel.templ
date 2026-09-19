@@ -1,0 +1,304 @@
+package components
+
+import (
+	"fmt"
+	"strings"
+
+	"thirdcoast.systems/rewind/pkg/typefaces"
+)
+
+templ FontsPreviewLink() {
+	if href := typefaces.GoogleCSSURL(typefaces.PreviewFamilies()); href != "" {
+		<link rel="stylesheet" href={ href }/>
+	}
+}
+
+templ FontsWorkbench() {
+	<div class="space-y-3" data-signals="{fontQ:'', fontCat:''}" data-init="@get('/api/fonts'); @get('/api/fonts/catalog')">
+		@fontSearchField(false)
+		@fontCategoryChips(false)
+		@FontsCatalog(typefaces.Popular, "", false)
+		<div>
+			<div class="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-1">Installed for export</div>
+			@FontsInstalled(typefaces.Installed())
+		</div>
+	</div>
+}
+
+templ CaptionFontTrigger() {
+	<button
+		type="button"
+		class="flex items-center gap-1.5 max-w-[11rem] px-2 py-0.5 border-2 border-white/20 hover:border-white/50 text-white"
+		data-on:click={ openFontPicker("caption", -1) }
+		title="Typeface for burnt-in captions. Opens the Google Fonts picker."
+	>
+		<span class="font-mono text-[10px] text-white/40 uppercase tracking-wider">Font</span>
+		<span
+			class="truncate text-sm"
+			data-text="$_stitchCaptionFont || 'Tomorrow'"
+			data-attr:style="'font-family:' + ($_stitchCaptionFont || 'Tomorrow') + ',system-ui'"
+		>Tomorrow</span>
+		<i class="fa-sharp fa-solid fa-chevron-down text-[10px] text-white/40" aria-hidden="true"></i>
+	</button>
+}
+
+templ TitleFontTrigger(idx int, current string) {
+	<button
+		type="button"
+		class="w-full flex items-center justify-between gap-2 px-2 py-1.5 border-2 border-white/20 hover:border-white/50 text-left"
+		data-on:click={ openFontPicker("title", idx) }
+		title="Typeface for this title card"
+	>
+		<span
+			class="truncate text-lg text-white"
+			style={ "font-family:" + titleFontFamily(current) + ",system-ui" }
+		>{ titleFontFamily(current) }</span>
+		<span class="font-mono text-[10px] text-white/40 uppercase tracking-wider shrink-0">Change</span>
+	</button>
+}
+
+templ FontPickerOverlay() {
+	<div
+		class="fixed inset-0 z-[80]"
+		data-show="$_fontPickerOpen"
+		style="display:none"
+	>
+		<button
+			type="button"
+			class="absolute inset-0 bg-black/70"
+			data-on:click="$_fontPickerOpen=false"
+			aria-label="Close typeface picker"
+		></button>
+		<div class="absolute right-3 top-14 w-[min(34rem,calc(100vw-1.5rem))] max-h-[min(78vh,44rem)] flex flex-col border-2 border-white/30 bg-black shadow-2xl">
+			<div class="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-white/15">
+				<div>
+					<div class="font-mono text-[10px] text-white/40 uppercase tracking-wider">Typeface</div>
+					<div class="text-sm text-white" data-text="$_fontPickerMode==='title' ? 'Title card' : 'Burnt-in captions'"></div>
+				</div>
+				<button
+					type="button"
+					class="px-2 py-0.5 text-xs font-mono border-2 border-white/20 hover:border-white/50"
+					data-on:click="$_fontPickerOpen=false"
+				>Close</button>
+			</div>
+			<div class="shrink-0 p-3 space-y-2 border-b border-white/10">
+				@fontSearchField(true)
+				@fontCategoryChips(true)
+			</div>
+			<div class="shrink-0 px-3 py-2 border-b border-white/10">
+				<div class="font-mono text-[10px] text-white/40 uppercase tracking-wider mb-1">On disk</div>
+				<div class="flex flex-wrap gap-1">
+					for _, f := range typefaces.Installed() {
+						<button
+							type="button"
+							class="px-1.5 py-0.5 text-sm border-2 border-white/20 hover:border-white/60 text-white"
+							style={ "font-family:" + f.Family + ",system-ui" }
+							data-on:click={ "window.selectStitchFont && window.selectStitchFont('" + fontJS(f.Family) + "')" }
+						>{ f.Family }</button>
+					}
+				</div>
+			</div>
+			<div class="flex-1 min-h-0 overflow-y-auto">
+				@FontsCatalog(typefaces.Popular, "", true)
+			</div>
+		</div>
+	</div>
+	<script>
+		window.selectStitchFont = function(family) {
+			if (!family) return;
+			var api = window.__dsAPI;
+			var mode = api && api.getPath ? api.getPath('_fontPickerMode') : '';
+			var idx = api && api.getPath ? api.getPath('_fontPickerIdx') : -1;
+			if (mode === 'title' && typeof window.updateStitchSegField === 'function') {
+				window.updateStitchSegField(idx, 'font', family);
+				return;
+			}
+			if (api && api.mergePatch) {
+				api.mergePatch({ _stitchCaptionFont: family, _stitchDirty: true });
+			}
+		};
+	</script>
+}
+
+templ FontsInstalled(faces []typefaces.Face) {
+	<div id="font-installed" class="space-y-1">
+		if len(faces) == 0 {
+			<p class="font-mono text-xs text-white/40">Nothing downloaded yet. Search or tap Install.</p>
+		} else {
+			for _, f := range faces {
+				<div class="flex items-center justify-between gap-2 py-1.5 border-b border-white/10">
+					<div class="min-w-0">
+						<div class="text-base text-white truncate" style={ "font-family:" + f.Family + ",system-ui" }>{ f.Family }</div>
+						<div class="font-mono text-[10px] text-white/40 uppercase tracking-wider">
+							{ f.Source }
+							if f.Category != "" {
+								· { f.Category }
+							}
+						</div>
+					</div>
+					if f.Source == "google" {
+						<button
+							type="button"
+							class="ghost-btn-sm text-red-400/70 border-red-500/40 hover:border-red-400 hover:text-red-300"
+							data-on:click={ "@delete('/api/fonts/" + f.ID + "')" }
+						>Remove</button>
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+templ FontsCatalog(items []typefaces.CatalogItem, errMsg string, pickable bool) {
+	<div id="font-catalog" class="divide-y divide-white/10">
+		if errMsg != "" {
+			<p class="font-mono text-xs text-red-400 px-3 py-2">{ errMsg }</p>
+		}
+		if len(items) == 0 && errMsg == "" {
+			<p class="font-mono text-xs text-white/40 px-3 py-3">No families match. Try Playfair, Bebas, Cinzel, Unifraktur…</p>
+		}
+		if len(items) > 0 {
+			if href := typefaces.GoogleCSSURL(catalogFamilies(items)); href != "" {
+				<link rel="stylesheet" href={ href }/>
+			}
+		}
+		for _, it := range items {
+			@fontCatalogRow(it, fontIsInstalled(it), pickable)
+		}
+	</div>
+}
+
+templ fontCatalogRow(it typefaces.CatalogItem, installed bool, pickable bool) {
+	<div class="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5">
+		<div class="min-w-0 flex-1">
+			<div class="text-[1.35rem] leading-tight text-white truncate" style={ "font-family:" + it.Family + ",system-ui" }>{ it.Family }</div>
+			<div class="text-sm text-white/65 truncate mt-0.5" style={ "font-family:" + it.Family + ",system-ui" }>{ typefaces.Pangram }</div>
+			<div class="font-mono text-[10px] text-white/40 uppercase tracking-wider mt-0.5">
+				{ it.Category }
+				if it.Variable {
+					· variable
+				}
+				if installed {
+					· on disk
+				}
+			</div>
+		</div>
+		if pickable {
+			<button
+				type="button"
+				class="btn-ghost btn-sm shrink-0"
+				data-on:click={ fontPickClick(it, installed, true) }
+			>
+				if installed {
+					Use
+				} else {
+					Install
+				}
+			</button>
+		} else if !installed {
+			<button
+				type="button"
+				class="btn-ghost btn-sm shrink-0"
+				data-on:click={ fontPickClick(it, false, false) }
+			>Install</button>
+		} else {
+			<span class="font-mono text-[10px] text-white/40 uppercase tracking-wider shrink-0">On disk</span>
+		}
+	</div>
+}
+
+templ fontSearchField(pickable bool) {
+	<input
+		type="search"
+		class="form-input w-full"
+		placeholder="Search 1,400+ Google Fonts…"
+		data-bind="fontQ"
+		data-on:input__debounce.350ms={ catalogGet(pickable) }
+		aria-label="Search Google Fonts"
+	/>
+}
+
+templ fontCategoryChips(pickable bool) {
+	<div class="flex flex-wrap gap-1">
+		for _, c := range fontCats {
+			<button
+				type="button"
+				class="px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider border-2 border-white/20 hover:border-white/50 text-white/70"
+				data-class={ "{'border-white/70 bg-white/10 text-white': ($fontCat||'')==='" + c.ID + "'}" }
+				data-on:click={ "$fontCat='" + c.ID + "'; " + catalogGet(pickable) }
+			>{ c.Label }</button>
+		}
+	</div>
+}
+
+var fontCats = []struct{ ID, Label string }{
+	{"", "All"},
+	{"sans-serif", "Sans"},
+	{"serif", "Serif"},
+	{"display", "Display"},
+	{"blackletter", "Blackletter"},
+	{"monospace", "Mono"},
+	{"handwriting", "Hand"},
+}
+
+func InstalledFaces() []typefaces.Face {
+	return typefaces.Installed()
+}
+
+func catalogFamilies(items []typefaces.CatalogItem) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.Family)
+	}
+	return out
+}
+
+func catalogGet(pickable bool) string {
+	pick := ""
+	if pickable {
+		pick = "+ '&pick=1'"
+	}
+	return "@get('/api/fonts/catalog?q=' + encodeURIComponent($fontQ||'') + '&cat=' + encodeURIComponent($fontCat||'')" + pick + ")"
+}
+
+func OpenFontPicker(mode string, idx int) string {
+	return fmt.Sprintf("$_fontPickerOpen=true; $_fontPickerMode='%s'; $_fontPickerIdx=%d; %s", mode, idx, catalogGet(true))
+}
+
+func openFontPicker(mode string, idx int) string {
+	return OpenFontPicker(mode, idx)
+}
+
+func fontJS(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	return strings.ReplaceAll(s, `'`, `\'`)
+}
+
+func fontIsInstalled(it typefaces.CatalogItem) bool {
+	idx := typefaces.InstalledIndex()
+	return idx[it.ID] || idx[strings.ToLower(it.Family)] || idx[strings.ToLower(strings.ReplaceAll(it.Family, " ", ""))]
+}
+
+func fontPickClick(it typefaces.CatalogItem, installed, pickable bool) string {
+	post := fmt.Sprintf("@post('/api/fonts?id=%s&q=' + encodeURIComponent($fontQ||'') + '&cat=' + encodeURIComponent($fontCat||'')", it.ID)
+	if pickable {
+		post += "+ '&pick=1'"
+	}
+	post += ")"
+	if !pickable {
+		return post
+	}
+	sel := "window.selectStitchFont && window.selectStitchFont('" + fontJS(it.Family) + "')"
+	if installed {
+		return sel
+	}
+	return sel + "; " + post
+}
+
+func titleFontFamily(current string) string {
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return "UnifrakturCook"
+	}
+	return current
+}

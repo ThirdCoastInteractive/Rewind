@@ -4,6 +4,7 @@ package video_api
 import (
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -67,7 +68,27 @@ func HandleJobs(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handle
 			}
 		}
 
+		mlJobs, err := q.ListMLJobsForVideo(ctx, videoUUID)
+		if err != nil {
+			return err
+		}
+		health, err := q.ListMLRuntimeHealth(ctx)
+		if err != nil {
+			return err
+		}
+		transcript, err := q.GetVideoTranscript(ctx, videoUUID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		hasTranscript := transcript != nil && strings.TrimSpace(transcript.Text) != ""
+		windows, err := q.ListContextWindowsByVideo(ctx, videoUUID)
+		if err != nil {
+			return err
+		}
 		sse := datastar.NewSSE(c.Response().Writer, c.Request())
+		if err := sse.PatchElementTempl(templates.VideoProcessing(videoUUID.String(), mlJobs, health, hasTranscript, len(windows))); err != nil {
+			return err
+		}
 		return sse.PatchElementTempl(
 			templates.VideoJobsList(jobs, ingestJobsByDJ),
 			datastar.WithSelectorID("video-jobs-list"),

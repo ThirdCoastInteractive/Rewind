@@ -7,6 +7,18 @@ This guide walks you through installing Rewind, configuring it, and archiving yo
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
 - Enough disk space for your video library (videos are stored at original quality)
 
+## Architecture
+
+Rewind runs three containers:
+
+| Service | Role |
+| ------- | ---- |
+| `postgres` | PostgreSQL 17 with pgvector |
+| `rewind` | Web UI, download/ingest/encode workers, WebRTC SFU, and migrations |
+| `rewind-ml` | Whisper transcription, Ollama context windows, and vision |
+
+Worker counts (download, ingest, encode) are live admin settings, not Compose replicas.
+
 ## Installation
 
 ### 1. Clone the repository
@@ -38,7 +50,13 @@ Everything else has sensible defaults. See [Configuration](configuration.md) for
 docker compose up -d
 ```
 
-This pulls the pre-built container images and starts all services. First startup takes a minute or two while the database is initialized.
+This pulls the pre-built container images and starts all services. First startup takes a minute or two while the database is initialized. The `rewind` container runs migrations on boot. Pin a release with `REWIND_VERSION=v0.1.0` in `.env` (see [Configuration](configuration.md)).
+
+From a development checkout:
+
+```bash
+make up
+```
 
 ### 4. Open the web UI
 
@@ -56,7 +74,7 @@ On first visit you'll see a registration page. Create your admin account. You ca
 2. Paste a video URL (YouTube, Vimeo, or any [yt-dlp supported site](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md))
 3. Click **SUBMIT JOB**
 
-The download starts in the background. You can watch progress on the **Jobs** page. Once complete, the video appears in your **Library** with auto-generated thumbnails and a searchable transcript.
+The download starts in the background. You can watch progress on the **Jobs** page. Once complete, the video appears in your **Library** with auto-generated thumbnails and a searchable transcript (Whisper runs in `rewind-ml`).
 
 ## Useful commands
 
@@ -70,12 +88,21 @@ docker compose down
 # Check service status
 docker compose ps
 
-# Rebuild after updating
+# Rebuild after updating (from a git checkout: make up rebuilds only stale services)
 docker compose up -d --build
+
+# Apply migrations only
+docker compose run --rm rewind migrate
 ```
 
 ## Next steps
 
-- [Configuration](configuration.md) - all environment variables and options
-- [Keyboard Shortcuts](keyboard-shortcuts.md) - full keybinding reference
-- [Browser Extension](browser-extension.md) - one-click archiving from Chrome or Firefox
+- [Documentation index](README.md)
+- [Configuration](configuration.md) — environment variables, Whisper, GPU, storage
+- [Library](library.md) — videos, channels, creators, follows
+- [Clipping](clipping.md) — watch, Cut, and Stitch
+- [Wiki](wiki.md) — vault pages and topics
+- [Show notes](show-notes.md) — rundowns and live output
+- [MCP](mcp.md) — connect an agent to the archive
+- [Keyboard shortcuts](keyboard-shortcuts.md)
+- [Browser extension](browser-extension.md)

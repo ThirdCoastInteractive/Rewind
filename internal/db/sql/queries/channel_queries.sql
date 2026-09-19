@@ -1,5 +1,5 @@
 -- ListChannels aggregates the library by uploader: per-channel video counts,
--- totals, a representative latest video (for the thumbnail), the channel URL
+-- totals, a representative latest archived video that has a thumbnail, the channel URL
 -- (from the generated channel_url/uploader_url columns — never the info
 -- JSONB, which is far too heavy to touch per row), and whether a channel
 -- watch already covers it. Optional name filter for the list page search box.
@@ -22,6 +22,8 @@ SELECT
     agg.*,
     (SELECT v2.id FROM videos v2
      WHERE v2.uploader = agg.uploader
+       AND v2.media = 'file'
+       AND COALESCE(v2.thumbnail_path, '') <> ''
      ORDER BY v2.upload_date DESC NULLS LAST, v2.created_at DESC
      LIMIT 1) AS latest_video_id,
     (w.id IS NOT NULL)::boolean AS watched
@@ -202,7 +204,7 @@ JOIN channels fc ON fc.id = e.from_channel_id
 LEFT JOIN creators fcr ON fcr.id = fc.creator_id
 LEFT JOIN channels tc ON tc.id = e.to_channel_id
 LEFT JOIN creators tcr ON tcr.id = tc.creator_id
-ORDER BY e.weight DESC
+ORDER BY (e.to_channel_id IS NOT NULL) DESC, e.weight DESC
 LIMIT 500;
 
 -- ListChannelEdgesForCreator returns edges that start or end on a creator's channels.
@@ -228,6 +230,61 @@ JOIN channels fc ON fc.id = e.from_channel_id
 LEFT JOIN channels tc ON tc.id = e.to_channel_id
 WHERE e.from_channel_id = sqlc.arg(channel_id) OR e.to_channel_id = sqlc.arg(channel_id)
 ORDER BY e.weight DESC;
+
+-- ListChannelNeighborhood is the 1-hop graph around one channel, optional kind.
+-- name: ListChannelNeighborhood :many
+SELECT e.*,
+  fc.uploader AS from_uploader, fc.platform AS from_platform,
+  COALESCE(tc.uploader, '')::text AS to_uploader, COALESCE(tc.platform, '')::text AS to_platform,
+  CASE WHEN e.from_channel_id = sqlc.arg(channel_id) THEN 'out' ELSE 'in' END::text AS direction
+FROM channel_edges e
+JOIN channels fc ON fc.id = e.from_channel_id
+LEFT JOIN channels tc ON tc.id = e.to_channel_id
+WHERE (e.from_channel_id = sqlc.arg(channel_id) OR e.to_channel_id = sqlc.arg(channel_id))
+  AND (sqlc.narg('kind')::text IS NULL OR e.kind = sqlc.narg('kind'))
+ORDER BY e.weight DESC
+LIMIT sqlc.arg(page_limit);
+
+-- ListChannelVideos is the slim MCP listing for one uploader or channel row.
+-- name: ListChannelVideos :many
+SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+       v.view_count, v.media, v.src
+FROM videos v
+WHERE (
+        sqlc.narg('channel_row_id')::uuid IS NOT NULL
+        AND v.channel_row_id = sqlc.narg('channel_row_id')
+      )
+   OR (
+        sqlc.narg('channel_row_id')::uuid IS NULL
+        AND sqlc.narg('uploader')::text IS NOT NULL
+        AND v.uploader = sqlc.narg('uploader')
+      )
+ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+LIMIT sqlc.arg(page_limit)
+OFFSET sqlc.arg(page_offset);
+
+-- ListChannelCatalog is titles + descriptions for MCP channel analysis.
+-- name: ListChannelCatalog :many
+SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+       v.view_count, v.media, v.src, v.description
+FROM videos v
+WHERE (
+        sqlc.narg('channel_row_id')::uuid IS NOT NULL
+        AND v.channel_row_id = sqlc.narg('channel_row_id')
+      )
+   OR (
+        sqlc.narg('channel_row_id')::uuid IS NULL
+        AND sqlc.narg('uploader')::text IS NOT NULL
+        AND v.uploader = sqlc.narg('uploader')
+      )
+ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+LIMIT sqlc.arg(page_limit)
+OFFSET sqlc.arg(page_offset);
+
+-- name: HasUnresolvedChannelEdges :one
+SELECT EXISTS(
+    SELECT 1 FROM channel_edges WHERE to_channel_id IS NULL AND to_url <> ''
+)::boolean;
 
 -- ResolveChannelEdges fills to_channel_id when an unresolved to_url now matches
 -- an archived channel (canonical URL, UC id, @handle, or identity key).
@@ -295,7 +352,7 @@ UPDATE videos SET links_harvested_at = NOW() WHERE id = sqlc.arg(id);
 -- ListVideosForAnalyze returns the public-metric rows the autopsy analyzer needs.
 -- name: ListVideosForAnalyze :many
 SELECT v.id, v.src, v.title, v.format, v.upload_date, v.duration_seconds, v.view_count, v.like_count,
-  (SELECT COUNT(*) FROM video_comments c WHERE c.video_id = v.id)::bigint AS comment_count
+  v.comment_count
 FROM videos v
 WHERE v.channel_row_id = ANY(sqlc.arg(channel_ids)::uuid[])
   AND v.upload_date IS NOT NULL

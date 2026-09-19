@@ -2,49 +2,289 @@ package templates
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"thirdcoast.systems/rewind/internal/db"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-templ StitchLibraryPage(projects []*db.ListStitchProjectsRow, exportMap map[string]*db.LatestStitchJobPerProjectRow, username string) {
+type StitchLibraryView struct {
+	ViewerID       pgtype.UUID
+	ViewerName     string
+	FilterUser     pgtype.UUID
+	FilterUserName string
+	AllUsers       bool
+	FolderMode     string
+	Folder         *db.StitchFolder
+	Folders        []*db.ListStitchFoldersForUserRow
+	Owners         []*db.ListStitchProjectOwnersRow
+	Projects       []*db.ListStitchProjectsRow
+	Exports        map[string]*db.LatestStitchJobPerProjectRow
+	Query          string
+	CanManage      bool
+}
+
+func (v StitchLibraryView) userParam() string {
+	if v.AllUsers {
+		return "all"
+	}
+	if v.FilterUser.Valid && v.FilterUser != v.ViewerID {
+		return v.FilterUser.String()
+	}
+	return ""
+}
+
+func (v StitchLibraryView) href(folder string) string {
+	q := url.Values{}
+	if u := v.userParam(); u != "" {
+		q.Set("user", u)
+	}
+	if folder != "" {
+		q.Set("folder", folder)
+	}
+	if v.Query != "" && folder == "" {
+		q.Set("q", v.Query)
+	}
+	enc := q.Encode()
+	if enc == "" {
+		return "/stitch"
+	}
+	return "/stitch?" + enc
+}
+
+func (v StitchLibraryView) ownerHref(id string) string {
+	if id == "" || id == "me" {
+		return "/stitch"
+	}
+	return "/stitch?user=" + id
+}
+
+func (v StitchLibraryView) currentHref() string {
+	if v.Folder != nil {
+		return v.href(v.Folder.ID.String())
+	}
+	if v.FolderMode == "unfiled" {
+		return v.href("unfiled")
+	}
+	return v.href("")
+}
+
+templ StitchLibraryPage(view StitchLibraryView, username string) {
 	@LayoutFullscreen("Stitch", username) {
-		@StitchLibrary(projects, exportMap)
+		@StitchLibrary(view)
 	}
 }
 
-templ StitchLibrary(projects []*db.ListStitchProjectsRow, exportMap map[string]*db.LatestStitchJobPerProjectRow) {
-	<div class="flex-1 min-h-0 flex flex-col p-6 overflow-auto">
-		<!-- Header -->
-		<div class="flex items-center justify-between mb-6">
-			<div class="flex items-center gap-3">
-				<i class="fa-sharp fa-solid fa-film text-white/40 text-lg" aria-hidden="true"></i>
-				<h1 class="font-mono text-lg uppercase tracking-wider text-white/80">Stitch Projects</h1>
+templ StitchLibrary(view StitchLibraryView) {
+	<div class="flex-1 min-h-0 flex flex-col" data-stitch-library>
+		<header class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
+			<div class="flex items-center gap-3 min-w-0">
+				<i class="fa-sharp fa-solid fa-film text-white/40" aria-hidden="true"></i>
+				<h1 class="font-mono text-lg uppercase tracking-wider text-white/80">Stitch</h1>
+				<form method="get" action="/stitch" class="flex items-center gap-2">
+					if view.userParam() != "" {
+						<input type="hidden" name="user" value={ view.userParam() }/>
+					}
+					<input type="search" name="q" value={ view.Query } placeholder="Search projects" class="bg-black border border-white/20 px-3 py-1.5 text-sm font-mono w-56"/>
+					<button type="submit" class="ghost-btn-sm">Search</button>
+				</form>
 			</div>
-			<form method="POST" action="/api/stitch/projects">
-				<button
-					type="submit"
-					class="btn-primary btn-md"
-				>
-					<i class="fa-sharp fa-solid fa-plus mr-1" aria-hidden="true"></i>
-					New Project
-				</button>
-			</form>
-		</div>
-		<!-- Project grid -->
-		if len(projects) == 0 {
-			<div class="flex-1 flex flex-col items-center justify-center text-white/30">
-				<i class="fa-sharp fa-solid fa-film text-4xl mb-4" aria-hidden="true"></i>
-				<p class="font-mono text-sm">No stitch projects yet</p>
-				<p class="font-mono text-xs mt-1">Create one to start combining clips</p>
-			</div>
-		} else {
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-				for _, p := range projects {
-					@StitchProjectCard(p, exportMap[p.ID.String()])
+			<div class="flex items-center gap-2">
+				<label class="text-xs font-mono text-white/50 uppercase tracking-wider">
+					Owner
+					<select class="ml-2 bg-black border border-white/20 px-2 py-1 text-sm font-mono" onchange="location.href=this.value">
+						<option value="/stitch" selected?={ !view.AllUsers && view.FilterUser == view.ViewerID }>Me</option>
+						<option value="/stitch?user=all" selected?={ view.AllUsers }>Everyone</option>
+						for _, owner := range view.Owners {
+							if owner.ID != view.ViewerID {
+								<option value={ view.ownerHref(owner.ID.String()) } selected?={ !view.AllUsers && view.FilterUser == owner.ID }>{ owner.UserName } ({ fmt.Sprintf("%d", owner.ProjectCount) })</option>
+							}
+						}
+					</select>
+				</label>
+				if view.CanManage {
+					<form method="POST" action="/api/stitch/folders" class="flex items-center gap-1">
+						<input type="hidden" name="next" value={ view.currentHref() }/>
+						<input type="text" name="name" required maxlength="120" placeholder="New folder" class="bg-black border border-white/20 px-2 py-1 text-xs font-mono w-36"/>
+						<button type="submit" class="ghost-btn-sm">Add folder</button>
+					</form>
+					<form method="POST" action="/api/stitch/projects">
+						<button type="submit" class="btn-primary btn-md">New Project</button>
+					</form>
 				}
 			</div>
-		}
+		</header>
+		<div class="flex flex-1 min-h-0">
+			<aside class="w-56 shrink-0 border-r border-white/10 overflow-auto p-3">
+				<nav class="flex flex-col gap-0.5 text-sm font-mono">
+					<a href={ templ.SafeURL(view.href("")) } class={ "px-2 py-1.5 border border-transparent", templ.KV("bg-white/10 border-white/20", view.FolderMode == "all" && view.Query == "") }>All files</a>
+					if !view.AllUsers {
+						<a href={ templ.SafeURL(view.href("unfiled")) } class={ "px-2 py-1.5 border border-transparent", templ.KV("bg-white/10 border-white/20", view.FolderMode == "unfiled") }>Unfiled</a>
+						<div class="mt-3 mb-1 px-2 text-[10px] uppercase tracking-widest text-white/40">Folders</div>
+						if len(view.Folders) == 0 {
+							<p class="px-2 text-xs text-white/30">No folders yet</p>
+						}
+						for _, folder := range view.Folders {
+							<div class="flex items-center gap-1 group">
+								<a href={ templ.SafeURL(view.href(folder.ID.String())) } class={ "flex-1 min-w-0 px-2 py-1.5 border border-transparent truncate", templ.KV("bg-white/10 border-white/20", view.Folder != nil && view.Folder.ID == folder.ID) }>
+									{ folder.Name }
+									<span class="text-white/30">{ fmt.Sprintf(" (%d)", folder.ProjectCount) }</span>
+								</a>
+								if view.CanManage {
+									<form method="POST" action={ templ.SafeURL("/api/stitch/folders/" + folder.ID.String() + "/delete") } onsubmit="return confirm('Delete this folder? Projects stay, unfiled.')">
+										<button type="submit" class="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white px-1" title="Delete folder">×</button>
+									</form>
+								}
+							</div>
+						}
+					}
+				</nav>
+			</aside>
+			<section class="flex-1 min-h-0 overflow-auto p-4">
+				<p class="text-xs font-mono text-white/40 uppercase tracking-wider mb-3">
+					if view.Folder != nil {
+						{ view.FilterUserName } / { view.Folder.Name }
+					} else if view.FolderMode == "unfiled" {
+						{ view.FilterUserName } / Unfiled
+					} else {
+						{ view.FilterUserName }
+					}
+					<span class="text-white/20">{ fmt.Sprintf(" · %d projects", len(view.Projects)) }</span>
+				</p>
+				if len(view.Projects) == 0 {
+					<div class="flex flex-col items-center justify-center text-white/30 py-16">
+						<i class="fa-sharp fa-solid fa-folder-open text-3xl mb-3" aria-hidden="true"></i>
+						<p class="font-mono text-sm">No stitch projects here</p>
+					</div>
+				} else {
+					<div class="border border-white/10 overflow-x-auto">
+						<table class="w-full font-mono text-sm">
+							<thead>
+								<tr class="border-b border-white/10 text-left text-[10px] uppercase tracking-widest text-white/50">
+									<th class="px-3 py-2">Name</th>
+									if view.AllUsers || view.FolderMode == "all" {
+										<th class="px-3 py-2">Folder</th>
+									}
+									if view.AllUsers {
+										<th class="px-3 py-2">Owner</th>
+									}
+									<th class="px-3 py-2">Segments</th>
+									<th class="px-3 py-2">Updated</th>
+									<th class="px-3 py-2">Export</th>
+									if view.CanManage {
+										<th class="px-3 py-2">Move</th>
+									}
+								</tr>
+							</thead>
+							<tbody>
+								for _, p := range view.Projects {
+									@StitchProjectRow(view, p, view.Exports[p.ID.String()])
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			</section>
+		</div>
 	</div>
+	<script>
+		document.querySelector('[data-stitch-library]')?.addEventListener('click', async (e) => {
+			const btn = e.target.closest('[data-copy-target]');
+			if (!btn) return;
+			const el = document.getElementById(btn.dataset.copyTarget);
+			if (!el) return;
+			const text = 'value' in el ? el.value : (el.textContent || '');
+			const label = btn.textContent;
+			try {
+				await navigator.clipboard.writeText(text);
+				btn.textContent = 'Copied';
+				setTimeout(() => { btn.textContent = label; }, 1200);
+			} catch (_) {
+				if (typeof el.select === 'function') el.select();
+				else {
+					const range = document.createRange();
+					range.selectNodeContents(el);
+					const sel = window.getSelection();
+					sel.removeAllRanges();
+					sel.addRange(range);
+				}
+			}
+		});
+	</script>
+}
+
+templ StitchProjectRow(view StitchLibraryView, p *db.ListStitchProjectsRow, latestExport *db.LatestStitchJobPerProjectRow) {
+	<tr class="border-b border-white/5 hover:bg-white/5">
+		<td class="px-3 py-2">
+			<a href={ templ.SafeURL(fmt.Sprintf("/stitch/%s", p.ID.String())) } class="text-white/90 hover:text-white">
+				if p.Title != "" {
+					{ p.Title }
+				} else {
+					Untitled
+				}
+			</a>
+			<span class="ml-2 text-[10px] uppercase text-white/30">{ p.Format } · { p.Quality }</span>
+			<details class="mt-1 text-xs text-white/60">
+				<summary class="cursor-pointer text-[10px] uppercase tracking-wider text-white/40">YouTube</summary>
+				<div class="mt-2 flex flex-col gap-2 max-w-md">
+					<div class="flex items-start gap-2">
+						<span id={ "yt-title-" + p.ID.String() } class="flex-1 min-w-0 break-words text-white/80">{ p.Title }</span>
+						<button type="button" class="ghost-btn-sm shrink-0" data-copy-target={ "yt-title-" + p.ID.String() }>Copy</button>
+					</div>
+					<div class="flex items-start gap-2">
+						<textarea id={ "yt-desc-" + p.ID.String() } class="flex-1 min-w-0 bg-black border border-white/20 px-2 py-1 text-xs font-mono min-h-[4.5rem]" readonly>{ p.Description }</textarea>
+						<button type="button" class="ghost-btn-sm shrink-0" data-copy-target={ "yt-desc-" + p.ID.String() }>Copy</button>
+					</div>
+					<div class="flex items-start gap-2">
+						<textarea id={ "yt-tags-" + p.ID.String() } class="flex-1 min-w-0 bg-black border border-white/20 px-2 py-1 text-xs font-mono" readonly>{ strings.Join(p.Tags, ", ") }</textarea>
+						<button type="button" class="ghost-btn-sm shrink-0" data-copy-target={ "yt-tags-" + p.ID.String() }>Copy</button>
+					</div>
+				</div>
+			</details>
+		</td>
+		if view.AllUsers || view.FolderMode == "all" {
+			<td class="px-3 py-2 text-white/40 text-xs">
+				if p.FolderName != "" {
+					{ p.FolderName }
+				} else {
+					—
+				}
+			</td>
+		}
+		if view.AllUsers {
+			<td class="px-3 py-2 text-white/50 text-xs">{ p.CreatedByName }</td>
+		}
+		<td class="px-3 py-2 text-white/50">{ fmt.Sprintf("%d", stitchSegmentCount(p.Segments)) }</td>
+		<td class="px-3 py-2 text-white/40 text-xs">{ formatTimeAgo(p.UpdatedAt.Time) }</td>
+		<td class="px-3 py-2 text-xs">
+			if latestExport != nil {
+				if latestExport.Status == db.ExportStatusReady {
+					<a href={ templ.SafeURL(fmt.Sprintf("/api/stitch/%s/download", latestExport.ID.String())) } class="text-green-400 hover:text-green-300" download>Download</a>
+				} else if latestExport.Status == db.ExportStatusProcessing {
+					<span class="text-blue-400/60">{ fmt.Sprintf("%d%%", latestExport.ProgressPct) }</span>
+				} else if latestExport.Status == db.ExportStatusQueued {
+					<span class="text-yellow-400/60">Queued</span>
+				} else if latestExport.Status == db.ExportStatusError {
+					<span class="text-red-400/60">Failed</span>
+				}
+			}
+		</td>
+		if view.CanManage {
+			<td class="px-3 py-2">
+				<form method="POST" action={ templ.SafeURL("/api/stitch/projects/" + p.ID.String() + "/folder") } class="flex items-center gap-1">
+					<input type="hidden" name="next" value={ view.currentHref() }/>
+					<select name="folder_id" class="bg-black border border-white/20 text-xs font-mono px-1 py-0.5" onchange="this.form.submit()">
+						<option value="" selected?={ !p.FolderID.Valid }>Unfiled</option>
+						for _, folder := range view.Folders {
+							<option value={ folder.ID.String() } selected?={ p.FolderID == folder.ID }>{ folder.Name }</option>
+						}
+					</select>
+				</form>
+			</td>
+		}
+	</tr>
 }
 
 func formatTimeAgo(t time.Time) string {
@@ -76,7 +316,6 @@ func formatTimeAgo(t time.Time) string {
 }
 
 func stitchSegmentCount(segments []byte) int {
-	// Quick count: just count top-level array entries
 	count := 0
 	depth := 0
 	for _, b := range segments {
@@ -89,56 +328,7 @@ func stitchSegmentCount(segments []byte) int {
 		}
 	}
 	if depth == 0 && len(segments) > 2 {
-		count++ // at least one element if array is non-empty
+		count++
 	}
 	return count
-}
-
-templ StitchProjectCard(p *db.ListStitchProjectsRow, latestExport *db.LatestStitchJobPerProjectRow) {
-	<a
-		href={ templ.SafeURL(fmt.Sprintf("/stitch/%s", p.ID.String())) }
-		class="group border-2 border-white/10 hover:border-white/30 bg-neutral-950 transition-all p-4 block"
-	>
-		<div class="flex items-start justify-between mb-3">
-			<h3 class="font-mono text-sm text-white/80 group-hover:text-white transition-colors truncate flex-1 mr-2">
-				if p.Title != "" {
-					{ p.Title }
-				} else {
-					Untitled
-				}
-			</h3>
-			<span class="text-xs font-mono text-white/30 uppercase shrink-0">{ p.Format }</span>
-		</div>
-		<div class="flex items-center gap-3 text-xs font-mono text-white/30">
-			<span>
-				<i class="fa-sharp fa-solid fa-layer-group mr-1" aria-hidden="true"></i>
-				{ fmt.Sprintf("%d", stitchSegmentCount(p.Segments)) } segments
-			</span>
-			<span>{ p.Quality }</span>
-		</div>
-		<div class="mt-3 flex items-center justify-between">
-			<span class="text-xs font-mono text-white/20">
-				{ formatTimeAgo(p.UpdatedAt.Time) }
-			</span>
-			if latestExport != nil {
-				if latestExport.Status == db.ExportStatusReady {
-					<span class="text-xs font-mono text-green-500/60">
-						<i class="fa-sharp fa-solid fa-circle-check mr-1" aria-hidden="true"></i>Exported
-					</span>
-				} else if latestExport.Status == db.ExportStatusProcessing {
-					<span class="text-xs font-mono text-blue-400/60">
-						<i class="fa-sharp fa-solid fa-circle-notch fa-spin mr-1" aria-hidden="true"></i>{ fmt.Sprintf("%d%%", latestExport.ProgressPct) }
-					</span>
-				} else if latestExport.Status == db.ExportStatusQueued {
-					<span class="text-xs font-mono text-yellow-400/60">
-						<i class="fa-sharp fa-solid fa-clock mr-1" aria-hidden="true"></i>Queued
-					</span>
-				} else if latestExport.Status == db.ExportStatusError {
-					<span class="text-xs font-mono text-red-400/60">
-						<i class="fa-sharp fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Failed
-					</span>
-				}
-			}
-		</div>
-	</a>
 }

@@ -11,6 +11,48 @@
     els.error.textContent = '';
   }
 
+  function setLiveUi(els, inspect) {
+    const live = Boolean(inspect && inspect.live);
+    els._inspect = inspect && typeof inspect === 'object'
+      ? { live, title: String(inspect.title || ''), mediaUrl: String(inspect.mediaUrl || '') }
+      : { live: false, title: '', mediaUrl: '' };
+
+    if (els.pageStatus) {
+      els.pageStatus.textContent = live ? 'LIVE' : (els._inspect.title || '—');
+    }
+
+    if (els.liveOpts) {
+      els.liveOpts.style.display = live ? 'grid' : 'none';
+    }
+
+    if (els.archiveBtn) {
+      els.archiveBtn.textContent = live ? 'Start archiving this stream' : 'Archive current tab';
+    }
+  }
+
+  async function inspectActiveTab(adapter, common) {
+    if (typeof adapter.getActiveTab !== 'function' || typeof adapter.executeScript !== 'function') {
+      return { live: false, title: '', mediaUrl: '' };
+    }
+    if (typeof common.inspectPageLive !== 'function') {
+      return { live: false, title: '', mediaUrl: '' };
+    }
+
+    try {
+      const tab = await adapter.getActiveTab();
+      if (!tab || tab.id == null) return { live: false, title: '', mediaUrl: '' };
+      const result = await adapter.executeScript({ tabId: tab.id, func: common.inspectPageLive });
+      if (!result || typeof result !== 'object') return { live: false, title: '', mediaUrl: '' };
+      return {
+        live: Boolean(result.live),
+        title: String(result.title || ''),
+        mediaUrl: String(result.mediaUrl || '')
+      };
+    } catch {
+      return { live: false, title: '', mediaUrl: '' };
+    }
+  }
+
   async function refresh(adapter, common, els) {
     hideError(els);
 
@@ -32,6 +74,9 @@
     els.cookieCount.textContent = '—';
 
     els.server.textContent = serverUrl ? new URL(serverUrl).host : 'Not configured';
+
+    const inspect = await inspectActiveTab(adapter, common);
+    setLiveUi(els, inspect);
 
     if (!serverUrl) {
       els.auth.textContent = 'Not configured';
@@ -112,6 +157,15 @@
     const enabledMap = cookiesEnabledBySite && typeof cookiesEnabledBySite === 'object' ? cookiesEnabledBySite : {};
     const sendCookies = siteKey ? Boolean(enabledMap[siteKey]) : false;
 
+    const inspect = els._inspect || { live: false, title: '', mediaUrl: '' };
+    const liveFromStart = Boolean(inspect.live && els.liveFromStart && els.liveFromStart.checked);
+    const waitMinutes = inspect.live && els.waitMinutes
+      ? Number(els.waitMinutes.value)
+      : 0;
+    const waitSeconds = Number.isFinite(waitMinutes) && waitMinutes > 0
+      ? Math.floor(waitMinutes * 60)
+      : 0;
+
     els.archiveBtn.disabled = true;
 
     try {
@@ -119,7 +173,14 @@
         await uploadCookiesForUrl(adapter, common, { serverUrl, authToken, url });
       }
 
-      const data = await common.archiveUrl({ serverUrl, authToken, url });
+      const data = await common.archiveUrl({
+        serverUrl,
+        authToken,
+        url,
+        live_from_start: liveFromStart,
+        wait_for_video: waitSeconds,
+        media_url: inspect.live ? (inspect.mediaUrl || '') : ''
+      });
       const redirect = data?.redirect;
 
       if (redirect) {
@@ -184,12 +245,17 @@
       auth: document.getElementById('auth'),
       jobs: document.getElementById('jobs'),
       site: document.getElementById('site'),
+      pageStatus: document.getElementById('pageStatus'),
+      liveOpts: document.getElementById('liveOpts'),
+      liveFromStart: document.getElementById('liveFromStart'),
+      waitMinutes: document.getElementById('waitMinutes'),
       sendCookies: document.getElementById('sendCookies'),
       cookieCount: document.getElementById('cookieCount'),
       archiveBtn: document.getElementById('archiveBtn'),
       loginBtn: document.getElementById('loginBtn'),
       settingsBtn: document.getElementById('settingsBtn'),
-      error: document.getElementById('error')
+      error: document.getElementById('error'),
+      _inspect: { live: false, title: '', mediaUrl: '' }
     };
 
     document.addEventListener('DOMContentLoaded', async () => {

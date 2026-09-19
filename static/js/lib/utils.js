@@ -6,6 +6,28 @@ export function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+/** Seek after metadata is ready; coalesce rapid seeks onto the latest time. */
+export function seekVideo(el, time) {
+  if (!el || !Number.isFinite(time) || time < 0) return;
+  el._pendingSeek = time;
+  const apply = () => {
+    const t = el._pendingSeek;
+    if (!Number.isFinite(t) || el.readyState < 1) return;
+    if (Math.abs((el.currentTime || 0) - t) < 0.04) return;
+    try { el.currentTime = t; } catch (_) {}
+  };
+  if (el.readyState >= 1) {
+    apply();
+    return;
+  }
+  if (el._seekOnMeta) return;
+  el._seekOnMeta = true;
+  el.addEventListener('loadedmetadata', () => {
+    el._seekOnMeta = false;
+    apply();
+  }, { once: true });
+}
+
 export function isFiniteNumber(v) {
   return typeof v === 'number' && isFinite(v);
 }

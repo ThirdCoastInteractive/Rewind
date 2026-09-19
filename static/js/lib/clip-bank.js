@@ -1,3 +1,4 @@
+import { pageTimeout, pageFetch } from './page-scope.js';
 import { normalizeClip } from './utils.js';
 
 /**
@@ -76,7 +77,7 @@ export class ClipBank extends EventTarget {
     const oldIds = new Set(oldClips.map(c => c.id));
 
     try {
-      const res = await fetch(
+      const res = await pageFetch(
         `/api/videos/${encodeURIComponent(this._videoID)}/clips`,
         { headers: { 'Accept': 'application/json' } }
       );
@@ -131,7 +132,7 @@ export class ClipBank extends EventTarget {
    */
   scheduleReload() {
     clearTimeout(this._reloadTimer);
-    this._reloadTimer = setTimeout(() => this.reload(), 50);
+    this._reloadTimer = pageTimeout(() => this.reload(), 50);
   }
 
   // ---------------------------------------------------------------------------
@@ -210,7 +211,7 @@ export class ClipBank extends EventTarget {
 
     // Clip not in local store yet - SSE may still be loading the DOM.
     if (retries > 0) {
-      setTimeout(() => this._resolveSelection(clipId, retries - 1), 100);
+      pageTimeout(() => this._resolveSelection(clipId, retries - 1), 100);
     }
   }
 }

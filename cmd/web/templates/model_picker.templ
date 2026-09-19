@@ -1,0 +1,29 @@
+package templates
+
+import "github.com/dustin/go-humanize"
+import "fmt"
+
+templ ModelHardware(raw []byte) {
+	<section class="rw-panel p-3 space-y-2" aria-label="Inference hardware">
+		<h4 class="font-bold">Inference hardware</h4>
+		if inventoryHardware(raw).CPUs == 0 {
+			<p>Hardware telemetry unavailable. Check the ML service.</p>
+		} else {
+			<p>{ fmt.Sprint(inventoryHardware(raw).CPUs) } logical CPUs · { humanize.Bytes(inventoryHardware(raw).Available) } available / { humanize.Bytes(inventoryHardware(raw).RAM) } RAM</p>
+			for _, gpu := range inventoryHardware(raw).GPUs {
+				<p>{ gpu.Name } · { humanize.Bytes(gpu.Free) } free / { humanize.Bytes(gpu.Total) } GPU memory</p>
+			}
+			if len(inventoryHardware(raw).GPUs) == 0 {
+				<p>No GPU telemetry detected in this container. CPU inference can work; this does not prove the host has no GPU.</p>
+			}
+			<p class="text-xs">Detected devices are not a compatibility guarantee. NVIDIA, AMD and Intel require matching runtime libraries and device access. GPU memory is shown per device, not pooled.</p>
+			if inventoryHardware(raw).RemoteOllama {
+				<p>Ollama is remote. Hardware above belongs to the Rewind ML worker; loaded-model allocation comes from Ollama.</p>
+			}
+		}
+	</section>
+}
+
+templ ModelActionStatus(message string) {
+	<div id="model-action-status" role="status">{ message }</div>
+}

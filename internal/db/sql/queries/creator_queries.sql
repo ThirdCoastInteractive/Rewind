@@ -73,6 +73,52 @@ WHERE id = sqlc.arg(id)
 -- name: GetCreatorByNameCI :one
 SELECT * FROM creators WHERE lower(name) = lower(sqlc.arg(name)) LIMIT 1;
 
+-- CreateCreatorBundle inserts a named grouping of creators (e.g. Gas Digital).
+-- name: CreateCreatorBundle :one
+INSERT INTO creator_bundles (name, notes, search)
+VALUES (sqlc.arg(name), COALESCE(sqlc.narg(notes), ''), setweight(to_tsvector('simple', sqlc.arg(name)), 'A'))
+RETURNING *;
+
+-- ListCreatorBundles returns every bundle with how many creators it contains.
+-- name: ListCreatorBundles :many
+SELECT b.*, COUNT(m.creator_id)::bigint AS member_count
+FROM creator_bundles b
+LEFT JOIN creator_bundle_members m ON m.bundle_id = b.id
+GROUP BY b.id
+ORDER BY b.name;
+
+-- GetCreatorBundle fetches one bundle by id.
+-- name: GetCreatorBundle :one
+SELECT * FROM creator_bundles WHERE id = sqlc.arg(id);
+
+-- ListCreatorBundleMembers returns the creators in a bundle.
+-- name: ListCreatorBundleMembers :many
+SELECT c.*
+FROM creator_bundle_members m
+JOIN creators c ON c.id = m.creator_id
+WHERE m.bundle_id = sqlc.arg(bundle_id)
+ORDER BY c.name;
+
+-- ListBundlesForCreator returns bundles that include this creator.
+-- name: ListBundlesForCreator :many
+SELECT b.*
+FROM creator_bundle_members m
+JOIN creator_bundles b ON b.id = m.bundle_id
+WHERE m.creator_id = sqlc.arg(creator_id)
+ORDER BY b.name;
+
+-- AddCreatorBundleMember links a creator into a bundle.
+-- name: AddCreatorBundleMember :exec
+INSERT INTO creator_bundle_members (bundle_id, creator_id)
+VALUES (sqlc.arg(bundle_id), sqlc.arg(creator_id))
+ON CONFLICT (bundle_id, creator_id) DO NOTHING;
+
+-- RemoveCreatorBundleMember unlinks a creator from a bundle.
+-- name: RemoveCreatorBundleMember :exec
+DELETE FROM creator_bundle_members
+WHERE bundle_id = sqlc.arg(bundle_id)
+  AND creator_id = sqlc.arg(creator_id);
+
 -- ListResolvedOutlinks returns archived-to-archived outlink edges for creator grouping.
 -- name: ListResolvedOutlinks :many
 SELECT

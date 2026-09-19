@@ -1,0 +1,4 @@
+-- Comment/speech scoring SQL lives in commenter_queries.sql (UpsertCommentScore,
+-- ListUnscoredCommentsForVideo, CommentClassifyInputHash, UpsertSpeechScore,
+-- ListSpeechScoresForVideo). This file is a pointer so the ML leaf does not
+-- reintroduce duplicate sqlc names.

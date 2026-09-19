@@ -9,36 +9,37 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
-// HandleAdminExportsDeleteAll serves POST /admin/exports/delete-all, removing all export records and their files from disk.
+// HandleAdminExportsDeleteAll serves POST /admin/exports/delete-all for the selected queue.
 func HandleAdminExportsDeleteAll(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
+		kind := exportKind(c)
 
-		// Get all file paths first
-		readyFiles, _ := q.ListClipExportFilesByStatus(ctx, "ready")
-
-		// Delete files
-		deletedFiles := 0
-		for _, exp := range readyFiles {
-			if exp.FilePath != "" {
-				if err := os.Remove(exp.FilePath); err == nil {
-					deletedFiles++
+		if kind == "stitch" {
+			files, _ := q.ListStitchExportFilesByStatus(ctx, db.ExportStatusReady)
+			for _, exp := range files {
+				if exp.FilePath != "" {
+					_ = os.Remove(exp.FilePath)
 				}
 			}
+			if err := q.DeleteAllStitchExports(ctx); err != nil {
+				slog.Error("failed to delete all stitch exports", "error", err)
+				return c.String(500, "failed to delete exports")
+			}
+			return c.Redirect(303, "/admin/exports?"+exportKindQuery(kind)+"&alert=success&msg=Stitch+exports+deleted")
 		}
 
-		// Delete all DB records
+		readyFiles, _ := q.ListClipExportFilesByStatus(ctx, db.ExportStatusReady)
+		for _, exp := range readyFiles {
+			if exp.FilePath != "" {
+				_ = os.Remove(exp.FilePath)
+			}
+		}
 		if err := q.DeleteAllClipExports(ctx); err != nil {
-			slog.Error("failed to delete all exports", "error", err)
+			slog.Error("failed to delete all clip exports", "error", err)
 			return c.String(500, "failed to delete exports")
 		}
-
-		slog.Info("deleted all exports", "files_deleted", deletedFiles)
-
-		// Redirect back to refresh
-		return c.Redirect(303, "/admin/exports?alert=success&msg=All+exports+deleted")
+		return c.Redirect(303, "/admin/exports?"+exportKindQuery(kind)+"&alert=success&msg=Clip+exports+deleted")
 	}
 }
-
-// HandleAdminExportsDeleteByStatus deletes exports by status.

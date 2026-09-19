@@ -65,7 +65,7 @@ INSERT INTO clips (
     $7,
     $8,
     $9
-) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 `
 
 type CreateClipParams struct {
@@ -102,7 +102,7 @@ type CreateClipParams struct {
 //	    $7,
 //	    $8,
 //	    $9
-//	) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+//	) RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 func (q *Queries) CreateClip(ctx context.Context, arg *CreateClipParams) (*Clip, error) {
 	row := q.db.QueryRow(ctx, createClip,
 		arg.VideoID,
@@ -132,6 +132,8 @@ func (q *Queries) CreateClip(ctx context.Context, arg *CreateClipParams) (*Clip,
 		&i.Crops,
 		&i.FilterStack,
 		&i.ShotList,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
 }
@@ -564,13 +566,13 @@ func (q *Queries) FinishClipExportReady(ctx context.Context, arg *FinishClipExpo
 }
 
 const getClip = `-- name: GetClip :one
-SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 WHERE id = $1
 `
 
 // GetClip
 //
-//	SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+//	SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 //	WHERE id = $1
 func (q *Queries) GetClip(ctx context.Context, id pgtype.UUID) (*Clip, error) {
 	row := q.db.QueryRow(ctx, getClip, id)
@@ -591,6 +593,8 @@ func (q *Queries) GetClip(ctx context.Context, id pgtype.UUID) (*Clip, error) {
 		&i.Crops,
 		&i.FilterStack,
 		&i.ShotList,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
 }
@@ -1010,14 +1014,14 @@ func (q *Queries) ListClipExportsForAdmin(ctx context.Context, arg *ListClipExpo
 }
 
 const listClipsByVideo = `-- name: ListClipsByVideo :many
-SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 WHERE video_id = $1
 ORDER BY start_ts ASC
 `
 
 // ListClipsByVideo
 //
-//	SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list FROM clips
+//	SELECT id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref FROM clips
 //	WHERE video_id = $1
 //	ORDER BY start_ts ASC
 func (q *Queries) ListClipsByVideo(ctx context.Context, videoID pgtype.UUID) ([]*Clip, error) {
@@ -1045,6 +1049,8 @@ func (q *Queries) ListClipsByVideo(ctx context.Context, videoID pgtype.UUID) ([]
 			&i.Crops,
 			&i.FilterStack,
 			&i.ShotList,
+			&i.Source,
+			&i.SourceRef,
 		); err != nil {
 			return nil, err
 		}
@@ -1218,7 +1224,7 @@ SET
     filter_stack = COALESCE($8, filter_stack),
     updated_at = NOW()
 WHERE id = $9
-RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 `
 
 type UpdateClipParams struct {
@@ -1247,7 +1253,7 @@ type UpdateClipParams struct {
 //	    filter_stack = COALESCE($8, filter_stack),
 //	    updated_at = NOW()
 //	WHERE id = $9
-//	RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list
+//	RETURNING id, video_id, start_ts, end_ts, duration, created_at, updated_at, created_by, title, description, color, tags, crops, filter_stack, shot_list, source, source_ref
 func (q *Queries) UpdateClip(ctx context.Context, arg *UpdateClipParams) (*Clip, error) {
 	row := q.db.QueryRow(ctx, updateClip,
 		arg.StartTs,
@@ -1277,6 +1283,8 @@ func (q *Queries) UpdateClip(ctx context.Context, arg *UpdateClipParams) (*Clip,
 		&i.Crops,
 		&i.FilterStack,
 		&i.ShotList,
+		&i.Source,
+		&i.SourceRef,
 	)
 	return &i, err
 }

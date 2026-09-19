@@ -1,3 +1,4 @@
+import { listen as pageListen } from './page-scope.js';
 import { clamp, clampNumber, parseAspectRatio, isFiniteNumber } from './utils.js';
 
 /**
@@ -15,6 +16,7 @@ export class CropOverlay {
     this.cropDragMode = null;
     this.cropDragStart = null;
     this.selectedCropId = null;
+    this.editing = true;
 
     // DOM (set after construction by the editor)
     this.cropLayerEl = null;
@@ -32,6 +34,8 @@ export class CropOverlay {
   }
 
   getCropSurfaceAspectRatio() {
+    const video = this.editor.video;
+    if (video?.videoWidth && video?.videoHeight) return video.videoWidth / video.videoHeight;
     const el = this.cropSurfaceEl;
     const w = el?.clientWidth || 0;
     const h = el?.clientHeight || 0;
@@ -113,6 +117,7 @@ export class CropOverlay {
   }
 
   loadCrop(cropId, x, y, width, height, aspect) {
+    this.updateSurfaceLayout();
     this.setSelectedCropId(cropId);
 
     let aspectStr = typeof aspect === 'string' ? aspect.trim() : '';
@@ -129,6 +134,7 @@ export class CropOverlay {
 
   setSelectedCropId(cropId) {
     this.selectedCropId = cropId || null;
+    this.editing = true;
 
     const input = document.querySelector('[data-cut-selected-crop-id]');
     if (input) {
@@ -139,27 +145,12 @@ export class CropOverlay {
 
   persistSelectedCrop() {
     if (!this.selectedCropId) return;
-
-    const xInput = document.querySelector('[data-cut-crop-x]');
-    const yInput = document.querySelector('[data-cut-crop-y]');
-    const wInput = document.querySelector('[data-cut-crop-width]');
-    const hInput = document.querySelector('[data-cut-crop-height]');
-    const tokenInput = document.querySelector('[data-cut-crop-save-token]');
-
-    if (!xInput || !yInput || !wInput || !hInput || !tokenInput) return;
-
-    xInput.value = this.crop.x;
-    yInput.value = this.crop.y;
-    wInput.value = this.crop.width;
-    hInput.value = this.crop.height;
-
-    xInput.dispatchEvent(new Event('input', { bubbles: true }));
-    yInput.dispatchEvent(new Event('input', { bubbles: true }));
-    wInput.dispatchEvent(new Event('input', { bubbles: true }));
-    hInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-    tokenInput.value = Date.now();
-    tokenInput.dispatchEvent(new Event('input', { bubbles: true }));
+    // A save is an action, not a reactive effect: selecting another crop must
+    // never replay the last geometry against the newly selected ID.
+    const { x, y, width, height } = this.crop;
+    document.querySelector('[data-crop-save-panel]')?.dispatchEvent(new CustomEvent('crop-save', {
+      detail: { cropId: this.selectedCropId, crop: { x, y, width, height } },
+    }));
   }
 
   updateSurfaceLayout() {
@@ -187,10 +178,18 @@ export class CropOverlay {
   }
 
   renderOverlay() {
+    this.editor.multicam?.renderProgram();
     if (!this.cropRectEl || !this.cropLayerEl || !this.cropSurfaceEl) return;
 
-    const isDefaultCrop = this.crop.width >= 0.99 && this.crop.height >= 0.99;
-    const showCrop = !!this.selectedCropId && !isDefaultCrop;
+    // Full-frame presets still need a visible handle so they can be resized.
+    const showCrop = !!this.selectedCropId && this.editing;
+    const toolbar = document.querySelector('[data-cut-crop-toolbar]');
+    toolbar?.classList.toggle('hidden', !this.selectedCropId);
+    const toggle = toolbar?.querySelector('button');
+    if (toggle) {
+      toggle.textContent = this.editing ? 'Hide crop guides' : 'Edit crop framing';
+      toggle.setAttribute('aria-pressed', String(this.editing));
+    }
     this.cropLayerEl.classList.toggle('hidden', !showCrop);
     if (!showCrop) return;
 
@@ -244,9 +243,9 @@ export class CropOverlay {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    pageListen(window, 'pointermove', onMove);
+    pageListen(window, 'pointerup', onUp);
+    pageListen(window, 'pointercancel', onUp);
   }
 
   getCropGuides() {

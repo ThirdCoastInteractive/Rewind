@@ -5,11 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"thirdcoast.systems/rewind/pkg/useragent"
 )
 
 // Well-known host aliases. Key: input host. Value: canonical domain.
@@ -261,7 +261,7 @@ func followRedirects(ctx context.Context, u *url.URL) (*url.URL, bool) {
 	if err != nil {
 		return nil, false
 	}
-	req.Header.Set("User-Agent", os.Getenv("USER_AGENT"))
+	req.Header.Set("User-Agent", useragent.Get())
 
 	resp, err := client.Do(req)
 	if err != nil {

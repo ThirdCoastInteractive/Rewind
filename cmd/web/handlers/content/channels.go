@@ -8,12 +8,16 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
+	"thirdcoast.systems/rewind/internal/catalog"
 	"thirdcoast.systems/rewind/internal/channelid"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/osint"
+	"thirdcoast.systems/rewind/internal/wiki"
 )
 
 // HandleChannelsPage serves GET /channels, listing every uploader in the
@@ -27,6 +31,57 @@ func HandleChannelsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) ech
 
 		// Fast shell; the list loads asynchronously via /api/channels/index.
 		return templates.Channels(username).Render(c.Request().Context(), c.Response())
+	}
+}
+
+// HandleIndexChannelCatalog starts or refreshes every catalog feed for a channel.
+func HandleIndexChannelCatalog(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		userID, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return c.Redirect(302, "/login")
+		}
+		name := strings.TrimSpace(c.FormValue("uploader"))
+		ctx := c.Request().Context()
+		q := dbc.Queries(ctx)
+		overview, err := q.GetChannelOverview(ctx, name)
+		if err != nil {
+			return c.Redirect(302, "/channels")
+		}
+		ch := lookupChannelByURL(ctx, q, overview)
+		if ch == nil {
+			return echo.NewHTTPError(404, "channel identity not found")
+		}
+		if catalog.SkipPlatform(ch.Platform) {
+			return c.Redirect(302, "/channels/view?name="+url.QueryEscape(name))
+		}
+		refresh := c.FormValue("refresh") == "true"
+		if _, err := catalog.IndexChannel(ctx, q, ch, userID, refresh); err != nil {
+			slog.Error("failed to create channel catalog crawls", "error", err, "channel_id", ch.ID)
+			return echo.NewHTTPError(500, "could not start catalog")
+		}
+		return c.Redirect(302, "/channels/view?name="+url.QueryEscape(name))
+	}
+}
+
+// HandleCatalogCrawlControl pauses, resumes, cancels, or retries a crawl.
+func HandleCatalogCrawlControl(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if _, _, err := common.RequireSessionUser(c, sm); err != nil {
+			return c.Redirect(302, "/login")
+		}
+		id, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return err
+		}
+		status := map[string]string{"pause": "paused", "resume": "queued", "cancel": "cancelled", "retry": "queued"}[c.Param("action")]
+		if status == "" {
+			return echo.NewHTTPError(400, "unknown catalog action")
+		}
+		if err := dbc.Queries(c.Request().Context()).SetCatalogCrawlStatus(c.Request().Context(), &db.SetCatalogCrawlStatusParams{ID: id, Status: status, LastError: ""}); err != nil {
+			return err
+		}
+		return c.Redirect(302, c.Request().Referer())
 	}
 }
 
@@ -65,15 +120,36 @@ func HandleChannelViewPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		}
 
 		var edges []*db.ListChannelEdgesForChannelRow
+		var crawls []*db.CatalogCrawl
+		var vaultPages []wiki.Page
+		var channelID pgtype.UUID
+		homeSlug := wiki.SlugFromName(overview.Uploader)
+		skipCatalog := catalog.SkipPlatform(channelid.PlatformFromSrc(overview.ChannelURL)) ||
+			catalog.SkipPlatform(channelid.PlatformFromSrc(overview.UploaderURL))
 		if ch := lookupChannelByURL(ctx, q, overview); ch != nil {
+			channelID = ch.ID
+			if catalog.SkipPlatform(ch.Platform) {
+				skipCatalog = true
+			}
 			edges, err = q.ListChannelEdgesForChannel(ctx, ch.ID)
 			if err != nil {
 				slog.Error("failed to list channel edges", "error", err, "uploader", name)
 				edges = nil
 			}
+			crawls, err = q.ListCatalogCrawlsForChannel(ctx, ch.ID)
+			if err != nil {
+				slog.Error("failed to list channel catalog crawls", "error", err, "channel_id", ch.ID)
+				crawls = nil
+			}
+			vaultPages, _ = wikiStore(dbc).PagesForChannel(ctx, ch.ID)
+			vaultPages = decorateWikiPages(vaultPages, wikiClipLookup(ctx, dbc))
+		}
+		eng, engErr := osint.LoadChannelEngagement(ctx, dbc.Pool, name, channelID)
+		if engErr != nil {
+			slog.Error("failed to load channel comment engagement", "error", engErr, "uploader", name)
 		}
 
-		return templates.ChannelView(overview, videos, username, edges).Render(ctx, c.Response())
+		return templates.ChannelView(overview, videos, username, edges, crawls, skipCatalog, vaultPages, homeSlug, eng).Render(ctx, c.Response())
 	}
 }
 

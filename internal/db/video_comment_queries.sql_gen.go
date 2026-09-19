@@ -12,21 +12,17 @@ import (
 )
 
 const countVideoComments = `-- name: CountVideoComments :one
-SELECT COUNT(*)
-FROM video_comments
-WHERE video_id = $1
+SELECT COALESCE((SELECT comment_count FROM videos WHERE id = $1), 0)::bigint
 `
 
 // CountVideoComments returns total comments ingested for a video.
 //
-//	SELECT COUNT(*)
-//	FROM video_comments
-//	WHERE video_id = $1
-func (q *Queries) CountVideoComments(ctx context.Context, videoID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countVideoComments, videoID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+//	SELECT COALESCE((SELECT comment_count FROM videos WHERE id = $1), 0)::bigint
+func (q *Queries) CountVideoComments(ctx context.Context, id pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countVideoComments, id)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const listDistinctCommentAuthorURLs = `-- name: ListDistinctCommentAuthorURLs :many
@@ -66,7 +62,7 @@ func (q *Queries) ListDistinctCommentAuthorURLs(ctx context.Context, videoID pgt
 
 const listVideoCommentReplies = `-- name: ListVideoCommentReplies :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
        COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
        COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -94,6 +90,7 @@ type ListVideoCommentRepliesRow struct {
 	Author           *string            `db:"author" json:"Author"`
 	AuthorID         *string            `db:"author_id" json:"AuthorID"`
 	AuthorURL        *string            `db:"author_url" json:"AuthorUrl"`
+	CommenterID      pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
 	PublishedAt      pgtype.Timestamptz `db:"published_at" json:"PublishedAt"`
 	LikeCount        *int64             `db:"like_count" json:"LikeCount"`
 	Text             *string            `db:"text" json:"Text"`
@@ -111,7 +108,7 @@ type ListVideoCommentRepliesRow struct {
 // the same CommentRow component.
 //
 //	SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-//	       c.published_at, c.like_count, c.text, c.created_at,
+//	       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 //	       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
 //	       COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
 //	       COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -141,6 +138,7 @@ func (q *Queries) ListVideoCommentReplies(ctx context.Context, arg *ListVideoCom
 			&i.Author,
 			&i.AuthorID,
 			&i.AuthorURL,
+			&i.CommenterID,
 			&i.PublishedAt,
 			&i.LikeCount,
 			&i.Text,
@@ -164,7 +162,7 @@ func (q *Queries) ListVideoCommentReplies(ctx context.Context, arg *ListVideoCom
 
 const listVideoComments = `-- name: ListVideoComments :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
        COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
        COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -196,6 +194,7 @@ type ListVideoCommentsRow struct {
 	Author           *string            `db:"author" json:"Author"`
 	AuthorID         *string            `db:"author_id" json:"AuthorID"`
 	AuthorURL        *string            `db:"author_url" json:"AuthorUrl"`
+	CommenterID      pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
 	PublishedAt      pgtype.Timestamptz `db:"published_at" json:"PublishedAt"`
 	LikeCount        *int64             `db:"like_count" json:"LikeCount"`
 	Text             *string            `db:"text" json:"Text"`
@@ -218,7 +217,7 @@ type ListVideoCommentsRow struct {
 // ::text/::boolean casts on the COALESCE results give sqlc concrete Go types.
 //
 //	SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-//	       c.published_at, c.like_count, c.text, c.created_at,
+//	       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 //	       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
 //	       COALESCE((c.raw->>'is_favorited')::boolean, false)::boolean      AS is_favorited,
 //	       COALESCE((c.raw->>'is_pinned')::boolean, false)::boolean         AS is_pinned,
@@ -251,6 +250,7 @@ func (q *Queries) ListVideoComments(ctx context.Context, arg *ListVideoCommentsP
 			&i.Author,
 			&i.AuthorID,
 			&i.AuthorURL,
+			&i.CommenterID,
 			&i.PublishedAt,
 			&i.LikeCount,
 			&i.Text,
@@ -273,9 +273,130 @@ func (q *Queries) ListVideoComments(ctx context.Context, arg *ListVideoCommentsP
 	return items, nil
 }
 
+const refreshVideoCommentCount = `-- name: RefreshVideoCommentCount :exec
+UPDATE videos
+SET comment_count = (SELECT COUNT(*) FROM video_comments WHERE video_id = $1),
+    updated_at = NOW()
+WHERE id = $1
+`
+
+// RefreshVideoCommentCount caches the exact normalized comment total after an
+// ingest batch. This avoids recounting a hot, actively-written table on reads.
+//
+//	UPDATE videos
+//	SET comment_count = (SELECT COUNT(*) FROM video_comments WHERE video_id = $1),
+//	    updated_at = NOW()
+//	WHERE id = $1
+func (q *Queries) RefreshVideoCommentCount(ctx context.Context, videoID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, refreshVideoCommentCount, videoID)
+	return err
+}
+
+const searchCommentsScoped = `-- name: SearchCommentsScoped :many
+SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at, v.title, v.uploader
+FROM video_comments c
+JOIN videos v ON v.id = c.video_id
+WHERE (
+    c.search @@ plainto_tsquery('simple', $1::text)
+    OR COALESCE(c.text, '') ILIKE '%' || $1 || '%'
+    OR COALESCE(c.author, '') ILIKE '%' || $1 || '%'
+  )
+  AND ($2::uuid IS NULL OR c.video_id = $2)
+  AND ($3::text IS NULL OR v.uploader = $3)
+ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
+LIMIT $5::int
+OFFSET $4::int
+`
+
+type SearchCommentsScopedParams struct {
+	Query      string      `db:"query" json:"Query"`
+	VideoID    pgtype.UUID `db:"video_id" json:"VideoID"`
+	Uploader   *string     `db:"uploader" json:"Uploader"`
+	PageOffset int32       `db:"page_offset" json:"PageOffset"`
+	PageSize   int32       `db:"page_size" json:"PageSize"`
+}
+
+type SearchCommentsScopedRow struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Source      string             `db:"source" json:"Source"`
+	CommentID   string             `db:"comment_id" json:"CommentID"`
+	ParentID    *string            `db:"parent_id" json:"ParentID"`
+	Author      *string            `db:"author" json:"Author"`
+	AuthorID    *string            `db:"author_id" json:"AuthorID"`
+	AuthorURL   *string            `db:"author_url" json:"AuthorUrl"`
+	CommenterID pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
+	PublishedAt pgtype.Timestamptz `db:"published_at" json:"PublishedAt"`
+	LikeCount   *int64             `db:"like_count" json:"LikeCount"`
+	Text        *string            `db:"text" json:"Text"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	Title       string             `db:"title" json:"Title"`
+	Uploader    string             `db:"uploader" json:"Uploader"`
+}
+
+// SearchCommentsScoped searches comments on one video, one uploader, or the
+// whole library. video_id and uploader are optional independently.
+//
+//	SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
+//	       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at, v.title, v.uploader
+//	FROM video_comments c
+//	JOIN videos v ON v.id = c.video_id
+//	WHERE (
+//	    c.search @@ plainto_tsquery('simple', $1::text)
+//	    OR COALESCE(c.text, '') ILIKE '%' || $1 || '%'
+//	    OR COALESCE(c.author, '') ILIKE '%' || $1 || '%'
+//	  )
+//	  AND ($2::uuid IS NULL OR c.video_id = $2)
+//	  AND ($3::text IS NULL OR v.uploader = $3)
+//	ORDER BY c.like_count DESC NULLS LAST, c.published_at DESC NULLS LAST, c.comment_id ASC
+//	LIMIT $5::int
+//	OFFSET $4::int
+func (q *Queries) SearchCommentsScoped(ctx context.Context, arg *SearchCommentsScopedParams) ([]*SearchCommentsScopedRow, error) {
+	rows, err := q.db.Query(ctx, searchCommentsScoped,
+		arg.Query,
+		arg.VideoID,
+		arg.Uploader,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*SearchCommentsScopedRow
+	for rows.Next() {
+		var i SearchCommentsScopedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.VideoID,
+			&i.Source,
+			&i.CommentID,
+			&i.ParentID,
+			&i.Author,
+			&i.AuthorID,
+			&i.AuthorURL,
+			&i.CommenterID,
+			&i.PublishedAt,
+			&i.LikeCount,
+			&i.Text,
+			&i.CreatedAt,
+			&i.Title,
+			&i.Uploader,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchVideoComments = `-- name: SearchVideoComments :many
 SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-       c.published_at, c.like_count, c.text, c.created_at,
+       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
        ts_headline('simple', COALESCE(c.text, ''), plainto_tsquery('simple', $1::text),
                    'StartSel=' || chr(2) || ',StopSel=' || chr(3) || ',HighlightAll=TRUE')::text AS highlighted,
        COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
@@ -314,6 +435,7 @@ type SearchVideoCommentsRow struct {
 	Author           *string            `db:"author" json:"Author"`
 	AuthorID         *string            `db:"author_id" json:"AuthorID"`
 	AuthorURL        *string            `db:"author_url" json:"AuthorUrl"`
+	CommenterID      pgtype.UUID        `db:"commenter_id" json:"CommenterID"`
 	PublishedAt      pgtype.Timestamptz `db:"published_at" json:"PublishedAt"`
 	LikeCount        *int64             `db:"like_count" json:"LikeCount"`
 	Text             *string            `db:"text" json:"Text"`
@@ -334,7 +456,7 @@ type SearchVideoCommentsRow struct {
 // sentinels for <mark> tags safely (see commentfmt.SafeHighlight).
 //
 //	SELECT c.id, c.video_id, c.source, c.comment_id, c.parent_id, c.author, c.author_id, c.author_url,
-//	       c.published_at, c.like_count, c.text, c.created_at,
+//	       c.commenter_id, c.published_at, c.like_count, c.text, c.created_at,
 //	       ts_headline('simple', COALESCE(c.text, ''), plainto_tsquery('simple', $1::text),
 //	                   'StartSel=' || chr(2) || ',StopSel=' || chr(3) || ',HighlightAll=TRUE')::text AS highlighted,
 //	       COALESCE(c.raw->>'author_thumbnail', '')::text               AS author_thumbnail,
@@ -378,6 +500,7 @@ func (q *Queries) SearchVideoComments(ctx context.Context, arg *SearchVideoComme
 			&i.Author,
 			&i.AuthorID,
 			&i.AuthorURL,
+			&i.CommenterID,
 			&i.PublishedAt,
 			&i.LikeCount,
 			&i.Text,

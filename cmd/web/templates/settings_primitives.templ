@@ -1,0 +1,78 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+	"thirdcoast.systems/rewind/internal/runtimecfg"
+)
+
+type settingsPanel struct {
+	Title, Description string
+	Prefixes           []string
+}
+type settingsGroup struct {
+	ID, Title, Description string
+	Panels                 []settingsPanel
+}
+
+func (p settingsPanel) includes(key string) bool {
+	for _, prefix := range p.Prefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+func settingsGroups() []settingsGroup {
+	return []settingsGroup{
+		{"settings-agent", "Agent", "Choose how your assistant works, and how much it can do in a run.", []settingsPanel{
+			{"Assistant model", "The local model used for conversations and archive tools.", []string{"agent.model"}},
+			{"Run limits & context", "Bound the work per run. Continue picks up from a saved checkpoint.", []string{"agent.max_", "agent.context_", "agent.temperature", "agent.concurrency"}},
+		}},
+		{"settings-models", "Models & ML", "Manage your models and the work they power.", []settingsPanel{
+			{"Inference & memory", "Share capacity between interactive conversations and background work.", []string{"ml.concurrent", "ml.resident", "ml.keep_alive"}},
+			{"Context windows", "Models that select meaningful passages from transcripts.", []string{"ml.context_model", "ml.challengers"}},
+			{"Transcription", "Turn speech into searchable text with Whisper.", []string{"whisper."}},
+			{"Vision", "Visual search and indexing of existing videos.", []string{"vision."}},
+		}},
+		{"settings-downloads", "Downloads", "Control download quality and throughput.", []settingsPanel{
+			{"Download behavior", "These defaults apply to new download work.", []string{"downloads."}},
+		}},
+		{"settings-processing", "Processing & exports", "Balance background processing, playback previews, and output quality.", []settingsPanel{
+			{"Worker capacity", "Workers finish active jobs before applying a lower concurrency limit.", []string{"processing."}},
+			{"Seek previews", "Enable additional preview levels for more precise navigation.", []string{"seek."}},
+			{"Export defaults", "Defaults for newly requested exports.", []string{"exports."}},
+		}},
+	}
+}
+
+templ RuntimeSettingField(d runtimecfg.Definition, value any) {
+	if d.Kind == "boolean" {
+		<label class="rw-toggle-row" for={ "setting-" + d.Key }>
+			<span>{ d.Label }</span>
+			<input id={ "setting-" + d.Key } class="rw-switch" type="checkbox" role="switch" checked?={ fmt.Sprint(value) == "true" } data-on:change={ fmt.Sprintf("@put('/api/settings/live/%s?value='+evt.target.checked)", d.Key) }/>
+		</label>
+	} else {
+		<label class="rw-field" for={ "setting-" + d.Key }>
+			<span>{ d.Label }</span>
+			if len(d.Choices)>1 {
+				<select id={ "setting-" + d.Key } data-on:change={ fmt.Sprintf("@put('/api/settings/live/%s?value='+encodeURIComponent(evt.target.value))", d.Key) }>
+					for _,choice:= range d.Choices {
+						<option value={ choice } selected?={ fmt.Sprint(value) == choice }>{ choice }</option>
+					}
+				</select>
+			} else if d.Kind == "number" {
+				<input id={ "setting-" + d.Key } type="number" min={ fmt.Sprint(d.Min) } max={ fmt.Sprint(d.Max) } step={ settingStep(d.Key) } value={ fmt.Sprint(value) } data-on:change={ fmt.Sprintf("if(evt.target.reportValidity()) { @put('/api/settings/live/%s?value='+encodeURIComponent(evt.target.value)) }", d.Key) }/>
+			} else {
+				<input id={ "setting-" + d.Key } type="text" readonly?={ len(d.Choices) == 1 } value={ fmt.Sprint(value) } data-on:change={ fmt.Sprintf("@put('/api/settings/live/%s?value='+encodeURIComponent(evt.target.value))", d.Key) }/>
+			}
+		</label>
+	}
+}
+
+func settingStep(key string) string {
+	if key == "agent.temperature" {
+		return "0.1"
+	}
+	return "1"
+}

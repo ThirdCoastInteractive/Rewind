@@ -419,6 +419,24 @@ func (q *Queries) GetChannelOverview(ctx context.Context, uploader string) (*Get
 	return &i, err
 }
 
+const hasUnresolvedChannelEdges = `-- name: HasUnresolvedChannelEdges :one
+SELECT EXISTS(
+    SELECT 1 FROM channel_edges WHERE to_channel_id IS NULL AND to_url <> ''
+)::boolean
+`
+
+// HasUnresolvedChannelEdges
+//
+//	SELECT EXISTS(
+//	    SELECT 1 FROM channel_edges WHERE to_channel_id IS NULL AND to_url <> ''
+//	)::boolean
+func (q *Queries) HasUnresolvedChannelEdges(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUnresolvedChannelEdges)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const insertChannelEdge = `-- name: InsertChannelEdge :exec
 INSERT INTO channel_edges (from_channel_id, to_channel_id, to_url, kind, evidence, video_id)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -449,6 +467,97 @@ func (q *Queries) InsertChannelEdge(ctx context.Context, arg *InsertChannelEdgeP
 	return err
 }
 
+const listChannelCatalog = `-- name: ListChannelCatalog :many
+SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+       v.view_count, v.media, v.src, v.description
+FROM videos v
+WHERE (
+        $1::uuid IS NOT NULL
+        AND v.channel_row_id = $1
+      )
+   OR (
+        $1::uuid IS NULL
+        AND $2::text IS NOT NULL
+        AND v.uploader = $2
+      )
+ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+LIMIT $4
+OFFSET $3
+`
+
+type ListChannelCatalogParams struct {
+	ChannelRowID pgtype.UUID `db:"channel_row_id" json:"ChannelRowID"`
+	Uploader     *string     `db:"uploader" json:"Uploader"`
+	PageOffset   int32       `db:"page_offset" json:"PageOffset"`
+	PageLimit    int32       `db:"page_limit" json:"PageLimit"`
+}
+
+type ListChannelCatalogRow struct {
+	ID              pgtype.UUID `db:"id" json:"ID"`
+	Title           string      `db:"title" json:"Title"`
+	Uploader        string      `db:"uploader" json:"Uploader"`
+	Format          string      `db:"format" json:"Format"`
+	UploadDate      pgtype.Date `db:"upload_date" json:"UploadDate"`
+	DurationSeconds *int32      `db:"duration_seconds" json:"DurationSeconds"`
+	ViewCount       *int64      `db:"view_count" json:"ViewCount"`
+	Media           string      `db:"media" json:"Media"`
+	Src             string      `db:"src" json:"Src"`
+	Description     string      `db:"description" json:"Description"`
+}
+
+// ListChannelCatalog is titles + descriptions for MCP channel analysis.
+//
+//	SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+//	       v.view_count, v.media, v.src, v.description
+//	FROM videos v
+//	WHERE (
+//	        $1::uuid IS NOT NULL
+//	        AND v.channel_row_id = $1
+//	      )
+//	   OR (
+//	        $1::uuid IS NULL
+//	        AND $2::text IS NOT NULL
+//	        AND v.uploader = $2
+//	      )
+//	ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+//	LIMIT $4
+//	OFFSET $3
+func (q *Queries) ListChannelCatalog(ctx context.Context, arg *ListChannelCatalogParams) ([]*ListChannelCatalogRow, error) {
+	rows, err := q.db.Query(ctx, listChannelCatalog,
+		arg.ChannelRowID,
+		arg.Uploader,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListChannelCatalogRow
+	for rows.Next() {
+		var i ListChannelCatalogRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Uploader,
+			&i.Format,
+			&i.UploadDate,
+			&i.DurationSeconds,
+			&i.ViewCount,
+			&i.Media,
+			&i.Src,
+			&i.Description,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChannelEdges = `-- name: ListChannelEdges :many
 SELECT e.id, e.created_at, e.updated_at, e.from_channel_id, e.to_channel_id, e.to_url, e.kind, e.evidence, e.video_id, e.weight,
   fc.uploader AS from_uploader, fc.platform AS from_platform,
@@ -460,7 +569,7 @@ JOIN channels fc ON fc.id = e.from_channel_id
 LEFT JOIN creators fcr ON fcr.id = fc.creator_id
 LEFT JOIN channels tc ON tc.id = e.to_channel_id
 LEFT JOIN creators tcr ON tcr.id = tc.creator_id
-ORDER BY e.weight DESC
+ORDER BY (e.to_channel_id IS NOT NULL) DESC, e.weight DESC
 LIMIT 500
 `
 
@@ -498,7 +607,7 @@ type ListChannelEdgesRow struct {
 //	LEFT JOIN creators fcr ON fcr.id = fc.creator_id
 //	LEFT JOIN channels tc ON tc.id = e.to_channel_id
 //	LEFT JOIN creators tcr ON tcr.id = tc.creator_id
-//	ORDER BY e.weight DESC
+//	ORDER BY (e.to_channel_id IS NOT NULL) DESC, e.weight DESC
 //	LIMIT 500
 func (q *Queries) ListChannelEdges(ctx context.Context) ([]*ListChannelEdgesRow, error) {
 	rows, err := q.db.Query(ctx, listChannelEdges)
@@ -689,6 +798,182 @@ func (q *Queries) ListChannelEdgesForCreator(ctx context.Context, creatorID pgty
 	return items, nil
 }
 
+const listChannelNeighborhood = `-- name: ListChannelNeighborhood :many
+SELECT e.id, e.created_at, e.updated_at, e.from_channel_id, e.to_channel_id, e.to_url, e.kind, e.evidence, e.video_id, e.weight,
+  fc.uploader AS from_uploader, fc.platform AS from_platform,
+  COALESCE(tc.uploader, '')::text AS to_uploader, COALESCE(tc.platform, '')::text AS to_platform,
+  CASE WHEN e.from_channel_id = $1 THEN 'out' ELSE 'in' END::text AS direction
+FROM channel_edges e
+JOIN channels fc ON fc.id = e.from_channel_id
+LEFT JOIN channels tc ON tc.id = e.to_channel_id
+WHERE (e.from_channel_id = $1 OR e.to_channel_id = $1)
+  AND ($2::text IS NULL OR e.kind = $2)
+ORDER BY e.weight DESC
+LIMIT $3
+`
+
+type ListChannelNeighborhoodParams struct {
+	ChannelID pgtype.UUID `db:"channel_id" json:"ChannelID"`
+	Kind      *string     `db:"kind" json:"Kind"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
+}
+
+type ListChannelNeighborhoodRow struct {
+	ID            pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	FromChannelID pgtype.UUID        `db:"from_channel_id" json:"FromChannelID"`
+	ToChannelID   pgtype.UUID        `db:"to_channel_id" json:"ToChannelID"`
+	ToURL         string             `db:"to_url" json:"ToUrl"`
+	Kind          string             `db:"kind" json:"Kind"`
+	Evidence      string             `db:"evidence" json:"Evidence"`
+	VideoID       pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Weight        int32              `db:"weight" json:"Weight"`
+	FromUploader  string             `db:"from_uploader" json:"FromUploader"`
+	FromPlatform  string             `db:"from_platform" json:"FromPlatform"`
+	ToUploader    string             `db:"to_uploader" json:"ToUploader"`
+	ToPlatform    string             `db:"to_platform" json:"ToPlatform"`
+	Direction     string             `db:"direction" json:"Direction"`
+}
+
+// ListChannelNeighborhood is the 1-hop graph around one channel, optional kind.
+//
+//	SELECT e.id, e.created_at, e.updated_at, e.from_channel_id, e.to_channel_id, e.to_url, e.kind, e.evidence, e.video_id, e.weight,
+//	  fc.uploader AS from_uploader, fc.platform AS from_platform,
+//	  COALESCE(tc.uploader, '')::text AS to_uploader, COALESCE(tc.platform, '')::text AS to_platform,
+//	  CASE WHEN e.from_channel_id = $1 THEN 'out' ELSE 'in' END::text AS direction
+//	FROM channel_edges e
+//	JOIN channels fc ON fc.id = e.from_channel_id
+//	LEFT JOIN channels tc ON tc.id = e.to_channel_id
+//	WHERE (e.from_channel_id = $1 OR e.to_channel_id = $1)
+//	  AND ($2::text IS NULL OR e.kind = $2)
+//	ORDER BY e.weight DESC
+//	LIMIT $3
+func (q *Queries) ListChannelNeighborhood(ctx context.Context, arg *ListChannelNeighborhoodParams) ([]*ListChannelNeighborhoodRow, error) {
+	rows, err := q.db.Query(ctx, listChannelNeighborhood, arg.ChannelID, arg.Kind, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListChannelNeighborhoodRow
+	for rows.Next() {
+		var i ListChannelNeighborhoodRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FromChannelID,
+			&i.ToChannelID,
+			&i.ToURL,
+			&i.Kind,
+			&i.Evidence,
+			&i.VideoID,
+			&i.Weight,
+			&i.FromUploader,
+			&i.FromPlatform,
+			&i.ToUploader,
+			&i.ToPlatform,
+			&i.Direction,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChannelVideos = `-- name: ListChannelVideos :many
+SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+       v.view_count, v.media, v.src
+FROM videos v
+WHERE (
+        $1::uuid IS NOT NULL
+        AND v.channel_row_id = $1
+      )
+   OR (
+        $1::uuid IS NULL
+        AND $2::text IS NOT NULL
+        AND v.uploader = $2
+      )
+ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+LIMIT $4
+OFFSET $3
+`
+
+type ListChannelVideosParams struct {
+	ChannelRowID pgtype.UUID `db:"channel_row_id" json:"ChannelRowID"`
+	Uploader     *string     `db:"uploader" json:"Uploader"`
+	PageOffset   int32       `db:"page_offset" json:"PageOffset"`
+	PageLimit    int32       `db:"page_limit" json:"PageLimit"`
+}
+
+type ListChannelVideosRow struct {
+	ID              pgtype.UUID `db:"id" json:"ID"`
+	Title           string      `db:"title" json:"Title"`
+	Uploader        string      `db:"uploader" json:"Uploader"`
+	Format          string      `db:"format" json:"Format"`
+	UploadDate      pgtype.Date `db:"upload_date" json:"UploadDate"`
+	DurationSeconds *int32      `db:"duration_seconds" json:"DurationSeconds"`
+	ViewCount       *int64      `db:"view_count" json:"ViewCount"`
+	Media           string      `db:"media" json:"Media"`
+	Src             string      `db:"src" json:"Src"`
+}
+
+// ListChannelVideos is the slim MCP listing for one uploader or channel row.
+//
+//	SELECT v.id, v.title, v.uploader, v.format, v.upload_date, v.duration_seconds,
+//	       v.view_count, v.media, v.src
+//	FROM videos v
+//	WHERE (
+//	        $1::uuid IS NOT NULL
+//	        AND v.channel_row_id = $1
+//	      )
+//	   OR (
+//	        $1::uuid IS NULL
+//	        AND $2::text IS NOT NULL
+//	        AND v.uploader = $2
+//	      )
+//	ORDER BY v.upload_date DESC NULLS LAST, v.created_at DESC
+//	LIMIT $4
+//	OFFSET $3
+func (q *Queries) ListChannelVideos(ctx context.Context, arg *ListChannelVideosParams) ([]*ListChannelVideosRow, error) {
+	rows, err := q.db.Query(ctx, listChannelVideos,
+		arg.ChannelRowID,
+		arg.Uploader,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListChannelVideosRow
+	for rows.Next() {
+		var i ListChannelVideosRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Uploader,
+			&i.Format,
+			&i.UploadDate,
+			&i.DurationSeconds,
+			&i.ViewCount,
+			&i.Media,
+			&i.Src,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChannels = `-- name: ListChannels :many
 WITH agg AS (
     SELECT
@@ -708,6 +993,8 @@ SELECT
     agg.uploader, agg.video_count, agg.total_duration_seconds, agg.total_size_bytes, agg.latest_upload, agg.channel_url, agg.uploader_url,
     (SELECT v2.id FROM videos v2
      WHERE v2.uploader = agg.uploader
+       AND v2.media = 'file'
+       AND COALESCE(v2.thumbnail_path, '') <> ''
      ORDER BY v2.upload_date DESC NULLS LAST, v2.created_at DESC
      LIMIT 1) AS latest_video_id,
     (w.id IS NOT NULL)::boolean AS watched
@@ -735,7 +1022,7 @@ type ListChannelsRow struct {
 }
 
 // ListChannels aggregates the library by uploader: per-channel video counts,
-// totals, a representative latest video (for the thumbnail), the channel URL
+// totals, a representative latest archived video that has a thumbnail, the channel URL
 // (from the generated channel_url/uploader_url columns — never the info
 // JSONB, which is far too heavy to touch per row), and whether a channel
 // watch already covers it. Optional name filter for the list page search box.
@@ -758,6 +1045,8 @@ type ListChannelsRow struct {
 //	    agg.uploader, agg.video_count, agg.total_duration_seconds, agg.total_size_bytes, agg.latest_upload, agg.channel_url, agg.uploader_url,
 //	    (SELECT v2.id FROM videos v2
 //	     WHERE v2.uploader = agg.uploader
+//	       AND v2.media = 'file'
+//	       AND COALESCE(v2.thumbnail_path, '') <> ''
 //	     ORDER BY v2.upload_date DESC NULLS LAST, v2.created_at DESC
 //	     LIMIT 1) AS latest_video_id,
 //	    (w.id IS NOT NULL)::boolean AS watched
@@ -802,7 +1091,7 @@ func (q *Queries) ListChannels(ctx context.Context, filter *string) ([]*ListChan
 
 const listVideosForAnalyze = `-- name: ListVideosForAnalyze :many
 SELECT v.id, v.src, v.title, v.format, v.upload_date, v.duration_seconds, v.view_count, v.like_count,
-  (SELECT COUNT(*) FROM video_comments c WHERE c.video_id = v.id)::bigint AS comment_count
+  v.comment_count
 FROM videos v
 WHERE v.channel_row_id = ANY($1::uuid[])
   AND v.upload_date IS NOT NULL
@@ -824,7 +1113,7 @@ type ListVideosForAnalyzeRow struct {
 // ListVideosForAnalyze returns the public-metric rows the autopsy analyzer needs.
 //
 //	SELECT v.id, v.src, v.title, v.format, v.upload_date, v.duration_seconds, v.view_count, v.like_count,
-//	  (SELECT COUNT(*) FROM video_comments c WHERE c.video_id = v.id)::bigint AS comment_count
+//	  v.comment_count
 //	FROM videos v
 //	WHERE v.channel_row_id = ANY($1::uuid[])
 //	  AND v.upload_date IS NOT NULL

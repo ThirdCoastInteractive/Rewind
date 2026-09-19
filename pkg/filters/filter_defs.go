@@ -151,9 +151,14 @@ func DefaultParamsJS(filterType string) string {
 
 // FilterAddExpr returns the DataStar expression for adding a filter.
 func FilterAddExpr(filterType string, cfg FilterConfig) string {
+	return FilterAddExprWithParams(filterType, DefaultParamsJS(filterType), cfg)
+}
+
+// FilterAddExprWithParams is FilterAddExpr with an explicit JS params object.
+func FilterAddExprWithParams(filterType, paramsJS string, cfg FilterConfig) string {
 	return fmt.Sprintf(
-		"$_filterStack=[...$_filterStack.filter(f=>f&&typeof f==='object'),{type:'%s',params:%s}]; $%s=true; el.closest('details').open=false; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
-		filterType, DefaultParamsJS(filterType), cfg.DirtySignal, cfg.ActionURL,
+		"$_filterStack=[...$_filterStack.filter(f=>f&&typeof f==='object'),{type:'%s',params:%s}]; $%s=true; var d=el.closest('details'); if(d) d.open=false; @post('%s',{filterSignals:{include:/_filterStack|_selectedClipId/,exclude:/^$/}})",
+		filterType, paramsJS, cfg.DirtySignal, cfg.ActionURL,
 	)
 }
 
@@ -425,7 +430,7 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 			},
 		}
 	case "volume":
-		return []FilterParam{{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0, Max: 3, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #333, #22c55e 33%, #eab308 66%, #ef4444)", HintMin: "mute", HintMax: "boost"}}
+		return []FilterParam{{Key: "gain", Label: "Gain", Type: FilterParamRange, Min: 0, Max: 6, Step: 0.01, DefaultVal: "1", Decimals: 2, TrackGradient: "linear-gradient(to right, #333, #22c55e 25%, #eab308 50%, #ef4444)", HintMin: "mute", HintMax: "+15 dB"}}
 	case "bass", "treble":
 		return []FilterParam{{Key: "gain", Label: "dB", Type: FilterParamRange, Min: -12, Max: 12, Step: 0.5, DefaultVal: "0", Decimals: 1, HintMin: "cut", HintMax: "boost"}}
 	case "highpass":
@@ -492,14 +497,17 @@ func ParamsForFilterType(filterType string, cropOptions []FilterOption) []Filter
 			},
 		}}
 	case "normalize":
-		return []FilterParam{{
-			Key: "mode", Label: "Mode", Type: FilterParamIconSelect, DefaultVal: "loudnorm",
-			Options: []FilterOption{
-				{Value: "peak", Label: "Peak", Icon: "mountain"},
-				{Value: "rms", Label: "RMS", Icon: "wave-square"},
-				{Value: "loudnorm", Label: "Loudnorm", Icon: "chart-bar"},
+		return []FilterParam{
+			{
+				Key: "mode", Label: "Mode", Type: FilterParamIconSelect, DefaultVal: "loudnorm",
+				Options: []FilterOption{
+					{Value: "peak", Label: "Peak", Icon: "mountain"},
+					{Value: "rms", Label: "RMS", Icon: "wave-square"},
+					{Value: "loudnorm", Label: "Loudnorm", Icon: "chart-bar"},
+				},
 			},
-		}}
+			{Key: "target", Label: "LUFS", Type: FilterParamRange, Min: -18, Max: -10, Step: 1, DefaultVal: "-14", Decimals: 0, HintMin: "quiet", HintMax: "loud"},
+		}
 	case "compressor":
 		return []FilterParam{{
 			Key: "_preset", Label: "Style", Type: FilterParamPreset, DefaultVal: "medium",

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"thirdcoast.systems/rewind/internal/runtimecfg"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,7 +30,7 @@ func HandleMulticamExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 		common.SetSSEHeaders(c)
 
 		sseError := func(msg string) error {
-			_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status",msg, "error", ""))
+			_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status", msg, "error", ""))
 			return nil
 		}
 
@@ -49,14 +50,14 @@ func HandleMulticamExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 
 		format := strings.TrimSpace(req.Format)
 		if format == "" {
-			format = "mp4"
+			format = runtimecfg.String(c.Request().Context(), "exports.format")
 		}
 		if format != "mp4" && format != "webm" {
 			return sseError("Invalid format (mp4 or webm)")
 		}
 		quality := strings.TrimSpace(req.Quality)
 		if quality == "" {
-			quality = "high"
+			quality = runtimecfg.String(c.Request().Context(), "exports.quality")
 		}
 		if quality != "high" && quality != "max" {
 			return sseError("Invalid quality (high or max)")
@@ -118,7 +119,7 @@ func HandleMulticamExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 
 		_, _ = dbc.Exec(ctx, "SELECT pg_notify('stitch_jobs', $1)", jobID.String())
 
-		if err := sse.PatchElementTempl(components.ExportStatus("multicam-export-status","Queued...", "queued", "")); err != nil {
+		if err := sse.PatchElementTempl(components.ExportStatus("multicam-export-status", "Queued...", "queued", "")); err != nil {
 			return err
 		}
 
@@ -142,12 +143,12 @@ func streamMulticamStatus(c echo.Context, sse *datastar.ServerSentEventGenerator
 		case <-ticker.C:
 			row, err := q.GetStitchJobStatus(ctx, jobID)
 			if err != nil {
-				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status","Job not found", "error", ""))
+				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status", "Job not found", "error", ""))
 				return nil
 			}
 			switch row.Status {
 			case db.ExportStatusQueued:
-				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status","Queued...", "queued", ""))
+				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status", "Queued...", "queued", ""))
 			case db.ExportStatusProcessing:
 				if row.ProgressPct != lastPct {
 					lastPct = row.ProgressPct
@@ -156,7 +157,7 @@ func streamMulticamStatus(c echo.Context, sse *datastar.ServerSentEventGenerator
 				}
 			case db.ExportStatusReady:
 				downloadURL := "/api/stitch/" + jobIDStr + "/download"
-				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status","", "ready", downloadURL))
+				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status", "", "ready", downloadURL))
 				_ = sse.ExecuteScript("window.location.href = '" + downloadURL + "';")
 				return nil
 			case db.ExportStatusError:
@@ -164,7 +165,7 @@ func streamMulticamStatus(c echo.Context, sse *datastar.ServerSentEventGenerator
 				if row.LastError != nil && *row.LastError != "" {
 					errMsg = *row.LastError
 				}
-				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status",errMsg, "error", ""))
+				_ = sse.PatchElementTempl(components.ExportStatus("multicam-export-status", errMsg, "error", ""))
 				return nil
 			}
 		}

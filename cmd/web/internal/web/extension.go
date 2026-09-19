@@ -24,7 +24,10 @@ import (
 )
 
 type extensionArchiveRequest struct {
-	URL string `json:"url"`
+	URL           string `json:"url"`
+	LiveFromStart bool   `json:"live_from_start"`
+	WaitForVideo  int    `json:"wait_for_video"` // seconds
+	MediaURL      string `json:"media_url"`
 }
 
 type extensionArchiveResponse struct {
@@ -463,7 +466,10 @@ func (s *Webserver) HandleAPIExtensionArchive(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url is required"})
 	}
 
-	res, err := archival.EnqueueURL(c.Request().Context(), s.dbc.Queries(c.Request().Context()), req.URL, user.ID)
+	extraArgs := archival.LiveExtraArgs(req.LiveFromStart, req.WaitForVideo, req.MediaURL)
+	res, err := archival.EnqueueURLOpts(c.Request().Context(), s.dbc.Queries(c.Request().Context()), req.URL, user.ID, archival.EnqueueOptions{
+		ExtraArgs: extraArgs,
+	})
 	if err != nil {
 		slog.Error("failed to enqueue job from extension", "error", err, "url", req.URL)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to enqueue job"})

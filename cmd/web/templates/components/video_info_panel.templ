@@ -99,7 +99,7 @@ script downloadFormat(videoID string, formatIDs string, label string) {
 	}).then(function(response) {
 		if (response.ok) {
 			return response.json().then(function(data) {
-				window.location.href = "/jobs/" + data.job_id
+				window.RewindNavigation.navigate("/jobs/" + data.job_id)
 			})
 		}
 		return response.text().then(function(text) {

@@ -1,13 +1,10 @@
 package admin
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
@@ -51,19 +48,4 @@ func HandleAdminRefreshAssets(sm *auth.SessionManager, dbc *db.DatabaseConnectio
 		slog.Info("bulk asset regeneration queued", "videos", queuedCount)
 		return c.Redirect(302, "/admin?msg="+url.QueryEscape(fmt.Sprintf("Queued asset regeneration for %d videos", queuedCount)))
 	}
-}
-
-// GetClipExportStorageLimitBytes retrieves the storage limit from instance settings.
-func GetClipExportStorageLimitBytes(ctx context.Context, dbc *db.DatabaseConnection) (int64, error) {
-	settings, err := dbc.Queries(ctx).GetInstanceSettings(ctx)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	if settings.ClipExportStorageLimitBytes < 0 {
-		return 0, nil
-	}
-	return settings.ClipExportStorageLimitBytes, nil
 }

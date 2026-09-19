@@ -393,7 +393,7 @@ DO UPDATE SET
         ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
     END,
     search = EXCLUDED.search
-RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 `
 
 type InsertVideoParams struct {
@@ -516,7 +516,7 @@ type InsertVideoParams struct {
 //	        ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
 //	    END,
 //	    search = EXCLUDED.search
-//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Video, error) {
 	row := q.db.QueryRow(ctx, insertVideo,
 		arg.ID,
@@ -581,6 +581,11 @@ func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Vid
 		&i.MetadataRefreshedAt,
 		&i.LinksHarvestedAt,
 		&i.Media,
+		&i.SubtitleState,
+		&i.SubtitleCheckedAt,
+		&i.SubtitleLastError,
+		&i.TranscriptVersion,
+		&i.CommentCount,
 	)
 	return &i, err
 }
@@ -820,6 +825,44 @@ func (q *Queries) ListVideosWithAssetErrors(ctx context.Context, limit int32) ([
 	return items, nil
 }
 
+const publishVideoMedia = `-- name: PublishVideoMedia :execrows
+UPDATE videos SET video_path=$1, media='file',
+ thumbnail_path=COALESCE($2,thumbnail_path),
+ file_hash=COALESCE($3,file_hash),
+ file_size=$4, updated_at=NOW()
+WHERE id=$5
+`
+
+type PublishVideoMediaParams struct {
+	VideoPath     *string     `db:"video_path" json:"VideoPath"`
+	ThumbnailPath *string     `db:"thumbnail_path" json:"ThumbnailPath"`
+	FileHash      *string     `db:"file_hash" json:"FileHash"`
+	FileSize      *int64      `db:"file_size" json:"FileSize"`
+	ID            pgtype.UUID `db:"id" json:"ID"`
+}
+
+// UpdateVideoPath updates the video_path for a video.
+// PublishVideoMedia makes a completed file available before derived asset work.
+//
+//	UPDATE videos SET video_path=$1, media='file',
+//	 thumbnail_path=COALESCE($2,thumbnail_path),
+//	 file_hash=COALESCE($3,file_hash),
+//	 file_size=$4, updated_at=NOW()
+//	WHERE id=$5
+func (q *Queries) PublishVideoMedia(ctx context.Context, arg *PublishVideoMediaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishVideoMedia,
+		arg.VideoPath,
+		arg.ThumbnailPath,
+		arg.FileHash,
+		arg.FileSize,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const refreshVideoMetadata = `-- name: RefreshVideoMetadata :exec
 UPDATE videos SET
     title = $1,
@@ -876,14 +919,14 @@ func (q *Queries) RefreshVideoMetadata(ctx context.Context, arg *RefreshVideoMet
 }
 
 const selectVideoBySrc = `-- name: SelectVideoBySrc :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 FROM videos
 WHERE src = $1
 `
 
 // SelectVideoBySrc returns a video by src.
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
 //	FROM videos
 //	WHERE src = $1
 func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, error) {
@@ -925,6 +968,11 @@ func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, err
 		&i.MetadataRefreshedAt,
 		&i.LinksHarvestedAt,
 		&i.Media,
+		&i.SubtitleState,
+		&i.SubtitleCheckedAt,
+		&i.SubtitleLastError,
+		&i.TranscriptVersion,
+		&i.CommentCount,
 	)
 	return &i, err
 }
@@ -990,7 +1038,7 @@ type UpdateVideoPathParams struct {
 	ID        pgtype.UUID `db:"id" json:"ID"`
 }
 
-// UpdateVideoPath updates the video_path for a video.
+// UpdateVideoPath
 //
 //	UPDATE videos
 //	SET video_path = $1,

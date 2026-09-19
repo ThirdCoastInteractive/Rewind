@@ -41,6 +41,7 @@ func HandleMarkers(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 		// Start with DB markers
 		baseMarkers := markers
 		sbMarkers := []*db.Marker{}
+		segments := make(map[*db.Marker]sponsorblock.SkipSegment)
 
 		// Add sponsorblock segments if this is a YouTube video
 		if videoRow.Src != "" {
@@ -61,7 +62,9 @@ func HandleMarkers(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 					slog.Warn("sponsorblock: failed to load segments", "error", err, "videoID", ytID)
 				} else {
 					for _, s := range segs {
-						sbMarkers = append(sbMarkers, sponsorblock.SegmentToMarker(videoUUID, s))
+						marker := sponsorblock.SegmentToMarker(videoUUID, s)
+						sbMarkers = append(sbMarkers, marker)
+						segments[marker] = s
 					}
 				}
 			}
@@ -89,6 +92,9 @@ func HandleMarkers(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 			Description string        `json:"description"`
 			Color       string        `json:"color"`
 			MarkerType  db.MarkerType `json:"marker_type"`
+			Source      string        `json:"source"`
+			ActionType  string        `json:"action_type,omitempty"`
+			Category    string        `json:"category,omitempty"`
 		}
 
 		response := make([]MarkerResponse, len(all))
@@ -102,6 +108,13 @@ func HandleMarkers(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 				Description: m.Description,
 				Color:       m.Color,
 				MarkerType:  m.MarkerType,
+				Source:      "archive",
+			}
+			if segment, ok := segments[m]; ok {
+				response[i].ID = "sb:" + segment.UUID
+				response[i].Source = "sponsorblock"
+				response[i].ActionType = segment.ActionType
+				response[i].Category = segment.Category
 			}
 		}
 

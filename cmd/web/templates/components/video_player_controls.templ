@@ -6,14 +6,20 @@ package components
 templ VideoPlayerControls() {
 	<div class="video-controls">
 		<div class="progress-container">
-			<div class="progress-bar">
-				<div class="progress-fill">
-					<div class="progress-handle"></div>
-				</div>
+			<div class="timeline-heading">
+				<span class="timeline-current-title"></span>
+				<button type="button" class="timeline-jump timeline-previous" aria-label="Previous timeline entry" title="Previous entry" disabled>‹</button>
+				<button type="button" class="timeline-jump timeline-next" aria-label="Next timeline entry" title="Next entry" disabled>›</button>
 			</div>
+			<div class="progress-bar">
+				<div class="progress-track" aria-hidden="true"><div class="progress-buffer"></div><div class="progress-fill"></div></div>
+				<input class="seek-slider" type="range" min="0" max="1" step="0.1" value="0" disabled aria-label="Seek video" aria-valuetext="Loading video" title="Seek · Arrow keys: 5 seconds · Shift + arrows: 30 seconds · Home / End"/>
+			</div>
+			<div class="timeline-detail-lane" aria-label="Timeline entries"></div>
 			<div class="seek-tooltip hidden">
-				<div class="seek-tooltip-thumb"></div>
+				<div class="seek-tooltip-thumb hidden"></div>
 				<div class="seek-tooltip-time"></div>
+				<div class="seek-tooltip-title"></div>
 			</div>
 		</div>
 		<div class="controls-row">
@@ -44,6 +50,9 @@ templ VideoPlayerControls() {
 			<select class="quality-select hidden" aria-label="Video quality"></select>
 			<button class="control-btn caption-btn" type="button" aria-label="Toggle Captions" title="Captions (C)">
 				<i class="fa-sharp fa-solid fa-closed-captioning" aria-hidden="true"></i>
+			</button>
+			<button class="control-btn theater-btn hidden" type="button" aria-label="Theater mode" aria-pressed="false" title="Theater mode (T)">
+				<svg class="w-6 h-4" viewBox="0 0 24 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1" y="1" width="22" height="14"></rect></svg>
 			</button>
 			<button class="control-btn fullscreen-btn" type="button" aria-label="Fullscreen">
 				<i class="fa-sharp fa-solid fa-expand fullscreen-enter-icon" aria-hidden="true"></i>

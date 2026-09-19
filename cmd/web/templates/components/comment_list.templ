@@ -11,6 +11,7 @@ type CommentItem struct {
 	ID          string
 	VideoID     string
 	CommentID   string // yt-dlp comment id (used for the replies endpoint + container id)
+	CommenterID string // commenters.id when linked; enables dossier link
 	Author      string
 	AuthorURL   string
 	AuthorThumb string
@@ -112,7 +113,15 @@ templ CommentRow(c CommentItem) {
 		<div class="flex items-start gap-2">
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-2 mb-0.5 flex-wrap">
-					if c.AuthorURL != "" {
+					if c.CommenterID != "" {
+						<a
+							href={ templ.SafeURL("/investigate/commenters/" + c.CommenterID) }
+							class="text-xs font-mono text-white/70 hover:text-white truncate"
+							title={ c.Author }
+						>
+							{ c.Author }
+						</a>
+					} else if c.AuthorURL != "" {
 						<a
 							href={ templ.SafeURL(c.AuthorURL) }
 							target="_blank"

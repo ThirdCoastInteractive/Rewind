@@ -159,3 +159,7 @@ VALUES (
     sqlc.arg(enqueued)
 )
 ON CONFLICT (watch_id, video_id) DO NOTHING;
+
+-- name: DeleteOwnedWatchedChannel :execrows
+DELETE FROM watched_channels WHERE id=sqlc.arg(id) AND created_by=sqlc.arg(created_by);
+

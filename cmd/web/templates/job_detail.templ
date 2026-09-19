@@ -11,24 +11,7 @@ templ JobDetail(job *db.DownloadJob, username string) {
 	@Layout("Job Details", username) {
 		@JobDetailContent(job)
 		if job.Status == "processing" || job.Status == "queued" {
-			<script>
-				// Only set up SSE for jobs that are still running
-				const eventSource = new EventSource('/api/jobs/{{ job.ID.String() }}/status');
-				
-				eventSource.onmessage = function(event) {
-					// Datastar will handle the patching via SSE
-				};
-				
-				eventSource.onerror = function(err) {
-					console.error('SSE error:', err);
-					eventSource.close();
-				};
-				
-				// Clean up on page unload
-				window.addEventListener('beforeunload', () => {
-					eventSource.close();
-				});
-			</script>
+			<div data-init={ fmt.Sprintf("@get('/api/jobs/%s/status')", job.ID.String()) }></div>
 		}
 	}
 }
@@ -42,145 +25,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 			<h1 class="page-heading text-xl tracking-tight mt-4 mb-0.5">Job Details</h1>
 			<p class="text-xs font-mono text-white/60">View detailed information about this download job</p>
 		</div>
-		<div id="job-detail-card">
-			@components.Card(false) {
-				@components.CardHeader("Status", "") {
-					<div class="flex items-center justify-between">
-						<div>
-							@StatusBadge(job.Status)
-						</div>
-						<div class="text-right">
-							<p class="text-xs font-mono text-white/40 mb-1">JOB ID</p>
-							<p class="text-xs font-mono text-white/80">{ job.ID.String() }</p>
-						</div>
-					</div>
-				}
-				@components.CardBody(true) {
-					<div class="mb-6">
-						<h3 class={ "section-label mb-2" }>Video URL</h3>
-						<div class={ "info-box" }>
-							<a href={ templ.SafeURL(job.URL) } target="_blank" rel="noopener noreferrer" class="text-xs font-mono text-white hover:text-white/70 break-all">
-								{ job.URL }
-								<i class="fa-sharp fa-solid fa-arrow-up-right-from-square ml-2" aria-hidden="true"></i>
-							</a>
-						</div>
-					</div>
-					if job.VideoID.Valid {
-						<div class="mb-6">
-							<h3 class={ "section-label mb-2" }>Related Video</h3>
-							<div class={ "info-box" }>
-								<a href={ templ.SafeURL("/videos/" + job.VideoID.String()) } class="inline-flex items-center gap-2 text-xs font-mono text-white hover:text-white/70">
-									<i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i>
-									View Archived Video
-								</a>
-							</div>
-						</div>
-					}
-					<div class="mb-6">
-						<h3 class={ "section-label mb-2" }>Timeline</h3>
-						@components.Table([]string{}, true) {
-							@components.TableRow(false, "") {
-								@components.TableCell(true) {
-									Created 
-								}
-								@components.TableCell(false) {
-									{ job.CreatedAt.Time.Format("January 2, 2006 at 3:04 PM") }
-								}
-							}
-							if job.StartedAt.Valid {
-								@components.TableRow(false, "") {
-									@components.TableCell(true) {
-										Started 
-									}
-									@components.TableCell(false) {
-										{ job.StartedAt.Time.Format("January 2, 2006 at 3:04 PM") }
-									}
-								}
-							}
-							if job.FinishedAt.Valid {
-								@components.TableRow(false, "") {
-									@components.TableCell(true) {
-										Finished 
-									}
-									@components.TableCell(false) {
-										{ job.FinishedAt.Time.Format("January 2, 2006 at 3:04 PM") }
-									}
-								}
-								if job.StartedAt.Valid {
-									@components.TableRow(false, "") {
-										@components.TableCell(true) {
-											Duration 
-										}
-										@components.TableCell(false) {
-											{ format.JobDuration(job.FinishedAt.Time.Sub(job.StartedAt.Time)) }
-										}
-									}
-								}
-							}
-						}
-					</div>
-					<div class="mb-6">
-						<h3 class={ "section-label mb-2" }>Statistics</h3>
-						<div class="grid grid-cols-2 gap-4">
-							<div class="info-box">
-								<p class="section-label mb-1">ATTEMPTS</p>
-								<p class="text-2xl font-mono font-bold text-white">{ fmt.Sprintf("%d", job.Attempts) }</p>
-							</div>
-							<div class="info-box">
-								<p class="section-label mb-1">OPTIONS</p>
-								<div class="flex flex-wrap gap-2 mt-2">
-									if job.Refresh {
-										<span class="inline-flex items-center px-2 py-1 text-xs font-mono bg-white/10 text-white border-2 border-white/20">
-											<i class="fa-sharp fa-solid fa-rotate mr-1" aria-hidden="true"></i>
-											REFRESH
-										</span>
-									}
-								</div>
-							</div>
-						</div>
-					</div>
-					if job.LastError != nil && *job.LastError != "" {
-						<div class="mb-6">
-							<h3 class={ "section-label mb-2" }>Error Details</h3>
-							<div class="bg-black/40 border-2 border-red-500/50 p-4">
-								<pre class="text-xs font-mono text-red-400 whitespace-pre-wrap break-words">{ *job.LastError }</pre>
-							</div>
-						</div>
-					}
-				}
-				@components.CardFooter() {
-					<div class="flex items-center gap-3">
-						if job.Status == "failed" || job.Status == "succeeded" {
-							<div onclick={ templ.JSFuncCall("retryJob", job.ID.String()) }>
-								@components.Button("primary", "md", "rotate", false) {
-									Retry Job
-								}
-							</div>
-						}
-						if job.Status == "processing" {
-							<div onclick={ templ.JSFuncCall("cancelJob", job.ID.String()) }>
-								@components.Button("danger", "md", "xmark", false) {
-									Cancel Job
-								}
-							</div>
-						}
-						if job.Archived {
-							<div onclick={ templ.JSFuncCall("unarchiveJob", job.ID.String()) }>
-								@components.Button("secondary", "md", "box-archive", false) {
-									Unarchive Job
-								}
-							</div>
-						} else {
-							<div onclick={ templ.JSFuncCall("archiveJob", job.ID.String()) }>
-								@components.Button("secondary", "md", "box-archive", false) {
-									Archive Job
-								}
-							</div>
-						}
-					</div>
-				}
-			}
-		</div>
+		@JobDetailCard(job)
 		@components.Card(false) {
 			@components.CardHeader("YT-DLP OUTPUT", "Live command output")
 			@components.CardBody(true) {
@@ -191,8 +36,8 @@ templ JobDetailContent(job *db.DownloadJob) {
 		}
 	}
 	<script>
-		const jobId = "{{ job.ID.String() }}";
-		const isProcessing = {{ job.Status == "processing" }};
+		var jobId = document.getElementById('job-detail-card').dataset.jobId;
+		var isProcessing = document.getElementById('job-detail-card').dataset.jobProcessing === 'true';
 		
 		async function postJobAction(jobId, action) {
 			const response = await fetch(`/api/jobs/${jobId}/${action}`, {
@@ -227,7 +72,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 			if (!confirm('Archive this job? This will hide it from the jobs list.')) return;
 			try {
 				await postJobAction(jobId, 'archive');
-				window.location.href = '/jobs';
+				window.RewindNavigation.navigate('/jobs');
 			} catch (error) {
 				alert('Failed to archive job: ' + error.message);
 			}
@@ -236,19 +81,19 @@ templ JobDetailContent(job *db.DownloadJob) {
 		async function unarchiveJob(jobId) {
 			try {
 				await postJobAction(jobId, 'unarchive');
-				window.location.href = '/jobs';
+				window.RewindNavigation.navigate('/jobs');
 			} catch (error) {
 				alert('Failed to unarchive job: ' + error.message);
 			}
 		}
 		
 		// Paginated log viewer
-		let currentOffset = 0;
-		let totalLogs = 0;
-		let isLoading = false;
-		const LOGS_PER_PAGE = 50;
+		var currentOffset = 0;
+		var totalLogs = 0;
+		var isLoading = false;
+		var LOGS_PER_PAGE = 50;
 		
-		document.addEventListener('DOMContentLoaded', function() {
+		window.RewindPage.ready(function() {
 			loadInitialLogs();
 			
 			// Stream new logs if job is processing
@@ -374,7 +219,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 		
 		function streamLogs() {
 			try {
-				const logStream = new EventSource(`/api/jobs/${jobId}/logs/stream`);
+				const logStream = window.RewindPage.eventSource(`/api/jobs/${jobId}/logs/stream`);
 				
 				logStream.addEventListener('log', (evt) => {
 					try {
@@ -413,7 +258,7 @@ templ JobDetailContent(job *db.DownloadJob) {
 					logStream.close();
 				};
 				
-				window.addEventListener('beforeunload', () => {
+				window.RewindPage.listen(window, 'beforeunload', () => {
 					logStream.close();
 				});
 			} catch (e) {
@@ -421,4 +266,147 @@ templ JobDetailContent(job *db.DownloadJob) {
 			}
 		}
 	</script>
+}
+
+// JobDetailCard renders the status and actions independently of the live log viewer.
+templ JobDetailCard(job *db.DownloadJob) {
+	<div id="job-detail-card" data-job-id={ job.ID.String() } data-job-processing={ fmt.Sprint(job.Status == "processing") }>
+		@components.Card(false) {
+			@components.CardHeader("Status", "") {
+				<div class="flex items-center justify-between">
+					<div>
+						@StatusBadge(job.Status)
+					</div>
+					<div class="text-right">
+						<p class="text-xs font-mono text-white/40 mb-1">JOB ID</p>
+						<p class="text-xs font-mono text-white/80">{ job.ID.String() }</p>
+					</div>
+				</div>
+			}
+			@components.CardBody(true) {
+				<div class="mb-6">
+					<h3 class={ "section-label mb-2" }>Video URL</h3>
+					<div class={ "info-box" }>
+						<a href={ templ.SafeURL(job.URL) } target="_blank" rel="noopener noreferrer" class="text-xs font-mono text-white hover:text-white/70 break-all">
+							{ job.URL }
+							<i class="fa-sharp fa-solid fa-arrow-up-right-from-square ml-2" aria-hidden="true"></i>
+						</a>
+					</div>
+				</div>
+				if job.VideoID.Valid {
+					<div class="mb-6">
+						<h3 class={ "section-label mb-2" }>Related Video</h3>
+						<div class={ "info-box" }>
+							<a href={ templ.SafeURL("/videos/" + job.VideoID.String()) } class="inline-flex items-center gap-2 text-xs font-mono text-white hover:text-white/70">
+								<i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i>
+								View Archived Video
+							</a>
+						</div>
+					</div>
+				}
+				<div class="mb-6">
+					<h3 class={ "section-label mb-2" }>Timeline</h3>
+					@components.Table([]string{}, true) {
+						@components.TableRow(false, "") {
+							@components.TableCell(true) {
+								Created 
+							}
+							@components.TableCell(false) {
+								{ job.CreatedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+							}
+						}
+						if job.StartedAt.Valid {
+							@components.TableRow(false, "") {
+								@components.TableCell(true) {
+									Started 
+								}
+								@components.TableCell(false) {
+									{ job.StartedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+								}
+							}
+						}
+						if job.FinishedAt.Valid {
+							@components.TableRow(false, "") {
+								@components.TableCell(true) {
+									Finished 
+								}
+								@components.TableCell(false) {
+									{ job.FinishedAt.Time.Format("January 2, 2006 at 3:04 PM") }
+								}
+							}
+							if job.StartedAt.Valid {
+								@components.TableRow(false, "") {
+									@components.TableCell(true) {
+										Duration 
+									}
+									@components.TableCell(false) {
+										{ format.JobDuration(job.FinishedAt.Time.Sub(job.StartedAt.Time)) }
+									}
+								}
+							}
+						}
+					}
+				</div>
+				<div class="mb-6">
+					<h3 class={ "section-label mb-2" }>Statistics</h3>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="info-box">
+							<p class="section-label mb-1">ATTEMPTS</p>
+							<p class="text-2xl font-mono font-bold text-white">{ fmt.Sprintf("%d", job.Attempts) }</p>
+						</div>
+						<div class="info-box">
+							<p class="section-label mb-1">OPTIONS</p>
+							<div class="flex flex-wrap gap-2 mt-2">
+								if job.Refresh {
+									<span class="inline-flex items-center px-2 py-1 text-xs font-mono bg-white/10 text-white border-2 border-white/20">
+										<i class="fa-sharp fa-solid fa-rotate mr-1" aria-hidden="true"></i>
+										REFRESH
+									</span>
+								}
+							</div>
+						</div>
+					</div>
+				</div>
+				if job.LastError != nil && *job.LastError != "" {
+					<div class="mb-6">
+						<h3 class={ "section-label mb-2" }>Error Details</h3>
+						<div class="bg-black/40 border-2 border-red-500/50 p-4">
+							<pre class="text-xs font-mono text-red-400 whitespace-pre-wrap break-words">{ *job.LastError }</pre>
+						</div>
+					</div>
+				}
+			}
+			@components.CardFooter() {
+				<div class="flex items-center gap-3">
+					if job.Status == "failed" || job.Status == "succeeded" {
+						<div onclick={ templ.JSFuncCall("retryJob", job.ID.String()) }>
+							@components.Button("primary", "md", "rotate", false) {
+								Retry Job
+							}
+						</div>
+					}
+					if job.Status == "processing" {
+						<div onclick={ templ.JSFuncCall("cancelJob", job.ID.String()) }>
+							@components.Button("danger", "md", "xmark", false) {
+								Cancel Job
+							}
+						</div>
+					}
+					if job.Archived {
+						<div onclick={ templ.JSFuncCall("unarchiveJob", job.ID.String()) }>
+							@components.Button("secondary", "md", "box-archive", false) {
+								Unarchive Job
+							}
+						</div>
+					} else {
+						<div onclick={ templ.JSFuncCall("archiveJob", job.ID.String()) }>
+							@components.Button("secondary", "md", "box-archive", false) {
+								Archive Job
+							}
+						</div>
+					}
+				</div>
+			}
+		}
+	</div>
 }

@@ -9,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleRetry serves POST /jobs/:id/retry, re-enqueuing a failed download job.
 func HandleRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -32,7 +33,7 @@ func HandleRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			return c.String(500, "failed to retry job")
 		}
 
-		return c.JSON(200, map[string]any{"status": "queued"})
+		return jobActionResponse(c, map[string]any{"status": "queued"}, "Download queued for retry.")
 	}
 }
 

@@ -90,9 +90,9 @@ func (c *Client) WriteThumbnail(ctx context.Context, url string, destDir string,
 	return nil
 }
 
-// WriteSubtitles asks yt-dlp to download subtitles/auto-captions into destDir.
-// This is best-effort; many sources may not have captions.
-// Downloads all available languages.
+// WriteSubtitles asks yt-dlp to download English subtitles into destDir as VTT.
+// Official (manual) tracks are requested first; auto-captions are a fallback
+// for the same language. This is best-effort; many sources have no captions.
 func (c *Client) WriteSubtitles(ctx context.Context, url string, destDir string, extraArgs ...string) error {
 	if strings.TrimSpace(url) == "" {
 		return fmt.Errorf("ytdlp: url is required")
@@ -108,6 +108,7 @@ func (c *Client) WriteSubtitles(ctx context.Context, url string, destDir string,
 		"--write-subs",
 		"--write-auto-subs",
 		"--sub-lang", "en",
+		"--sub-format", "vtt",
 		"-o", tmpl,
 	}
 	args = append(args, extraArgs...)

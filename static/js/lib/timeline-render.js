@@ -68,6 +68,26 @@ export class Timeline {
     content.style.zIndex = '1';
     layer.appendChild(content);
 
+    // Context Windows are semantic ranges, independent from clips.
+    (ed.contextWindows || []).forEach((item) => {
+      if (item.end <= ovStart || item.start >= ovEnd) return;
+      const start = clamp(item.start, ovStart, ovEnd);
+      const end = clamp(item.end, ovStart, ovEnd);
+      const isShort = item.kind === 'short';
+      const band = mkDiv(isShort
+        ? 'absolute top-2 h-1 bg-cyan-300/70'
+        : 'absolute top-0 h-2 bg-amber-300/50 border-y border-amber-200/70');
+      band.style.left = `${pctOf(start)}%`;
+      band.style.width = `${((end - start) / ovSpan) * 100}%`;
+      band.style.zIndex = item.id === ed.selectedContextWindowID ? '4' : (isShort ? '5' : '3');
+      band.title = isShort ? `Short · ${item.title}` : item.title;
+      band.addEventListener('click', (event) => {
+        event.stopPropagation();
+        ed.selectContextWindow(item);
+      });
+      content.appendChild(band);
+    });
+
     // Clips ranges
     (ed.clips || []).forEach((cl) => {
       if (!isFiniteNumber(cl.startTs) || !isFiniteNumber(cl.endTs) || cl.endTs <= cl.startTs) return;
@@ -295,6 +315,26 @@ export class Timeline {
       ed.drawWaveformToCanvas(canvas, ed.workStart, ed.workEnd);
       content.appendChild(canvas);
     }
+
+    // Context Window bands sit above the waveform and below clip ranges.
+    (ed.contextWindows || []).forEach((item) => {
+      if (item.end <= ed.workStart || item.start >= ed.workEnd) return;
+      const start = clamp(item.start, ed.workStart, ed.workEnd);
+      const end = clamp(item.end, ed.workStart, ed.workEnd);
+      const isShort = item.kind === 'short';
+      const band = mkDiv(isShort
+        ? 'absolute top-3 h-1.5 bg-cyan-300/70'
+        : 'absolute top-0 h-3 bg-amber-300/50 border-y border-amber-200/70');
+      band.style.left = `${((start - ed.workStart) / windowSize) * 100}%`;
+      band.style.width = `${((end - start) / windowSize) * 100}%`;
+      band.style.zIndex = item.id === ed.selectedContextWindowID ? '4' : (isShort ? '5' : '2');
+      band.title = isShort ? `Short · ${item.title}` : item.title;
+      band.addEventListener('click', (event) => {
+        event.stopPropagation();
+        ed.selectContextWindow(item);
+      });
+      content.appendChild(band);
+    });
 
     // Clips within window
     (ed.clips || []).forEach((cl) => {

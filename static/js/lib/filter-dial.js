@@ -1,3 +1,4 @@
+import { listen as pageListen, PageMutationObserver } from './page-scope.js';
 /**
  * filter-dial.js — Circular dial/knob widget for filter parameters.
  *
@@ -32,16 +33,16 @@ export function autoInitFilterDials() {
     const list = document.getElementById('filter-stack-list');
     if (!list) return;
     initFilterDials(list);
-    new MutationObserver(() => initFilterDials(list))
+    new PageMutationObserver(() => initFilterDials(list))
       .observe(list, { childList: true, subtree: true });
   };
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', watchRoot);
+    pageListen(document, 'DOMContentLoaded', watchRoot);
   } else {
     watchRoot();
   }
   // Also re-check when DataStar patches could add the list later
-  new MutationObserver(() => {
+  new PageMutationObserver(() => {
     const list = document.getElementById('filter-stack-list');
     if (list) initFilterDials(list);
   }).observe(document.body, { childList: true, subtree: true });
@@ -88,7 +89,7 @@ function setupDial(el) {
   positionIndicator(getValue());
 
   // Watch for external value changes (signal sync via data-effect)
-  const obs = new MutationObserver(() => positionIndicator(getValue()));
+  const obs = new PageMutationObserver(() => positionIndicator(getValue()));
   obs.observe(hiddenInput, { attributes: true, attributeFilter: ['value'] });
   // Also re-sync when data-effect fires (it sets .value, not attribute)
   const origSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -114,8 +115,8 @@ function setupDial(el) {
     dragging = true;
     startY = e.clientY;
     startVal = getValue();
-    document.addEventListener('pointermove', onPointerMove);
-    document.addEventListener('pointerup', onPointerUp);
+    pageListen(document, 'pointermove', onPointerMove);
+    pageListen(document, 'pointerup', onPointerUp);
     el.setPointerCapture?.(e.pointerId);
   }
 
@@ -155,3 +156,4 @@ function setupDial(el) {
     setValue(getValue() + direction * step * multiplier);
   }, { passive: false });
 }
+

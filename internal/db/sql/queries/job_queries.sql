@@ -1,6 +1,6 @@
 -- GetActiveAssetJobsForVideo returns active (queued/processing) ingest jobs
 -- for a given video, including both normal post-ingest and regen jobs.
--- asset_scope is NULL for "all assets" jobs, or one of thumbnail/preview/seek/waveform.
+-- asset_scope is NULL or 'all' for all derived assets, or one of thumbnail/preview/seek/waveform.
 -- name: GetActiveAssetJobsForVideo :many
 SELECT ij.id AS ingest_job_id,
        ij.asset_scope,
@@ -27,6 +27,47 @@ VALUES (
     sqlc.arg(extra_args)
 )
 RETURNING *;
+
+-- EnqueueDownloadJobOnce atomically reuses a queued, processing, or succeeded
+-- top-level video job for the same canonical URL. Explicit redownload and
+-- format-selection actions use EnqueueDownloadJob instead.
+-- name: EnqueueDownloadJobOnce :one
+WITH existing AS (
+    SELECT dj.id
+    FROM download_jobs dj
+    WHERE dj.url = sqlc.arg(url)
+      AND dj.kind = 'video'
+      AND dj.parent_job_id IS NULL
+      AND dj.status IN ('queued', 'processing', 'succeeded')
+    ORDER BY
+      CASE dj.status WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+      dj.created_at DESC
+    LIMIT 1
+),
+inserted AS (
+    INSERT INTO download_jobs (url, archived_by, status, refresh, extra_args, dedupe_key)
+    SELECT sqlc.arg(url), sqlc.arg(archived_by), 'queued', sqlc.arg(refresh), sqlc.arg(extra_args), sqlc.arg(url)
+    WHERE NOT EXISTS (SELECT 1 FROM existing)
+    ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('queued', 'processing')
+    DO UPDATE SET dedupe_key = EXCLUDED.dedupe_key
+    RETURNING id, (xmax <> 0) AS reused
+)
+SELECT id, reused FROM inserted
+UNION ALL
+SELECT id, TRUE AS reused FROM existing
+LIMIT 1;
+
+-- GetReusableDownloadJobForVideo returns an existing useful job for an
+-- already-archived video instead of creating another download row.
+-- name: GetReusableDownloadJobForVideo :one
+SELECT *
+FROM download_jobs
+WHERE (video_id = sqlc.arg(video_id) OR url = sqlc.arg(video_src))
+  AND status IN ('queued', 'processing', 'succeeded')
+ORDER BY
+  CASE status WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+  created_at DESC
+LIMIT 1;
 
 -- DequeueDownloadJob claims one queued download job. Playlist/channel-scan
 -- jobs are claimed before video downloads: they are quick flat enumerations
@@ -85,6 +126,22 @@ VALUES (
 )
 RETURNING *;
 
+-- EnqueuePostIngestAssetsJob queues derived-asset generation on the same
+-- download job after ingest has published playable media. asset_scope='all'
+-- is what separates this claim from the parent ingest job.
+-- name: EnqueuePostIngestAssetsJob :one
+INSERT INTO ingest_jobs (
+    download_job_id,
+    status,
+    asset_scope
+)
+VALUES (
+    sqlc.arg(download_job_id),
+    'queued',
+    'all'
+)
+RETURNING *;
+
 -- RecoverStuckIngestJobs resets orphaned "processing" jobs back to "queued" on service startup.
 -- Jobs stuck in "processing" for more than the timeout are assumed to have been orphaned by a crash.
 -- name: RecoverStuckIngestJobs :exec
@@ -105,8 +162,11 @@ SET status = 'failed',
 WHERE status = 'queued'
   AND attempts >= 5;
 
--- DequeueIngestJob claims one queued ingest job and returns needed info.
--- Returns video_id for asset regeneration jobs (NULL for normal ingest).
+-- DequeueIngestJob claims one queued ingest or derived-asset job.
+-- asset_jobs=false claims media ingest: spool/info.json and no asset_scope.
+-- asset_jobs=true claims generation: no spool, or asset_scope set (including
+-- post-ingest 'all' jobs that share the original download row).
+-- Returns video_id for asset regeneration jobs (NULL until ingest links it).
 -- Skips jobs that have already been retried too many times.
 -- name: DequeueIngestJob :one
 WITH cte AS (
@@ -115,14 +175,26 @@ WITH cte AS (
     JOIN download_jobs dj ON dj.id = ij.download_job_id
     WHERE ij.status = 'queued'
       AND ij.attempts < 5
-    ORDER BY
-      -- Real ingests (fresh downloads with a spool/info.json) take priority over
-      -- background asset-regeneration jobs, so a large regen batch never starves
-      -- user-initiated downloads. 0 = ingest, 1 = regeneration.
-      (CASE WHEN (dj.info_json_path IS NOT NULL AND btrim(dj.info_json_path) <> '')
+      AND (
+        CASE WHEN sqlc.arg(asset_jobs)::boolean THEN
+          (
+            (
+              (dj.info_json_path IS NULL OR btrim(dj.info_json_path) = '')
+              AND (dj.spool_dir IS NULL OR btrim(dj.spool_dir) = '')
+            )
+            OR (ij.asset_scope IS NOT NULL AND btrim(ij.asset_scope) <> '')
+          )
+        ELSE
+          (
+            (
+              (dj.info_json_path IS NOT NULL AND btrim(dj.info_json_path) <> '')
               OR (dj.spool_dir IS NOT NULL AND btrim(dj.spool_dir) <> '')
-            THEN 0 ELSE 1 END),
-      ij.created_at
+            )
+            AND (ij.asset_scope IS NULL OR btrim(ij.asset_scope) = '')
+          )
+        END
+      )
+    ORDER BY ij.created_at
     LIMIT 1
     FOR UPDATE OF ij SKIP LOCKED
 )

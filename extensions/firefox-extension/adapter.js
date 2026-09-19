@@ -26,9 +26,23 @@
       return ext.storage.local.remove(keys);
     },
 
-    async getActiveTabUrl() {
+    async getActiveTab() {
       const tabs = await ext.tabs.query({ active: true, currentWindow: true });
-      return tabs?.[0]?.url || '';
+      const tab = tabs?.[0];
+      if (!tab) return null;
+      return { id: tab.id, url: tab.url || '' };
+    },
+
+    async getActiveTabUrl() {
+      const tab = await this.getActiveTab();
+      return tab?.url || '';
+    },
+
+    async executeScript({ tabId, func }) {
+      // MV2: inject via code string (function injection is MV3-only).
+      const code = '(' + Function.prototype.toString.call(func) + ')()';
+      const results = await ext.tabs.executeScript(tabId, { code });
+      return results?.[0];
     },
 
     tabsCreate(url) {

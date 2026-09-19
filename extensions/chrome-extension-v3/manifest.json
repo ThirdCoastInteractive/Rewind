@@ -5,6 +5,7 @@
   "description": "Archive the current tab to your self-hosted Rewind server",
   "permissions": [
     "activeTab",
+    "scripting",
     "storage",
     "identity",
     "alarms"

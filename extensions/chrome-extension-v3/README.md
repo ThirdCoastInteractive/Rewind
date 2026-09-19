@@ -46,4 +46,5 @@ After changing shared files, run:
 ## Notes
 - Token is stored in `chrome.storage.local`.
 - No cookie-session auth is used for extension endpoints.
-- Cookies are optional and toggleable per site; when enabled, the popup uploads a Netscape-format cookie file via `/api/extension/cookies` before archiving.
+- Cookies are optional and toggleable per site; when enabled, the popup uploads a Netscape-format cookie file via `/api/extension/cookies` before archiving. Cookies are still recommended for Kick.
+- On a detected live tab the primary button becomes **Start archiving this stream**, with optional **From the beginning** and **Wait for stream (minutes)** controls. The popup inspects the active tab on demand (no always-on content script) and may send a harvested HLS/DASH `media_url`.

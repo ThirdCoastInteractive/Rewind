@@ -1,3 +1,4 @@
+import { listen as pageListen } from './lib/page-scope.js';
 // ============================================================================
 // SCRUB INPUT — DAW-style draggable number input
 //
@@ -78,8 +79,8 @@ export function scrubInput(container, opts = {}) {
     startValue = value;
     labelEl.classList.add('scrub-active');
     document.body.style.cursor = 'ew-resize';
-    document.addEventListener('pointermove', onPointerMove);
-    document.addEventListener('pointerup', onPointerUp);
+    pageListen(document, 'pointermove', onPointerMove);
+    pageListen(document, 'pointerup', onPointerUp);
     e.preventDefault();
   }
 
@@ -239,8 +240,8 @@ export function initScrubInputs(root, onChange) {
       dragging = true; startX = e.clientX; startVal = currentVal;
       labelEl.classList.add('scrub-active');
       document.body.style.cursor = 'ew-resize';
-      document.addEventListener('pointermove', onMove);
-      document.addEventListener('pointerup', onUp);
+      pageListen(document, 'pointermove', onMove);
+      pageListen(document, 'pointerup', onUp);
       e.preventDefault();
     });
 
@@ -298,3 +299,4 @@ function guessPrecision(step) {
   if (step >= 1) return 0;
   return Math.max(0, -Math.floor(Math.log10(step)));
 }
+

@@ -1,0 +1,708 @@
+package templates
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"thirdcoast.systems/rewind/internal/wiki"
+)
+
+type WikiTreeSummary struct {
+	Tree    string
+	Label   string
+	Count   int
+	Blurb   string
+	Samples []string
+}
+
+type WikiArchiveWindow struct {
+	ID         string
+	VideoID    string
+	Title      string
+	VideoTitle string
+	Uploader   string
+	Start      float64
+	End        float64
+	WebPath    string
+	CutPath    string
+}
+
+type WikiRelatedTopic struct {
+	Slug  string
+	Title string
+	Count int64
+}
+
+type WikiView struct {
+	Page                wiki.Page
+	TOC                 []wiki.Heading
+	Parent              wiki.Ref
+	Subpages            []wiki.Page
+	CreatorName         string
+	ChannelName         string
+	ChannelPath         string
+	ArchiveWindows      []WikiArchiveWindow
+	RelatedTopics       []WikiRelatedTopic
+	ArchiveWindowCount  int
+	ArchiveChannelCount int
+}
+
+templ WikiIndex(username string, trees []WikiTreeSummary, recent []wiki.Page, hits []wiki.SearchHit, q string) {
+	@Layout("Wiki", username) {
+		@Container("wide") {
+			<div class="wiki-hero">
+				<div class="wiki-hero-row">
+					<div class="min-w-0">
+						<h1 class="page-heading text-xl tracking-tight mb-1">Wiki</h1>
+						<p class="text-xs font-mono text-white/60 max-w-xl">Archive vault — encyclopedia, clipping structure, and topics. Pages nest; wikilinks connect them.</p>
+					</div>
+					<form method="GET" action="/wiki" class="wiki-search">
+						<input type="search" name="q" value={ q } class="form-input" placeholder="Search the vault…" aria-label="Search wiki"/>
+						<button type="submit" class="btn-primary btn-sm">Search</button>
+					</form>
+				</div>
+			</div>
+			<div class="wiki-trees">
+				for _, t := range trees {
+					<a href={ templ.SafeURL(wiki.TreeURL(t.Tree)) } class="wiki-tree-card">
+						<div class="wiki-tree-card-kicker">
+							<i class={ "fa-sharp", "fa-solid", wikiTreeIcon(t.Tree) } aria-hidden="true"></i>
+							{ t.Tree }
+						</div>
+						<div class="wiki-tree-card-title">{ t.Label }</div>
+						<p class="wiki-tree-card-blurb">{ t.Blurb }</p>
+						<div class="wiki-tree-card-meta">{ strconv.Itoa(t.Count) } { wikiPageWord(t.Count) }</div>
+						if len(t.Samples) > 0 {
+							<ul class="wiki-tree-card-samples">
+								for _, s := range t.Samples {
+									<li>{ s }</li>
+								}
+							</ul>
+						}
+					</a>
+				}
+			</div>
+			if q != "" {
+				<div class="mb-6">
+					<div class="section-header">
+						<h2 class="section-header-title">Search results</h2>
+						<span class="font-mono text-xs text-white/40">{ strconv.Itoa(len(hits)) } matching { q }</span>
+					</div>
+					if len(hits) == 0 {
+						<p class="font-mono text-xs text-white/40">No matches. Try a name, a slug, or a phrase from a page.</p>
+					} else {
+						<div class="wiki-card-grid">
+							for _, h := range hits {
+								@wikiSearchCard(h)
+							}
+						</div>
+					}
+				</div>
+			} else {
+				<div class="mb-6">
+					<div class="section-header">
+						<h2 class="section-header-title">Recent changes</h2>
+					</div>
+					if len(recent) == 0 {
+						<p class="font-mono text-xs text-white/40">No pages yet. Open a tree and create one, or start from a creator page.</p>
+					} else {
+						<div class="wiki-card-grid">
+							for _, p := range recent {
+								@wikiPageCard(p, true)
+							}
+						</div>
+					}
+				</div>
+			}
+		}
+	}
+}
+
+templ WikiTreeIndex(username, tree string, pages []wiki.Page) {
+	@Layout(wiki.TreeLabel(tree), username) {
+		@Container("wide") {
+			<nav class="wiki-crumbs" aria-label="Breadcrumb">
+				<a href="/wiki">Wiki</a>
+				<span class="wiki-crumbs-sep">/</span>
+				<span class="text-white/70">{ tree }</span>
+			</nav>
+			<div class="wiki-hero">
+				<div class="wiki-hero-row">
+					<div>
+						<p class="font-mono text-xs text-white/40 uppercase tracking-wider mb-1">{ tree }</p>
+						<h1 class="page-heading text-xl tracking-tight mb-1">{ wiki.TreeLabel(tree) }</h1>
+						<p class="font-mono text-xs text-white/50 max-w-xl">{ wiki.TreeBlurb(tree) }</p>
+					</div>
+					<a href="/wiki" class="ghost-btn-sm">All trees</a>
+				</div>
+			</div>
+			if len(pages) == 0 {
+				<div class="wiki-stub">
+					<p class="font-mono text-xs text-white/40 uppercase tracking-wider mb-2">Empty tree</p>
+					<p class="font-mono text-sm text-white/70 mb-4">Nothing filed under { tree } yet. Create a page from a creator, a channel, or a <code class="text-white/70">[[{ tree }/slug]]</code> link.</p>
+					<a href="/wiki" class="btn-primary btn-sm">Back to wiki</a>
+				</div>
+			} else {
+				<div class="wiki-tree-list">
+					for _, g := range wiki.GroupPages(pages) {
+						@wikiTreeNode(g)
+					}
+				</div>
+			}
+		}
+	}
+}
+
+templ WikiShow(username string, view WikiView) {
+	@Layout(view.Page.Title, username) {
+		@Container("wide") {
+			@wikiBreadcrumb(view.Page.Tree, view.Page.Slug)
+			<div class="wiki-title-row">
+				<div class="min-w-0">
+					<h1 class="page-heading text-xl tracking-tight mb-0">{ view.Page.Title }</h1>
+					<p class="wiki-meta">
+						{ view.Page.Tree }/{ view.Page.Slug }
+						if view.Page.Revision > 0 {
+							<span class="text-white/30">·</span> rev { strconv.FormatInt(int64(view.Page.Revision), 10) }
+						}
+						if view.Page.UpdatedBy != "" {
+							<span class="text-white/30">·</span> { view.Page.UpdatedBy }
+						}
+					</p>
+				</div>
+				<div class="flex items-center gap-2 shrink-0">
+					<a href={ templ.SafeURL(wiki.EditURL(view.Page.Tree, view.Page.Slug)) } class="btn-primary btn-sm">Edit</a>
+					<a href={ templ.SafeURL(wiki.HistoryURL(view.Page.Tree, view.Page.Slug)) } class="ghost-btn-sm">History</a>
+				</div>
+			</div>
+			<div class="wiki-layout">
+				<article class="wiki-article wiki-prose">
+					if strings.TrimSpace(view.Page.HTML) == "" {
+						<p class="text-white/40">This page has no body yet.</p>
+					} else {
+						@templ.Raw(view.Page.HTML)
+					}
+				</article>
+				<aside class="wiki-rail" aria-label="Page tools">
+					<div class="wiki-box wiki-infobox">
+						<h2 class="wiki-box-title">About this page</h2>
+						<dl>
+							<dt>Tree</dt>
+							<dd><a href={ templ.SafeURL(wiki.TreeURL(view.Page.Tree)) }>{ view.Page.Tree }</a></dd>
+							<dt>Slug</dt>
+							<dd title={ view.Page.Slug }>{ view.Page.Slug }</dd>
+							if view.Page.Revision > 0 {
+								<dt>Revision</dt>
+								<dd>{ strconv.FormatInt(int64(view.Page.Revision), 10) }</dd>
+							}
+							if !view.Page.UpdatedAt.IsZero() {
+								<dt>Updated</dt>
+								<dd>{ view.Page.UpdatedAt.UTC().Format("2006-01-02") }</dd>
+							}
+							if view.Page.CreatorID.Valid {
+								<dt>Creator</dt>
+								<dd>
+									<a href={ templ.SafeURL("/creators/" + view.Page.CreatorID.String()) }>
+										if view.CreatorName != "" {
+											{ view.CreatorName }
+										} else {
+											Open creator
+										}
+									</a>
+								</dd>
+							}
+							if view.Page.ChannelID.Valid {
+								<dt>Channel</dt>
+								<dd>
+									if view.ChannelPath != "" {
+										<a href={ templ.SafeURL(channelViewURL(view.ChannelPath)) }>
+											if view.ChannelName != "" {
+												{ view.ChannelName }
+											} else {
+												{ view.ChannelPath }
+											}
+										</a>
+									} else if view.ChannelName != "" {
+										{ view.ChannelName }
+									} else {
+										<span>linked</span>
+									}
+								</dd>
+							}
+							if view.Page.Tree == wiki.TreeTopic && view.ArchiveWindowCount > 0 {
+								<dt>Archive</dt>
+								<dd>{ strconv.Itoa(view.ArchiveWindowCount) } windows · { strconv.Itoa(view.ArchiveChannelCount) } channels</dd>
+							}
+						</dl>
+					</div>
+					if len(view.ArchiveWindows) > 0 {
+						<div class="wiki-box">
+							<h2 class="wiki-box-title">In this archive</h2>
+							<p class="wiki-inferred">Inferred from context windows. Not vault memory.</p>
+							<div class="wiki-archive">
+								for _, w := range view.ArchiveWindows {
+									<a class="wiki-archive-row" href={ templ.SafeURL(w.WebPath) }>
+										<span class="wiki-archive-title">{ w.Title }</span>
+										<span class="wiki-archive-meta">{ w.Uploader } · { w.VideoTitle }</span>
+									</a>
+								}
+							</div>
+						</div>
+					}
+					if len(view.RelatedTopics) > 0 {
+						<div class="wiki-box">
+							<h2 class="wiki-box-title">Related topics</h2>
+							<p class="wiki-inferred">Co-occurring subjects. Inferred.</p>
+							<div class="wiki-related">
+								for _, t := range view.RelatedTopics {
+									<a href={ templ.SafeURL(wiki.PageURL(wiki.TreeTopic, t.Slug)) }>
+										<span class="wiki-related-slug">topic/</span>{ t.Title }
+									</a>
+								}
+							</div>
+						</div>
+					}
+					if view.Parent.Slug != "" {
+						<div class="wiki-box">
+							<h2 class="wiki-box-title">Parent</h2>
+							<div class="wiki-related">
+								<a href={ templ.SafeURL(wiki.PageURL(view.Parent.Tree, view.Parent.Slug)) }>
+									if view.Parent.Title != "" {
+										{ view.Parent.Title }
+									} else {
+										{ view.Parent.Slug }
+									}
+								</a>
+							</div>
+						</div>
+					}
+					if len(view.TOC) > 0 {
+						<nav class="wiki-box" aria-label="Contents">
+							<h2 class="wiki-box-title">Contents</h2>
+							<div class="wiki-toc">
+								for _, h := range view.TOC {
+									<a href={ templ.SafeURL("#" + h.ID) } class={ templ.KV("is-h3", h.Level >= 3) }>{ h.Text }</a>
+								}
+							</div>
+						</nav>
+					}
+					if len(view.Subpages) > 0 {
+						<div class="wiki-box">
+							<h2 class="wiki-box-title">Subpages</h2>
+							<div class="wiki-subpages">
+								for _, s := range view.Subpages {
+									<a href={ templ.SafeURL(wiki.PageURL(s.Tree, s.Slug)) } title={ s.Slug }>{ s.Title }</a>
+								}
+							</div>
+						</div>
+					}
+					if len(view.Page.Backlinks) > 0 {
+						<div class="wiki-box">
+							<h2 class="wiki-box-title">What links here</h2>
+							<div class="wiki-related">
+								for _, b := range view.Page.Backlinks {
+									<a href={ templ.SafeURL(wiki.PageURL(b.Tree, b.Slug)) }>
+										<span class="wiki-related-slug">{ b.Tree }/</span>{ b.Title }
+									</a>
+								}
+							</div>
+						</div>
+					}
+				</aside>
+			</div>
+		}
+	}
+}
+
+templ WikiMissing(username, tree, slug string) {
+	@Layout("Missing — "+slug, username) {
+		@Container("wide") {
+			@wikiBreadcrumb(tree, slug)
+			<div class="wiki-stub">
+				<p class="font-mono text-xs text-white/40 uppercase tracking-wider mb-2">Missing page</p>
+				<h1 class="page-heading text-xl tracking-tight mb-2">{ slug }</h1>
+				<p class="font-mono text-sm text-white/60 mb-4">
+					No page at { tree }/{ slug }. Create it to start this vault entry — other pages can then <code class="text-white/70">[[{ tree }/{ slug }]]</code> to it.
+				</p>
+				<div class="flex items-center gap-2 flex-wrap">
+					<a href={ templ.SafeURL(wiki.EditURL(tree, slug)) } class="btn-primary btn-sm">Create page</a>
+					<a href={ templ.SafeURL(wiki.TreeURL(tree)) } class="ghost-btn-sm">Back to { tree }</a>
+				</div>
+			</div>
+		}
+	}
+}
+
+templ WikiEdit(username string, page wiki.Page, formErr string) {
+	@Layout("Edit — "+page.Slug, username) {
+		@Container("wide") {
+			@wikiBreadcrumb(page.Tree, page.Slug)
+			<div class="mb-4">
+				<h1 class="page-heading text-xl tracking-tight mb-0.5">Edit</h1>
+				<p class="font-mono text-xs text-white/40">{ page.Tree }/{ page.Slug }</p>
+			</div>
+			if formErr != "" {
+				<div class="mb-4 border-2 border-red-500/40 bg-red-500/10 p-3 font-mono text-sm text-red-300">{ formErr }</div>
+			}
+			<form method="POST" action="/wiki/save" class="wiki-editor-layout">
+				<div class="space-y-4 min-w-0">
+					<input type="hidden" name="tree" value={ page.Tree }/>
+					<input type="hidden" name="slug" value={ page.Slug }/>
+					<input type="hidden" name="expected_revision" value={ strconv.FormatInt(int64(page.Revision), 10) }/>
+					<div>
+						<label class="form-label" for="wiki-title">Title</label>
+						<input id="wiki-title" type="text" name="title" value={ page.Title } required class="form-input w-full"/>
+					</div>
+					<div>
+						<label class="form-label" for="wiki-summary">Edit summary</label>
+						<input id="wiki-summary" type="text" name="summary" value={ page.Summary } required class="form-input w-full" placeholder="What changed (required changelog line)"/>
+					</div>
+					<div>
+						<label class="form-label" for="wiki-body">Body</label>
+						<textarea id="wiki-body" name="body" rows="22" required class="form-input w-full font-mono text-sm leading-relaxed min-h-[28rem]">{ page.Body }</textarea>
+					</div>
+					<div class="flex items-center gap-2">
+						<button type="submit" class="btn-primary btn-sm">Save</button>
+						<a href={ templ.SafeURL(wiki.PageURL(page.Tree, page.Slug)) } class="ghost-btn-sm">Cancel</a>
+					</div>
+				</div>
+				<aside class="wiki-box wiki-cheatsheet font-mono text-xs text-white/60 space-y-3">
+					<h2 class="wiki-box-title">Markup</h2>
+					<p>Markdown, plus vault links:</p>
+					<ul class="space-y-1.5 leading-relaxed">
+						<li><code>[[slug]]</code> — page in this tree</li>
+						<li><code>[[tree/slug]]</code> — cross-tree</li>
+						<li><code>[[tree/slug|label]]</code> — labeled</li>
+						<li><code>## Heading</code> — section (shows in contents)</li>
+						<li>Nested slugs (<code>name/date</code>) become subpages</li>
+					</ul>
+					<p class="wiki-box-title mt-3">Inline media</p>
+					<ul class="space-y-1.5 leading-relaxed">
+						<li><code>![label](rewind://video/uuid)</code> — play a video</li>
+						<li><code>![label](rewind://video/uuid#t=12,40)</code> — play a range</li>
+						<li><code>![label](rewind://clip/uuid)</code> — play a saved clip</li>
+						<li><code>![still](rewind://video/uuid/thumbnail)</code></li>
+						<li><code>![frame](rewind://video/uuid/frame?t=12.5)</code></li>
+					</ul>
+					<p class="text-white/40">A paragraph that is only a rewind://video or rewind://clip link also plays inline. Summary is required on every save.</p>
+				</aside>
+			</form>
+		}
+	}
+}
+
+templ WikiHistory(username string, page wiki.Page, revs []wiki.Revision) {
+	@Layout("History — "+page.Slug, username) {
+		@Container("wide") {
+			@wikiBreadcrumb(page.Tree, page.Slug)
+			<div class="mb-4 flex items-start justify-between gap-3 flex-wrap">
+				<div>
+					<h1 class="page-heading text-xl tracking-tight mb-0.5">History</h1>
+					<p class="font-mono text-xs text-white/40">{ page.Tree }/{ page.Slug }</p>
+				</div>
+				<a href={ templ.SafeURL(wiki.PageURL(page.Tree, page.Slug)) } class="ghost-btn-sm">Back to page</a>
+			</div>
+			if len(revs) == 0 {
+				<p class="font-mono text-xs text-white/40">No revisions yet.</p>
+			} else {
+				<div class="wiki-history">
+					for _, r := range revs {
+						<article class="wiki-history-item">
+							<header class="flex items-center justify-between gap-3 flex-wrap mb-2">
+								<div class="font-mono text-sm text-white">
+									<span class="text-white/40">rev { strconv.FormatInt(int64(r.Revision), 10) }</span>
+									<span class="text-white/30">·</span>
+									{ r.Summary }
+								</div>
+								<div class="font-mono text-xs text-white/40">
+									{ r.ActorKind }/{ r.ActorID }
+									if r.SessionID != "" {
+										<span>· session { r.SessionID }</span>
+									}
+									if !r.CreatedAt.IsZero() {
+										<span>· { formatWikiTime(r.CreatedAt) }</span>
+									}
+								</div>
+							</header>
+							if r.Diff != "" {
+								<pre class="font-mono text-xs text-white/70 whitespace-pre-wrap overflow-x-auto bg-white/5 p-2 border border-white/10">{ r.Diff }</pre>
+							} else {
+								<p class="font-mono text-xs text-white/40">No diff (create).</p>
+							}
+						</article>
+					}
+				</div>
+			}
+		}
+	}
+}
+
+// VaultPanel lists wiki pages attached to a creator or channel.
+templ VaultPanel(pages []wiki.Page, homeTree, homeSlug string) {
+	{{ home, rest := splitVaultHome(pages, homeTree, homeSlug) }}
+	<div class="mb-6">
+		if home.Slug != "" {
+			<section class="vault-featured">
+				<div class="vault-featured-header">
+					<div class="min-w-0">
+						<p class="font-mono text-xs text-white/40 uppercase tracking-wider">Encyclopedia</p>
+						<a href={ templ.SafeURL(wiki.PageURL(home.Tree, home.Slug)) } class="font-mono text-sm text-white hover:underline truncate block">{ home.Title }</a>
+					</div>
+					<div class="flex items-center gap-2 shrink-0">
+						<a href={ templ.SafeURL(wiki.PageURL(home.Tree, home.Slug)) } class="ghost-btn-sm">Open</a>
+						<a href={ templ.SafeURL(wiki.EditURL(home.Tree, home.Slug)) } class="ghost-btn-sm">Edit</a>
+					</div>
+				</div>
+				<div class="vault-featured-body wiki-prose">
+					{{ html := vaultHTML(home) }}
+					if strings.TrimSpace(html) == "" {
+						<p class="text-white/40">No body yet.</p>
+					} else {
+						@templ.Raw(html)
+					}
+				</div>
+			</section>
+		} else {
+			<div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+				<h2 class="sub-heading mb-0">Vault</h2>
+				if homeTree != "" && homeSlug != "" {
+					<a href={ templ.SafeURL(wiki.EditURL(homeTree, homeSlug)) } class="ghost-btn-sm">Create { homeTree }/{ homeSlug }</a>
+				}
+			</div>
+			if len(pages) == 0 {
+				<p class="font-mono text-xs text-white/40 mb-2">No vault pages attached yet. The encyclopedia entry is the home page for this record.</p>
+			}
+		}
+		if len(rest) > 0 {
+			<div class="vault-groups">
+				for _, g := range vaultPagesByTree(rest) {
+					<div>
+						<h3 class="vault-group-title">{ wiki.TreeLabel(g.Tree) }</h3>
+						<div class="wiki-card-grid">
+							for _, p := range g.Pages {
+								@wikiPageCard(p, false)
+							}
+						</div>
+					</div>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ wikiPageCard(p wiki.Page, showTree bool) {
+	<a href={ templ.SafeURL(wiki.PageURL(p.Tree, p.Slug)) } class="wiki-page-card">
+		<div class="wiki-page-card-kicker">
+			if showTree {
+				<span class="badge">{ p.Tree }</span>
+			} else {
+				<span class="font-mono text-xs text-white/40 truncate">{ p.Slug }</span>
+			}
+			if !p.UpdatedAt.IsZero() {
+				<time class="wiki-page-card-date">{ p.UpdatedAt.Format("2006-01-02") }</time>
+			}
+		</div>
+		<div class="wiki-page-card-title">{ p.Title }</div>
+		if showTree {
+			<div class="wiki-page-card-slug">{ p.Tree }/{ p.Slug }</div>
+		}
+		if excerpt := wikiExcerpt(p); excerpt != "" {
+			<p class="wiki-page-card-excerpt">{ excerpt }</p>
+		}
+	</a>
+}
+
+templ wikiSearchCard(h wiki.SearchHit) {
+	<a href={ templ.SafeURL(wiki.PageURL(h.Tree, h.Slug)) } class="wiki-page-card">
+		<div class="wiki-page-card-kicker">
+			<span class="badge">{ h.Tree }</span>
+		</div>
+		<div class="wiki-page-card-title">{ h.Title }</div>
+		<div class="wiki-page-card-slug">{ h.Tree }/{ h.Slug }</div>
+		if h.Headline != "" {
+			<p class="wiki-page-card-excerpt">{ h.Headline }</p>
+		} else if excerpt := wikiExcerpt(h.Page); excerpt != "" {
+			<p class="wiki-page-card-excerpt">{ excerpt }</p>
+		}
+	</a>
+}
+
+templ wikiTreeNode(g wiki.PageGroup) {
+	<div class="wiki-tree-node">
+		<a href={ templ.SafeURL(wiki.PageURL(g.Page.Tree, g.Page.Slug)) }>
+			<div class="min-w-0">
+				<div class="font-mono text-sm text-white truncate">{ g.Page.Title }</div>
+				<div class="font-mono text-xs text-white/40 truncate">{ g.Page.Slug }</div>
+			</div>
+			if !g.Page.UpdatedAt.IsZero() {
+				<div class="font-mono text-xs text-white/40 shrink-0">{ g.Page.UpdatedAt.Format("2006-01-02") }</div>
+			}
+		</a>
+		if len(g.Children) > 0 {
+			<div class="wiki-tree-children">
+				for _, c := range g.Children {
+					@wikiTreeNode(c)
+				}
+			</div>
+		}
+	</div>
+}
+
+templ wikiBreadcrumb(tree, slug string) {
+	{{ crumbs := wikiSlugCrumbs(slug) }}
+	<nav class="wiki-crumbs" aria-label="Breadcrumb">
+		<a href="/wiki">Wiki</a>
+		<span class="wiki-crumbs-sep">/</span>
+		<a href={ templ.SafeURL(wiki.TreeURL(tree)) }>{ tree }</a>
+		for i, seg := range crumbs {
+			<span class="wiki-crumbs-sep">/</span>
+			if i == len(crumbs)-1 {
+				<span class="text-white/70">{ seg.Label }</span>
+			} else {
+				<a href={ templ.SafeURL(wiki.PageURL(tree, seg.Slug)) }>{ seg.Label }</a>
+			}
+		}
+	</nav>
+}
+
+type wikiCrumb struct {
+	Label string
+	Slug  string
+}
+
+type vaultTreeGroup struct {
+	Tree  string
+	Pages []wiki.Page
+}
+
+func wikiSlugCrumbs(slug string) []wikiCrumb {
+	slug = strings.Trim(slug, "/")
+	if slug == "" {
+		return nil
+	}
+	parts := strings.Split(slug, "/")
+	out := make([]wikiCrumb, 0, len(parts))
+	acc := ""
+	for _, p := range parts {
+		if acc == "" {
+			acc = p
+		} else {
+			acc += "/" + p
+		}
+		out = append(out, wikiCrumb{Label: p, Slug: acc})
+	}
+	return out
+}
+
+func wikiTreeIcon(tree string) string {
+	switch tree {
+	case wiki.TreeCreator:
+		return "fa-user"
+	case wiki.TreeChannel:
+		return "fa-tv"
+	case wiki.TreeClipping:
+		return "fa-scissors"
+	case wiki.TreeTopic:
+		return "fa-bookmark"
+	default:
+		return "fa-file-lines"
+	}
+}
+
+func wikiPageWord(n int) string {
+	if n == 1 {
+		return "page"
+	}
+	return "pages"
+}
+
+func splitVaultHome(pages []wiki.Page, homeTree, homeSlug string) (home wiki.Page, rest []wiki.Page) {
+	rest = make([]wiki.Page, 0, len(pages))
+	for _, p := range pages {
+		if home.Slug == "" && homeTree != "" && p.Tree == homeTree && p.Slug == homeSlug {
+			home = p
+			continue
+		}
+		rest = append(rest, p)
+	}
+	return home, rest
+}
+
+func vaultPagesByTree(pages []wiki.Page) []vaultTreeGroup {
+	order := append([]string{}, wiki.Trees...)
+	seen := map[string]bool{}
+	by := map[string][]wiki.Page{}
+	for _, p := range pages {
+		by[p.Tree] = append(by[p.Tree], p)
+		if !seen[p.Tree] {
+			seen[p.Tree] = true
+			found := false
+			for _, t := range order {
+				if t == p.Tree {
+					found = true
+					break
+				}
+			}
+			if !found {
+				order = append(order, p.Tree)
+			}
+		}
+	}
+	out := make([]vaultTreeGroup, 0, len(by))
+	for _, t := range order {
+		if ps := by[t]; len(ps) > 0 {
+			out = append(out, vaultTreeGroup{Tree: t, Pages: ps})
+		}
+	}
+	return out
+}
+
+func vaultHTML(p wiki.Page) string {
+	if strings.TrimSpace(p.HTML) != "" {
+		return p.HTML
+	}
+	return wiki.RenderHTML(p.Body, p.Tree)
+}
+
+func wikiExcerpt(p wiki.Page) string {
+	for _, line := range strings.Split(p.Body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "---") || strings.HasPrefix(line, "```") || strings.HasPrefix(line, "![") {
+			continue
+		}
+		line = strings.TrimLeft(line, "*- ")
+		if line == "" {
+			continue
+		}
+		line = wikiLink.ReplaceAllStringFunc(line, func(m string) string {
+			parts := wikiLink.FindStringSubmatch(m)
+			if len(parts) > 2 && parts[2] != "" {
+				return parts[2]
+			}
+			if len(parts) > 1 {
+				return parts[1]
+			}
+			return m
+		})
+		line = strings.ReplaceAll(line, "**", "")
+		line = strings.ReplaceAll(line, "__", "")
+		line = strings.ReplaceAll(line, "`", "")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if len(line) > 160 {
+			return line[:157] + "…"
+		}
+		return line
+	}
+	return ""
+}
+
+var wikiLink = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`)
+
+func formatWikiTime(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04 UTC")
+}

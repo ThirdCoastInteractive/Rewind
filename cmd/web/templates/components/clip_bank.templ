@@ -51,6 +51,8 @@ templ ClipRow(clip *db.Clip, variant string) {
 			class="flex flex-nowrap items-center gap-2 text-sm border-b border-white/10 py-1 transition-all cursor-pointer"
 			data-clip-row
 			data-clip-id={ clip.ID.String() }
+			data-range-start={ fmt.Sprintf("%.3f", clip.StartTs) }
+			data-range-end={ fmt.Sprintf("%.3f", clip.EndTs) }
 			data-on:click={ fmt.Sprintf("@get('/api/videos/%s/clips/%s/select')", clip.VideoID.String(), clip.ID.String()) }
 			data-class={ fmt.Sprintf("{'bg-white/10 border-white/30': $_selectedClipId === '%s', 'hover:bg-white/5': $_selectedClipId !== '%s'}", clip.ID.String(), clip.ID.String()) }
 		>
@@ -61,6 +63,8 @@ templ ClipRow(clip *db.Clip, variant string) {
 			class="flex flex-nowrap items-center gap-2 text-sm border-b border-white/10 py-1 hover:bg-white/5 transition-all"
 			data-clip-row
 			data-clip-id={ clip.ID.String() }
+			data-range-start={ fmt.Sprintf("%.3f", clip.StartTs) }
+			data-range-end={ fmt.Sprintf("%.3f", clip.EndTs) }
 		>
 			@ClipRowContent(clip, variant)
 		</div>
@@ -195,7 +199,7 @@ templ ClipBankList(clips []*db.Clip) {
 // ClipListContainer - Simple container for watch interface
 // ============================================================================
 templ ClipListContainer(clips []*db.Clip) {
-	<div class="space-y-2" data-clips-list>
+	<div class="space-y-2 max-h-96 overflow-auto" data-clips-list>
 		@ClipList(clips, "watch")
 	</div>
 }

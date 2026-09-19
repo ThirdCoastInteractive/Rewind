@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"thirdcoast.systems/rewind/internal/runtimecfg"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -72,7 +73,7 @@ func HandleEnqueueExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 		// Determine format with default
 		format := strings.TrimSpace(req.Format)
 		if format == "" {
-			format = "mp4"
+			format = runtimecfg.String(ctx, "exports.format")
 		}
 		if format != "mp4" && format != "webm" && format != "gif" {
 			return c.String(400, "invalid format")
@@ -93,6 +94,9 @@ func HandleEnqueueExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 			filters = append([]ffmpeg.FilterSpec{cropFilter}, filters...)
 		}
 
+		if req.Quality == "" {
+			req.Quality = runtimecfg.String(ctx, "exports.quality")
+		}
 		// Build ExportSpec JSON for storage
 		var specJSON []byte
 		if len(filters) > 0 || req.Format != "" || req.Quality != "" {
@@ -193,15 +197,24 @@ func streamExportStatus(c echo.Context, sse *datastar.ServerSentEventGenerator, 
 		)
 	}
 
-	// Poll for status updates
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+	timeout := time.NewTimer(2 * time.Hour)
+	defer timeout.Stop()
 
 	lastPct := int32(-1)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-timeout.C:
+			return nil
+		case <-keepalive.C:
+			if err := common.WriteSSEKeepalive(c); err != nil {
+				return nil
+			}
 		case <-ticker.C:
 			exportRow, err := q.GetClipExportStatus(ctx, exportID)
 			if err != nil {

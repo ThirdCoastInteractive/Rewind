@@ -1,6 +1,14 @@
 # Ignore version control
 .git
 .gitignore
+.claude/
+.codex/
+.agents/
+.grok/
+.playwright-mcp/
+.tmp/
+test-results/
+playwright-report/
 
 # Ignore development files
 .env
@@ -19,6 +27,9 @@ bin/
 # Ignore test cache
 *.test
 *.out
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
 
 # Ignore IDE files
 .vscode/
@@ -53,7 +64,7 @@ static/js/*.js
 
 # Ignore other service Dockerfiles to prevent cache invalidation
 *.Dockerfile
-!web.Dockerfile
+!rewind.Dockerfile
 
 # Ignore screenshots and scripts
 screenshots/

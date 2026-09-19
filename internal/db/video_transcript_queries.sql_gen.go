@@ -12,8 +12,52 @@ import (
 	"thirdcoast.systems/rewind/pkg/utils/language"
 )
 
+const getLibraryEvidence = `-- name: GetLibraryEvidence :many
+SELECT v.id,
+COALESCE((SELECT t.cues FROM video_transcripts t WHERE t.video_id=v.id AND t.search @@ to_tsquery('simple',$1) ORDER BY CASE WHEN t.lang::text='en' THEN 0 ELSE 1 END,t.lang LIMIT 1),'[]'::jsonb)::jsonb AS cues,
+COALESCE((SELECT c.text FROM video_comments c WHERE c.video_id=v.id AND c.search @@ to_tsquery('simple',$1) ORDER BY c.id LIMIT 1),'')::text AS comment_text
+FROM videos v WHERE v.id=ANY($2::uuid[])
+`
+
+type GetLibraryEvidenceParams struct {
+	Tsquery  string        `db:"tsquery" json:"Tsquery"`
+	VideoIds []pgtype.UUID `db:"video_ids" json:"VideoIds"`
+}
+
+type GetLibraryEvidenceRow struct {
+	ID          pgtype.UUID `db:"id" json:"ID"`
+	Cues        []byte      `db:"cues" json:"Cues"`
+	CommentText string      `db:"comment_text" json:"CommentText"`
+}
+
+// GetLibraryEvidence
+//
+//	SELECT v.id,
+//	COALESCE((SELECT t.cues FROM video_transcripts t WHERE t.video_id=v.id AND t.search @@ to_tsquery('simple',$1) ORDER BY CASE WHEN t.lang::text='en' THEN 0 ELSE 1 END,t.lang LIMIT 1),'[]'::jsonb)::jsonb AS cues,
+//	COALESCE((SELECT c.text FROM video_comments c WHERE c.video_id=v.id AND c.search @@ to_tsquery('simple',$1) ORDER BY c.id LIMIT 1),'')::text AS comment_text
+//	FROM videos v WHERE v.id=ANY($2::uuid[])
+func (q *Queries) GetLibraryEvidence(ctx context.Context, arg *GetLibraryEvidenceParams) ([]*GetLibraryEvidenceRow, error) {
+	rows, err := q.db.Query(ctx, getLibraryEvidence, arg.Tsquery, arg.VideoIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*GetLibraryEvidenceRow
+	for rows.Next() {
+		var i GetLibraryEvidenceRow
+		if err := rows.Scan(&i.ID, &i.Cues, &i.CommentText); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getVideoTranscript = `-- name: GetVideoTranscript :one
-SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues FROM video_transcripts
+SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts
 WHERE video_id = $1
 ORDER BY CASE WHEN lang::text = 'en' THEN 0 ELSE 1 END, lang
 LIMIT 1
@@ -21,7 +65,7 @@ LIMIT 1
 
 // GetVideoTranscript returns one transcript for a video (any language).
 //
-//	SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues FROM video_transcripts
+//	SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts
 //	WHERE video_id = $1
 //	ORDER BY CASE WHEN lang::text = 'en' THEN 0 ELSE 1 END, lang
 //	LIMIT 1
@@ -39,48 +83,148 @@ func (q *Queries) GetVideoTranscript(ctx context.Context, videoID pgtype.UUID) (
 		&i.Raw,
 		&i.Search,
 		&i.Cues,
+		&i.Coverage,
 	)
 	return &i, err
 }
 
+const getVideoTranscriptByLanguage = `-- name: GetVideoTranscriptByLanguage :one
+SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id = $1 AND lang = $2
+`
+
+type GetVideoTranscriptByLanguageParams struct {
+	VideoID pgtype.UUID  `db:"video_id" json:"VideoID"`
+	Lang    language.Tag `db:"lang" json:"Lang"`
+}
+
+// GetVideoTranscriptByLanguage
+//
+//	SELECT id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id = $1 AND lang = $2
+func (q *Queries) GetVideoTranscriptByLanguage(ctx context.Context, arg *GetVideoTranscriptByLanguageParams) (*VideoTranscript, error) {
+	row := q.db.QueryRow(ctx, getVideoTranscriptByLanguage, arg.VideoID, arg.Lang)
+	var i VideoTranscript
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VideoID,
+		&i.Lang,
+		&i.Format,
+		&i.Text,
+		&i.Raw,
+		&i.Search,
+		&i.Cues,
+		&i.Coverage,
+	)
+	return &i, err
+}
+
+const getVideoTranscriptsBatch = `-- name: GetVideoTranscriptsBatch :many
+SELECT DISTINCT ON(video_id) id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id=ANY($1::uuid[])
+ORDER BY video_id,CASE WHEN lang::text='en' THEN 0 ELSE 1 END,lang
+`
+
+// GetVideoTranscriptsBatch
+//
+//	SELECT DISTINCT ON(video_id) id, created_at, updated_at, video_id, lang, format, text, raw, search, cues, coverage FROM video_transcripts WHERE video_id=ANY($1::uuid[])
+//	ORDER BY video_id,CASE WHEN lang::text='en' THEN 0 ELSE 1 END,lang
+func (q *Queries) GetVideoTranscriptsBatch(ctx context.Context, videoIds []pgtype.UUID) ([]*VideoTranscript, error) {
+	rows, err := q.db.Query(ctx, getVideoTranscriptsBatch, videoIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*VideoTranscript
+	for rows.Next() {
+		var i VideoTranscript
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.VideoID,
+			&i.Lang,
+			&i.Format,
+			&i.Text,
+			&i.Raw,
+			&i.Search,
+			&i.Cues,
+			&i.Coverage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchTranscripts = `-- name: SearchTranscripts :many
-SELECT vt.video_id, v.title, v.uploader, vt.lang, vt.text, vt.cues,
-       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank
+SELECT vt.video_id, v.title, v.uploader, v.media, v.duration_seconds, vt.lang,
+       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank,
+       COUNT(*) OVER() AS total_video_count
 FROM video_transcripts vt
 JOIN videos v ON v.id = vt.video_id
+LEFT JOIN channels ch ON ch.id = v.channel_row_id
 WHERE $1::text <> ''
   AND vt.search @@ to_tsquery('simple', $1)
-ORDER BY rank DESC
-LIMIT $2
+  AND ($2::uuid IS NULL OR v.id = $2)
+  AND ($3::text IS NULL OR v.uploader = $3)
+  AND ($4::uuid IS NULL OR ch.creator_id = $4)
+  AND ($5::uuid IS NULL OR ch.id = $5)
+ORDER BY rank DESC,vt.video_id,vt.lang
+LIMIT $7 OFFSET $6
 `
 
 type SearchTranscriptsParams struct {
-	Tsquery   string `db:"tsquery" json:"Tsquery"`
-	PageLimit int32  `db:"page_limit" json:"PageLimit"`
+	Tsquery    string      `db:"tsquery" json:"Tsquery"`
+	VideoID    pgtype.UUID `db:"video_id" json:"VideoID"`
+	Uploader   *string     `db:"uploader" json:"Uploader"`
+	CreatorID  pgtype.UUID `db:"creator_id" json:"CreatorID"`
+	ChannelID  pgtype.UUID `db:"channel_id" json:"ChannelID"`
+	PageOffset int32       `db:"page_offset" json:"PageOffset"`
+	PageLimit  int32       `db:"page_limit" json:"PageLimit"`
 }
 
 type SearchTranscriptsRow struct {
-	VideoID  pgtype.UUID  `db:"video_id" json:"VideoID"`
-	Title    string       `db:"title" json:"Title"`
-	Uploader string       `db:"uploader" json:"Uploader"`
-	Lang     language.Tag `db:"lang" json:"Lang"`
-	Text     string       `db:"text" json:"Text"`
-	Cues     []byte       `db:"cues" json:"Cues"`
-	Rank     float32      `db:"rank" json:"Rank"`
+	VideoID         pgtype.UUID  `db:"video_id" json:"VideoID"`
+	Title           string       `db:"title" json:"Title"`
+	Uploader        string       `db:"uploader" json:"Uploader"`
+	Media           string       `db:"media" json:"Media"`
+	DurationSeconds *int32       `db:"duration_seconds" json:"DurationSeconds"`
+	Lang            language.Tag `db:"lang" json:"Lang"`
+	Rank            float32      `db:"rank" json:"Rank"`
+	TotalVideoCount int64        `db:"total_video_count" json:"TotalVideoCount"`
 }
 
 // SearchTranscripts finds videos whose cleaned transcript matches tsquery.
+// Optional uploader restricts to one channel.
 //
-//	SELECT vt.video_id, v.title, v.uploader, vt.lang, vt.text, vt.cues,
-//	       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank
+//	SELECT vt.video_id, v.title, v.uploader, v.media, v.duration_seconds, vt.lang,
+//	       ts_rank_cd(vt.search, to_tsquery('simple', $1)) AS rank,
+//	       COUNT(*) OVER() AS total_video_count
 //	FROM video_transcripts vt
 //	JOIN videos v ON v.id = vt.video_id
+//	LEFT JOIN channels ch ON ch.id = v.channel_row_id
 //	WHERE $1::text <> ''
 //	  AND vt.search @@ to_tsquery('simple', $1)
-//	ORDER BY rank DESC
-//	LIMIT $2
+//	  AND ($2::uuid IS NULL OR v.id = $2)
+//	  AND ($3::text IS NULL OR v.uploader = $3)
+//	  AND ($4::uuid IS NULL OR ch.creator_id = $4)
+//	  AND ($5::uuid IS NULL OR ch.id = $5)
+//	ORDER BY rank DESC,vt.video_id,vt.lang
+//	LIMIT $7 OFFSET $6
 func (q *Queries) SearchTranscripts(ctx context.Context, arg *SearchTranscriptsParams) ([]*SearchTranscriptsRow, error) {
-	rows, err := q.db.Query(ctx, searchTranscripts, arg.Tsquery, arg.PageLimit)
+	rows, err := q.db.Query(ctx, searchTranscripts,
+		arg.Tsquery,
+		arg.VideoID,
+		arg.Uploader,
+		arg.CreatorID,
+		arg.ChannelID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +236,11 @@ func (q *Queries) SearchTranscripts(ctx context.Context, arg *SearchTranscriptsP
 			&i.VideoID,
 			&i.Title,
 			&i.Uploader,
+			&i.Media,
+			&i.DurationSeconds,
 			&i.Lang,
-			&i.Text,
-			&i.Cues,
 			&i.Rank,
+			&i.TotalVideoCount,
 		); err != nil {
 			return nil, err
 		}
@@ -135,6 +280,7 @@ DO UPDATE SET
     search = EXCLUDED.search,
     raw = EXCLUDED.raw,
     cues = EXCLUDED.cues,
+    coverage = NULL,
     updated_at = NOW()
 `
 
@@ -176,6 +322,7 @@ type UpsertVideoTranscriptParams struct {
 //	    search = EXCLUDED.search,
 //	    raw = EXCLUDED.raw,
 //	    cues = EXCLUDED.cues,
+//	    coverage = NULL,
 //	    updated_at = NOW()
 func (q *Queries) UpsertVideoTranscript(ctx context.Context, arg *UpsertVideoTranscriptParams) error {
 	_, err := q.db.Exec(ctx, upsertVideoTranscript,

@@ -1,0 +1,252 @@
+package templates
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/dustin/go-humanize"
+	"strings"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/interfaceprefs"
+	"thirdcoast.systems/rewind/internal/runtimecfg"
+	"time"
+)
+
+func interfacePreference(ctx context.Context, key string) bool {
+	if prefs, ok := ctx.Value(ctxkeys.InterfacePreferences).(map[string]any); ok {
+		if value, ok := prefs[key].(bool); ok {
+			return value
+		}
+	}
+	return key == "sounds_enabled"
+}
+
+func appearancePreference(ctx context.Context, key string) string {
+	if prefs, ok := ctx.Value(ctxkeys.InterfacePreferences).(map[string]any); ok {
+		if value, ok := prefs[key].(string); ok {
+			if key == "theme" && interfaceprefs.ValidTheme(value) || key == "color_mode" && interfaceprefs.ValidMode(value) {
+				return value
+			}
+		}
+	}
+	if key == "theme" {
+		return "mono"
+	}
+	return "system"
+}
+
+func appearanceSignals(ctx context.Context) string {
+	raw, _ := json.Marshal(map[string]string{"uiTheme": appearancePreference(ctx, "theme"), "uiColorMode": appearancePreference(ctx, "color_mode")})
+	return string(raw)
+}
+
+func interfacePreferenceString(ctx context.Context, key string) string {
+	return fmt.Sprint(interfacePreference(ctx, key))
+}
+
+templ LiveSettings(values runtimecfg.Snapshot, services []*db.RuntimeSettingsConsumer, message string) {
+	<section id="live-settings" class="space-y-10">
+		if message != "" {
+			<p role="status" class="rw-notice">{ message }</p>
+		}
+		for _,group := range settingsGroups() {
+			<section id={ group.ID } class="settings-section">
+				<header class="rw-section-heading"><div><h2>{ group.Title }</h2><p>{ group.Description }</p></div><span class="rw-badge">Live settings</span></header>
+				for _,panel := range group.Panels {
+					<div class="rw-panel">
+						<header class="rw-panel-heading"><h3>{ panel.Title }</h3><p>{ panel.Description }</p></header>
+						<div class="rw-field-grid">
+							for _,d := range runtimecfg.Registry {
+								if panel.includes(d.Key) {
+									@RuntimeSettingField(d, values[d.Key])
+								}
+							}
+						</div>
+					</div>
+				}
+				if group.ID == "settings-models" {
+					@ModelControls()
+				}
+			</section>
+		}
+		<section class="rw-panel">
+			<header class="rw-panel-heading"><h3>Service synchronization</h3><p>Saved settings apply to new work. Active jobs keep their configuration.</p></header>
+			<div class="rw-service-grid">
+				for _,service := range services {
+					<div>
+						<span class="rw-badge">{ service.Service }</span>
+						if service.Hostname != "" {
+							<p class="text-xs mt-1 text-white/50">{ service.Hostname }</p>
+						}
+						<p class="text-sm mt-2">{ runtimecfg.ConsumerStatus(service, values, time.Now()) }</p>
+						<p class="text-xs mt-2">Last synchronized { service.UpdatedAt.Time.Format("15:04:05 MST") }</p>
+					</div>
+				}
+			</div>
+			<p class="rw-footnote">Images, GPU access, mounts, ports, database credentials, and bootstrap secrets are managed in deployment configuration.</p>
+		</section>
+	</section>
+}
+
+templ ModelControls() {
+	<section id="models" class="rw-panel">
+		<header class="rw-panel-heading"><h3>Model library</h3><p>Choose installed models for each task, inspect memory use, or install additional weights.</p></header>
+		<div class="p-4 space-y-4">
+			<div id="model-action-status" role="status"></div>
+			<form data-on:submit="evt.preventDefault(); @post('/api/models/action?runtime=ollama&amp;action=install&amp;model='+encodeURIComponent(evt.target.elements.model.value))" class="rw-actions">
+				<label class="rw-field">Install an Ollama model <input name="model" placeholder="Model name:tag" required maxlength="201"/></label>
+				<button class="rw-button" type="submit">Install weights</button>
+			</form>
+			<p class="text-xs">Downloads are explicit. Memory estimates exclude context caches and concurrent jobs. Use Test to verify a model before assigning it.</p>
+			<div data-init="@get('/api/models/operations?render=1')"><div id="model-inventory"><p>Checking models and inference hardware…</p></div></div>
+		</div>
+	</section>
+}
+
+templ ModelInventory(inventory json.RawMessage, operations []*db.ModelOperation, message string) {
+	<div id="model-inventory" class="mt-4 space-y-3">
+		if message!="" {
+			<p role="status">{ message }</p>
+		}
+		@ModelHardware(inventory)
+		for _,model:=range modelInventoryRows(inventory) {
+			<div class="border border-white/20 p-3 text-sm space-y-1">
+				<strong>{ model.Name }</strong><span class="ml-2 text-white/60">{ model.Runtime }</span>
+				<p>{ model.State } · { model.Size } · { model.Capabilities }</p>
+				<p class="text-xs">{ modelMemoryHint(inventory, model) }</p>
+				if modelAssignments(inventory, model.Name) != "" {
+					<p class="rw-badge">{ modelAssignments(inventory, model.Name) }</p>
+				}
+				<div class="rw-actions">
+					if strings.HasPrefix(model.State, "Not installed") {
+						if model.Runtime == "Vision" {
+							<form data-on:submit={ "evt.preventDefault(); " + modelVisionInstallAction(model) }>
+								<label class="text-xs"><input type="checkbox" required/> I accept the OpenAI CLIP MIT license for these vision weights.</label>
+								<button type="submit" class="rw-button">Install vision weights</button>
+							</form>
+						} else {
+							<button type="button" class="rw-button" data-on:click={ modelAction(model, "install") }>Install</button>
+						}
+					} else {
+						<button type="button" class="rw-button" data-on:click={ modelAction(model, "test") }>Test</button>
+						<button type="button" class="rw-button" data-on:click={ "if(confirm('Remove these model weights? Assigned or active models cannot be removed.')) { " + modelAction(model, "remove") + " }" }>Remove weights</button>
+						if model.Runtime == "Ollama" {
+							if strings.Contains(model.Capabilities, "tools") {
+								<button type="button" class="rw-button" data-on:click={ modelAssignment(model, "agent.model") }>Use for assistant</button>
+							}
+							if strings.Contains(model.Capabilities, "completion") {
+								<button type="button" class="rw-button" data-on:click={ modelAssignment(model, "ml.context_model") }>Use for context</button>
+							}
+							<button type="button" class="rw-button" data-on:click={ modelAction(model, "load") }>Load</button>
+							<button type="button" class="rw-button" data-on:click={ modelAction(model, "unload") }>Unload</button>
+						} else if model.Runtime == "Whisper" {
+							<button type="button" class="rw-button" data-on:click={ modelAssignment(model, "whisper.model") }>Use for transcription</button>
+						}
+					}
+				</div>
+				if model.Revision!="" {
+					<p class="text-xs break-all text-white/50">{ model.Revision }</p>
+				}
+			</div>
+		}
+		for _,op:=range operations {
+			<div class="border-t border-white/20 pt-2 text-sm"><span>{ op.Action } { op.Runtime }/{ op.Model } — { op.Status }</span><p class="text-xs break-words">{ modelProgress(op.Progress) }</p></div>
+		}
+	</div>
+}
+
+type inventoryRow struct{ Name, Runtime, State, Size, Revision, Capabilities string }
+
+func modelInventoryRows(raw []byte) []inventoryRow {
+	var in struct {
+		Ollama struct {
+			Models []struct {
+				Name   string
+				Size   uint64
+				Digest string
+			}
+		}
+		Running struct{ Models []struct{ Name string } }
+		Active  map[string]int
+		Details map[string]struct{ Capabilities []string }
+		Whisper []struct {
+			Name      string
+			Installed bool
+			Size      uint64
+		}
+		Vision struct {
+			Models []struct {
+				Name     string
+				Ready    bool
+				Revision string
+				Error    string
+			}
+		}
+	}
+	if json.Unmarshal(raw, &in) != nil {
+		return nil
+	}
+	loaded := map[string]bool{}
+	for _, m := range in.Running.Models {
+		loaded[m.Name] = true
+	}
+	rows := []inventoryRow{}
+	for _, m := range in.Ollama.Models {
+		state := "Installed"
+		if loaded[m.Name] {
+			state = "Loaded"
+		}
+		if count := in.Active[m.Name]; count > 0 {
+			state = fmt.Sprintf("In use by %d request(s)", count)
+		}
+		rows = append(rows, inventoryRow{m.Name, "Ollama", state, humanize.Bytes(m.Size), m.Digest, strings.Join(in.Details[m.Name].Capabilities, ", ")})
+	}
+	for _, m := range in.Whisper {
+		state := "Not installed"
+		if m.Installed {
+			state = "Installed · loads per job"
+		}
+		rows = append(rows, inventoryRow{m.Name, "Whisper", state, humanize.Bytes(m.Size), "", "Transcription"})
+	}
+	for _, m := range in.Vision.Models {
+		state := "Not installed"
+		if m.Ready {
+			state = "Ready"
+		}
+		if m.Error != "" {
+			state = m.Error
+		}
+		rows = append(rows, inventoryRow{m.Name, "Vision", state, "", m.Revision, "Visual indexing"})
+	}
+	return rows
+}
+func modelProgress(raw []byte) string {
+	var value map[string]any
+	if json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	if err, ok := value["error"].(string); ok {
+		return err
+	}
+	if completed, ok := value["completed"].(float64); ok {
+		total, _ := value["total"].(float64)
+		if total > 0 {
+			return fmt.Sprintf("%s / %s (%.0f%%)", humanize.Bytes(uint64(completed)), humanize.Bytes(uint64(total)), 100*completed/total)
+		}
+		return humanize.Bytes(uint64(completed))
+	}
+	if status, ok := value["status"].(string); ok {
+		return status
+	}
+	return ""
+}
+
+func prettyModelJSON(raw []byte) string {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	formatted, _ := json.MarshalIndent(value, "", "  ")
+	return string(formatted)
+}

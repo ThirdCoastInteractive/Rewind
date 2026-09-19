@@ -81,15 +81,101 @@
     });
   }
 
-  async function archiveUrl({ serverUrl, authToken, url }) {
+  async function archiveUrl({ serverUrl, authToken, url, live_from_start, wait_for_video, media_url }) {
+    const body = { url: String(url || '') };
+    if (live_from_start != null) body.live_from_start = Boolean(live_from_start);
+    if (wait_for_video != null) {
+      const secs = Number(wait_for_video);
+      body.wait_for_video = Number.isFinite(secs) && secs > 0 ? Math.floor(secs) : 0;
+    }
+    if (media_url != null && media_url !== '') body.media_url = String(media_url);
+
     return fetchJson(`${serverUrl}/api/extension/archive`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${authToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ url })
+      body: JSON.stringify(body)
     });
+  }
+
+  // Injected into the page via adapter.executeScript — must be self-contained (no closures).
+  function inspectPageLive() {
+    try {
+      const href = String(location.href || '');
+      const title = String(document.title || '').trim();
+      let live = false;
+
+      try {
+        const u = new URL(href);
+        const host = String(u.hostname || '').toLowerCase();
+        const path = String(u.pathname || '');
+        const segs = path.split('/').filter(Boolean);
+
+        const hasVideo = Boolean(document.querySelector('video'));
+        const isKick = host === 'kick.com' || host.endsWith('.kick.com');
+        const isTwitch = host === 'twitch.tv' || host.endsWith('.twitch.tv');
+
+        if (isKick && segs.length === 1 && segs[0].toLowerCase() !== 'video' && hasVideo) {
+          live = true;
+        }
+        if (isTwitch && segs.length === 1 && segs[0].toLowerCase() !== 'videos' && hasVideo) {
+          live = true;
+        }
+        if (path.toLowerCase().includes('/live') || href.toLowerCase().includes('/live')) {
+          live = true;
+        }
+      } catch {
+        // ignore URL parse errors
+      }
+
+      const offline = document.querySelector('.ytp-offline-slate');
+      if (offline) {
+        live = false;
+      } else if (document.querySelector('.ytp-live-badge, [class*="ytp-live"], [class*="live-badge"]')) {
+        live = true;
+      }
+
+      function looksLikeMedia(raw) {
+        if (!raw || typeof raw !== 'string') return false;
+        if (!/^https:\/\//i.test(raw)) return false;
+        const lower = raw.toLowerCase();
+        return lower.includes('.m3u8') || lower.includes('.mpd');
+      }
+
+      let mediaUrl = '';
+      const videos = document.querySelectorAll('video');
+      for (let i = 0; i < videos.length && !mediaUrl; i++) {
+        const v = videos[i];
+        if (looksLikeMedia(v.src)) {
+          mediaUrl = v.src;
+          break;
+        }
+        const sources = v.querySelectorAll('source');
+        for (let j = 0; j < sources.length; j++) {
+          if (looksLikeMedia(sources[j].src)) {
+            mediaUrl = sources[j].src;
+            break;
+          }
+        }
+      }
+
+      if (!mediaUrl && typeof performance !== 'undefined' && performance.getEntriesByType) {
+        const entries = performance.getEntriesByType('resource') || [];
+        for (let i = 0; i < entries.length; i++) {
+          const name = entries[i] && entries[i].name;
+          if (looksLikeMedia(name)) {
+            mediaUrl = name;
+            break;
+          }
+        }
+      }
+
+      return { live: Boolean(live), title, mediaUrl: mediaUrl || '' };
+    } catch {
+      return { live: false, title: '', mediaUrl: '' };
+    }
   }
 
   async function uploadCookiesContent({ serverUrl, authToken, cookiesContent }) {
@@ -240,6 +326,7 @@
     parseAuthResponseUrl,
     getStatus,
     archiveUrl,
+    inspectPageLive,
     uploadCookiesContent,
     logout,
     siteKeyFromUrl,

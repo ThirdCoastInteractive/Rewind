@@ -1,0 +1,571 @@
+/* Wiki, vault, and creator encyclopedia layouts.
+   Stay inside the archival black/white system: square edges, 2px rules, Tomorrow. */
+
+@layer components {
+  .wiki-hero {
+    @apply mb-6 pb-4 border-b-2 border-white/10;
+  }
+
+  .wiki-hero-row {
+    @apply flex items-end justify-between gap-4 flex-wrap;
+  }
+
+  .wiki-search {
+    @apply flex items-stretch gap-2 w-full sm:w-auto sm:min-w-[22rem] max-w-xl;
+  }
+
+  .wiki-search .form-input {
+    @apply flex-1;
+  }
+
+  .wiki-trees {
+    @apply grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-8;
+  }
+
+  .wiki-tree-card {
+    @apply border-2 border-white/10 p-4 hover:border-white/40 transition-colors min-h-[9.5rem] flex flex-col no-underline text-inherit;
+  }
+
+  .wiki-tree-card-kicker {
+    @apply font-mono text-xs text-white/40 uppercase tracking-wider mb-2 flex items-center gap-2;
+  }
+
+  .wiki-tree-card-title {
+    @apply font-mono text-lg font-bold uppercase tracking-wider text-white mb-1;
+  }
+
+  .wiki-tree-card-blurb {
+    @apply font-mono text-xs text-white/50 leading-relaxed mb-3 flex-1;
+  }
+
+  .wiki-tree-card-meta {
+    @apply font-mono text-xs text-white/40 mt-auto;
+  }
+
+  .wiki-tree-card-samples {
+    @apply mt-2 space-y-0.5;
+  }
+
+  .wiki-tree-card-samples li {
+    @apply font-mono text-xs text-white/60 truncate;
+  }
+
+  .wiki-card-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3;
+  }
+
+  .wiki-page-card {
+    @apply border-2 border-white/10 p-3 hover:border-white/40 hover:bg-white/[0.03] transition-colors block min-w-0 no-underline text-inherit;
+  }
+
+  .wiki-page-card-kicker {
+    @apply flex items-center justify-between gap-2 mb-1;
+  }
+
+  .wiki-page-card-title {
+    @apply font-mono text-sm text-white leading-snug;
+  }
+
+  .wiki-page-card-slug {
+    @apply font-mono text-xs text-white/40 mt-0.5 truncate;
+  }
+
+  .wiki-page-card-excerpt {
+    @apply font-mono text-xs text-white/50 mt-2 leading-relaxed line-clamp-2;
+  }
+
+  .wiki-page-card-date {
+    @apply font-mono text-xs text-white/40 shrink-0;
+  }
+
+  .wiki-crumbs {
+    @apply text-xs font-mono text-white/40 mb-3 flex items-center gap-1 flex-wrap;
+  }
+
+  .wiki-crumbs a {
+    @apply hover:text-white/80;
+  }
+
+  .wiki-crumbs-sep {
+    @apply text-white/20;
+  }
+
+  .wiki-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+    max-width: 68rem;
+  }
+
+  @media (min-width: 960px) {
+    .wiki-layout {
+      grid-template-columns: minmax(0, 1fr) 18.5rem;
+    }
+
+    .wiki-rail {
+      position: sticky;
+      top: 4.5rem;
+    }
+  }
+
+  .wiki-title-row {
+    @apply flex items-start justify-between gap-3 flex-wrap mb-3;
+  }
+
+  .wiki-meta {
+    @apply font-mono text-xs text-white/40 mt-1;
+  }
+
+  .wiki-prose {
+    @apply font-mono text-sm leading-relaxed text-white/80;
+  }
+
+  .wiki-prose > h1:first-child {
+    display: none;
+  }
+
+  .wiki-prose h1,
+  .wiki-prose h2,
+  .wiki-prose h3 {
+    @apply text-white font-bold tracking-tight;
+    scroll-margin-top: 5rem;
+  }
+
+  .wiki-prose h1 {
+    @apply text-xl mb-3;
+  }
+
+  .wiki-prose h2 {
+    @apply text-base mt-6 mb-2 pb-1 border-b-2 border-white/10 uppercase tracking-wider;
+  }
+
+  .wiki-prose h3 {
+    @apply text-sm mt-4 mb-1 tracking-wide;
+  }
+
+  .wiki-prose p {
+    @apply mb-3;
+  }
+
+  .wiki-prose ul {
+    @apply list-disc pl-5 mb-3;
+  }
+
+  .wiki-prose ol {
+    @apply list-decimal pl-5 mb-3;
+  }
+
+  .wiki-prose li {
+    @apply mb-1;
+  }
+
+  .wiki-prose a {
+    @apply text-white underline underline-offset-2 decoration-white/40 hover:decoration-white;
+  }
+
+  .wiki-prose code {
+    @apply bg-white/10 px-1 text-white;
+  }
+
+  .wiki-prose pre {
+    @apply bg-white/5 p-3 overflow-x-auto mb-3 border-2 border-white/10;
+  }
+
+  .wiki-prose blockquote {
+    @apply border-l-2 border-white/20 pl-3 text-white/60 mb-3;
+  }
+
+  .wiki-prose hr {
+    @apply border-white/10 my-4;
+  }
+
+  .wiki-prose table {
+    @apply w-full text-left text-xs mb-3 border-2 border-white/10;
+  }
+
+  .wiki-prose th,
+  .wiki-prose td {
+    @apply border border-white/10 px-2 py-1;
+  }
+
+  .wiki-prose img {
+    @apply max-w-full h-auto border-2 border-white/10;
+  }
+
+  .wiki-media {
+    @apply my-4 border-2 border-white/10 max-w-xl bg-black;
+  }
+
+  .wiki-player video {
+    display: block;
+    width: 100%;
+    max-height: 24rem;
+    background: #000;
+  }
+
+  .wiki-media-image img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 0;
+  }
+
+  .wiki-media figcaption {
+    @apply font-mono text-xs text-white/60 px-3 py-2 border-t-2 border-white/10;
+  }
+
+  .wiki-media figcaption a {
+    @apply text-white no-underline hover:underline;
+  }
+
+  .wiki-media-range {
+    @apply text-white/40 ml-1;
+  }
+
+  .wiki-media-missing {
+    @apply p-3 font-mono text-xs text-white/50;
+  }
+
+  .wiki-article {
+    @apply border-2 border-white/10 p-4 sm:p-5 mb-0;
+  }
+
+  .wiki-rail {
+    @apply space-y-3 min-w-0;
+  }
+
+  .wiki-box {
+    @apply border-2 border-white/10 p-3;
+  }
+
+  .wiki-box-title {
+    @apply font-mono text-xs font-bold uppercase tracking-wider text-white mb-2;
+  }
+
+  .wiki-infobox dl {
+    @apply grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 font-mono text-xs;
+  }
+
+  .wiki-infobox dt {
+    @apply text-white/40 uppercase tracking-wider;
+  }
+
+  .wiki-infobox dd {
+    @apply text-white/80 min-w-0 truncate;
+  }
+
+  .wiki-infobox a {
+    @apply text-white hover:underline;
+  }
+
+  .wiki-toc {
+    @apply space-y-0.5;
+  }
+
+  .wiki-toc a {
+    @apply block font-mono text-xs text-white/70 hover:text-white py-0.5 leading-snug;
+  }
+
+  .wiki-toc .is-h3 {
+    @apply pl-3 text-white/50;
+  }
+
+  .wiki-related {
+    @apply space-y-1;
+  }
+
+  .wiki-related a {
+    @apply block font-mono text-xs text-white/80 hover:text-white truncate;
+  }
+
+  .wiki-related-slug {
+    @apply text-white/40;
+  }
+
+  .wiki-inferred {
+    @apply font-mono text-[10px] uppercase tracking-wider text-white/40 mb-2;
+  }
+
+  .wiki-archive {
+    @apply space-y-2 max-h-80 overflow-auto;
+  }
+
+  .wiki-archive-row {
+    @apply block font-mono text-xs text-white/80 hover:text-white;
+  }
+
+  .wiki-archive-title {
+    @apply block truncate;
+  }
+
+  .wiki-archive-meta {
+    @apply block text-white/40 truncate;
+  }
+
+  .wiki-editor-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .wiki-editor-layout {
+      grid-template-columns: minmax(0, 1fr) 16rem;
+    }
+
+    .wiki-cheatsheet {
+      position: sticky;
+      top: 4.5rem;
+    }
+  }
+
+  .wiki-cheatsheet code {
+    @apply text-white bg-white/10 px-1;
+  }
+
+  .wiki-history {
+    @apply space-y-3;
+  }
+
+  .wiki-history-item {
+    @apply border-2 border-white/10 p-3;
+  }
+
+  .wiki-stub {
+    @apply border-2 border-white/10 p-6 sm:p-8 max-w-2xl;
+  }
+
+  .wiki-subpages {
+    @apply space-y-1;
+  }
+
+  .wiki-subpages a {
+    @apply block font-mono text-xs py-0.5 text-white/80 hover:text-white truncate;
+  }
+
+  .wiki-tree-list {
+    @apply space-y-1;
+  }
+
+  .wiki-tree-node {
+    @apply border-2 border-white/10;
+  }
+
+  .wiki-tree-node > a {
+    @apply flex items-start justify-between gap-3 p-3 hover:bg-white/5;
+  }
+
+  .wiki-tree-children {
+    @apply border-t-2 border-white/10;
+  }
+
+  .wiki-tree-children .wiki-tree-node {
+    @apply border-0 border-b-2 border-white/10 last:border-b-0;
+  }
+
+  .wiki-tree-children .wiki-tree-node > a {
+    @apply pl-6;
+  }
+
+  .wiki-tree-children .wiki-tree-children .wiki-tree-node > a {
+    @apply pl-10;
+  }
+
+  /* Creator encyclopedia */
+  .creator-hero {
+    @apply mb-6 pb-4 border-b-2 border-white/10;
+  }
+
+  .creator-hero-top {
+    @apply flex items-start justify-between gap-3 flex-wrap mb-3;
+  }
+
+  .creator-actions {
+    @apply flex items-center gap-2 flex-wrap;
+  }
+
+  .creator-search {
+    @apply flex items-stretch gap-2 w-full max-w-3xl;
+  }
+
+  .creator-search .form-input {
+    @apply flex-1;
+  }
+
+  .creator-stats {
+    @apply grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4;
+  }
+
+  .creator-stat {
+    @apply border-2 border-white/10 px-3 py-2;
+  }
+
+  .creator-stat-label {
+    @apply font-mono text-xs text-white/40 uppercase tracking-wider;
+  }
+
+  .creator-stat-value {
+    @apply font-mono text-sm text-white mt-0.5;
+  }
+
+  .creator-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+    margin-bottom: 1.5rem;
+  }
+
+  @media (min-width: 960px) {
+    .creator-layout {
+      grid-template-columns: minmax(0, 1fr) 22rem;
+    }
+
+    .creator-rail {
+      position: sticky;
+      top: 4.5rem;
+    }
+  }
+
+  .creator-layout > .min-w-0 {
+    max-width: 52rem;
+  }
+
+  .creator-rail {
+    @apply space-y-3 min-w-0;
+  }
+
+  .entity-card-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3;
+  }
+
+  .entity-card {
+    @apply border-2 border-white/10 p-3 hover:border-white/40 hover:bg-white/[0.03] transition-colors block min-w-0 no-underline text-inherit;
+  }
+
+  .entity-card-title {
+    @apply font-mono text-sm text-white truncate;
+  }
+
+  .entity-card-notes {
+    @apply font-mono text-xs text-white/40 mt-1 line-clamp-2;
+  }
+
+  .entity-card-meta {
+    @apply font-mono text-xs text-white/50 mt-2;
+  }
+
+  .vault-featured {
+    @apply border-2 border-white/10 mb-4;
+  }
+
+  .vault-featured-header {
+    @apply flex items-center justify-between gap-2 px-3 py-2 border-b-2 border-white/10;
+  }
+
+  .vault-featured-body {
+    @apply p-4 sm:p-5;
+  }
+
+  .vault-groups {
+    @apply space-y-4;
+  }
+
+  .vault-group-title {
+    @apply font-mono text-xs uppercase tracking-wider text-white/50 mb-2;
+  }
+
+  .catalog-groups {
+    @apply space-y-2;
+  }
+
+  .catalog-channel {
+    @apply border-2 border-white/10;
+  }
+
+  .catalog-channel > summary {
+    @apply cursor-pointer list-none px-3 py-2 flex items-center justify-between gap-2 hover:bg-white/5;
+  }
+
+  .catalog-channel > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .catalog-channel-name {
+    @apply font-mono text-sm text-white truncate;
+  }
+
+  .catalog-channel-meta {
+    @apply font-mono text-xs text-white/40 shrink-0;
+  }
+
+  .catalog-feeds {
+    @apply border-t-2 border-white/10;
+  }
+
+  .catalog-feed {
+    @apply p-2 min-w-0 flex items-center justify-between gap-2 flex-wrap border-b-2 border-white/10 last:border-b-0;
+  }
+
+  .catalog-feed.is-complete {
+    @apply bg-white/[0.03];
+  }
+
+  .catalog-feed.is-stuck {
+    @apply bg-white/[0.06];
+  }
+
+  .catalog-feed-kind {
+    @apply font-mono text-xs uppercase tracking-wider text-white mb-1;
+  }
+
+  .catalog-feed-status {
+    @apply font-mono text-xs text-white/60;
+  }
+
+  .catalog-feed-counts {
+    @apply font-mono text-xs text-white/40 mt-0.5;
+  }
+
+  .catalog-meter {
+    @apply h-1 bg-white/10 mt-2;
+  }
+
+  .catalog-meter > span {
+    @apply block h-full bg-white/70;
+  }
+
+  .fold-section {
+    @apply border-2 border-white/10 mb-4;
+  }
+
+  .fold-section > summary {
+    @apply cursor-pointer list-none px-3 py-2 flex items-center justify-between gap-3 hover:bg-white/5;
+  }
+
+  .fold-section > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .fold-section-title {
+    @apply font-mono text-sm font-bold uppercase tracking-wider text-white;
+  }
+
+  .fold-section-meta {
+    @apply font-mono text-xs text-white/40;
+  }
+
+  .fold-section-body {
+    @apply border-t-2 border-white/10;
+  }
+
+  .channel-chip-list {
+    @apply space-y-1;
+  }
+
+  .channel-chip {
+    @apply flex items-center gap-2 min-w-0 py-1;
+  }
+}

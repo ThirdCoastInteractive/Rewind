@@ -39,9 +39,24 @@
       return fromCallback(ext.storage.local.remove.bind(ext.storage.local), keys);
     },
 
-    async getActiveTabUrl() {
+    async getActiveTab() {
       const tabs = await fromCallback(ext.tabs.query.bind(ext.tabs), { active: true, currentWindow: true });
-      return tabs?.[0]?.url || '';
+      const tab = tabs?.[0];
+      if (!tab) return null;
+      return { id: tab.id, url: tab.url || '' };
+    },
+
+    async getActiveTabUrl() {
+      const tab = await this.getActiveTab();
+      return tab?.url || '';
+    },
+
+    async executeScript({ tabId, func }) {
+      const results = await fromCallback(ext.scripting.executeScript.bind(ext.scripting), {
+        target: { tabId },
+        func
+      });
+      return results?.[0]?.result;
     },
 
     tabsCreate(url) {

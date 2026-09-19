@@ -11,6 +11,19 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// ResolvePendingEdges fills to_channel_id on harvested URLs that now match an
+// archived channel. Skips the expensive join when nothing is unresolved.
+func ResolvePendingEdges(ctx context.Context, q *db.Queries) error {
+	if q == nil {
+		return nil
+	}
+	ok, err := q.HasUnresolvedChannelEdges(ctx)
+	if err != nil || !ok {
+		return err
+	}
+	return q.ResolveChannelEdges(ctx)
+}
+
 // Record upserts one directed edge per hit from fromChannel. Hits whose URL
 // already maps to an archived channel store to_channel_id; others keep to_url
 // for later ResolveChannelEdges. Commented hits are skipped unless the target

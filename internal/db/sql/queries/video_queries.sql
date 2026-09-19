@@ -223,6 +223,14 @@ WHERE assets_status ? '_error_count'
 AND (assets_status->>'_error_count')::int > 0;
 
 -- UpdateVideoPath updates the video_path for a video.
+-- PublishVideoMedia makes a completed file available before derived asset work.
+-- name: PublishVideoMedia :execrows
+UPDATE videos SET video_path=sqlc.arg(video_path), media='file',
+ thumbnail_path=COALESCE(sqlc.narg(thumbnail_path),thumbnail_path),
+ file_hash=COALESCE(sqlc.narg(file_hash),file_hash),
+ file_size=sqlc.arg(file_size), updated_at=NOW()
+WHERE id=sqlc.arg(id);
+
 -- name: UpdateVideoPath :exec
 UPDATE videos
 SET video_path = sqlc.arg(video_path),

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"thirdcoast.systems/rewind/internal/channelid"
+	"thirdcoast.systems/rewind/internal/channellinks"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -25,7 +26,7 @@ func Apply(ctx context.Context, q *db.Queries) {
 	if err := materializeLabeledTargets(ctx, q); err != nil {
 		slog.Warn("creatorlink: materialize labeled targets", "error", err)
 	}
-	if err := q.ResolveChannelEdges(ctx); err != nil {
+	if err := channellinks.ResolvePendingEdges(ctx, q); err != nil {
 		slog.Warn("creatorlink: resolve edges", "error", err)
 	}
 	if err := applyClusters(ctx, q); err != nil {

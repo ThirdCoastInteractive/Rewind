@@ -165,6 +165,26 @@ func (q *Queries) CreateWatchedChannel(ctx context.Context, arg *CreateWatchedCh
 	return &i, err
 }
 
+const deleteOwnedWatchedChannel = `-- name: DeleteOwnedWatchedChannel :execrows
+DELETE FROM watched_channels WHERE id=$1 AND created_by=$2
+`
+
+type DeleteOwnedWatchedChannelParams struct {
+	ID        pgtype.UUID `db:"id" json:"ID"`
+	CreatedBy pgtype.UUID `db:"created_by" json:"CreatedBy"`
+}
+
+// DeleteOwnedWatchedChannel
+//
+//	DELETE FROM watched_channels WHERE id=$1 AND created_by=$2
+func (q *Queries) DeleteOwnedWatchedChannel(ctx context.Context, arg *DeleteOwnedWatchedChannelParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOwnedWatchedChannel, arg.ID, arg.CreatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteWatchedChannel = `-- name: DeleteWatchedChannel :exec
 DELETE FROM watched_channels WHERE id = $1
 `
@@ -181,7 +201,7 @@ func (q *Queries) DeleteWatchedChannel(ctx context.Context, id pgtype.UUID) erro
 const enqueueWatchScanJob = `-- name: EnqueueWatchScanJob :one
 INSERT INTO download_jobs (url, archived_by, status, kind, watch_id)
 VALUES ($1, $2, 'queued', 'playlist', $3)
-RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 `
 
 type EnqueueWatchScanJobParams struct {
@@ -196,7 +216,7 @@ type EnqueueWatchScanJobParams struct {
 //
 //	INSERT INTO download_jobs (url, archived_by, status, kind, watch_id)
 //	VALUES ($1, $2, 'queued', 'playlist', $3)
-//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id
+//	RETURNING id, created_at, updated_at, url, archived_by, status, attempts, last_error, started_at, finished_at, spool_dir, info_json_path, video_id, refresh, process_pid, archived, extra_args, kind, parent_job_id, batch_label, batch_total, watch_id, dedupe_key
 func (q *Queries) EnqueueWatchScanJob(ctx context.Context, arg *EnqueueWatchScanJobParams) (*DownloadJob, error) {
 	row := q.db.QueryRow(ctx, enqueueWatchScanJob, arg.URL, arg.ArchivedBy, arg.WatchID)
 	var i DownloadJob
@@ -223,6 +243,7 @@ func (q *Queries) EnqueueWatchScanJob(ctx context.Context, arg *EnqueueWatchScan
 		&i.BatchLabel,
 		&i.BatchTotal,
 		&i.WatchID,
+		&i.DedupeKey,
 	)
 	return &i, err
 }

@@ -1,6 +1,7 @@
 package captions
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,62 @@ import (
 	"strings"
 	"time"
 )
+
+// CuesFromStoredTranscript recovers timed cues from the normalized JSON first,
+// then from a raw VTT fallback. It is the bridge between searchable database
+// transcripts and the sidecar file consumed by the browser player.
+func CuesFromStoredTranscript(cuesJSON []byte, raw string) ([]Cue, error) {
+	var cues []Cue
+	if len(cuesJSON) > 0 && string(cuesJSON) != "null" {
+		if err := json.Unmarshal(cuesJSON, &cues); err == nil && len(cues) > 0 {
+			return cues, nil
+		}
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("stored transcript has no timed cues")
+	}
+	doc, err := ParseString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse stored transcript: %w", err)
+	}
+	if len(doc.Cues) == 0 {
+		return nil, fmt.Errorf("stored transcript has no timed cues")
+	}
+	return doc.Cues, nil
+}
+
+// WriteVTTFile atomically writes a canonical WebVTT sidecar.
+func WriteVTTFile(path string, cues []Cue) error {
+	if len(cues) == 0 {
+		return fmt.Errorf("cannot write empty captions")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".captions-write-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if err := WriteVTT(tmp, cues); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
 
 // WriteVTT writes a clean WebVTT for the given cues.
 func WriteVTT(w io.Writer, cues []Cue) error {

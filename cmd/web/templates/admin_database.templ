@@ -1,0 +1,172 @@
+package templates
+
+import (
+	"fmt"
+	"net/url"
+	"thirdcoast.systems/rewind/cmd/web/templates/components"
+	"thirdcoast.systems/rewind/pkg/utils/format"
+)
+
+type AdminActivityCount struct {
+	State string
+	Count int64
+}
+
+type AdminStatementRow struct {
+	Query     string
+	Calls     int64
+	TotalTime float64
+	MeanTime  float64
+	Rows      int64
+}
+
+type AdminDatabasePage struct {
+	Activity          []AdminActivityCount
+	Statements        []AdminStatementRow
+	StatementsMissing bool
+	TotalConns        int32
+	IdleConns         int32
+	AcquiredConns     int32
+	Sort              string
+	ShowNoise         bool
+	StatsReset        string
+	AlertType         string
+	AlertMsg          string
+}
+
+func databaseHref(sort string, noise bool) string {
+	q := url.Values{}
+	if sort != "" && sort != "total" {
+		q.Set("sort", sort)
+	}
+	if noise {
+		q.Set("noise", "1")
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/admin/database?" + enc
+	}
+	return "/admin/database"
+}
+
+func databaseSortClass(current, want string) string {
+	if current == want {
+		return "text-white border-b-2 border-white pb-0.5"
+	}
+	return "text-white/50 hover:text-white"
+}
+
+func formatExecMs(ms float64) string {
+	if ms >= 1000 {
+		return fmt.Sprintf("%.2f s", ms/1000)
+	}
+	return fmt.Sprintf("%.1f ms", ms)
+}
+
+templ AdminDatabase(username string, page AdminDatabasePage) {
+	@Layout("Database", username) {
+		@AdminDatabaseContent(page)
+	}
+}
+
+templ AdminDatabaseContent(page AdminDatabasePage) {
+	@Container("wide") {
+		@components.AdminPageHeader("DATABASE", "/admin")
+		if page.AlertMsg != "" {
+			@Alert(page.AlertType, page.AlertMsg)
+		}
+		<div class="flex flex-wrap items-center gap-2 mb-4">
+			@components.LinkButton(databaseHref(page.Sort, page.ShowNoise), "ghost", "sm", "arrows-rotate", false) {
+				Refresh
+			}
+			if !page.StatementsMissing {
+				<form method="POST" action="/admin/database/reset-statements" onsubmit="return confirm('Clear pg_stat_statements? Totals restart from zero.')">
+					@components.FormButton("secondary", "sm", "", false) {
+						Clear statements
+					}
+				</form>
+			}
+		</div>
+		<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+			<div class="info-box">
+				<div class="section-label mb-1">POOL TOTAL</div>
+				<div class="text-xl font-mono text-white">{ format.Itoa32(page.TotalConns) }</div>
+			</div>
+			<div class="info-box">
+				<div class="section-label mb-1">POOL IDLE</div>
+				<div class="text-xl font-mono text-white">{ format.Itoa32(page.IdleConns) }</div>
+			</div>
+			<div class="info-box">
+				<div class="section-label mb-1">POOL ACQUIRED</div>
+				<div class="text-xl font-mono text-white">{ format.Itoa32(page.AcquiredConns) }</div>
+			</div>
+		</div>
+		<div class="section-label mb-2">ACTIVITY</div>
+		if len(page.Activity) == 0 {
+			<div class="info-box mb-6">
+				<div class="text-sm font-mono text-white/60">No pg_stat_activity rows returned.</div>
+			</div>
+		} else {
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+				for _, row := range page.Activity {
+					<div class="info-box">
+						<div class="section-label mb-1">{ row.State }</div>
+						<div class="text-xl font-mono text-white">{ format.Itoa64(row.Count) }</div>
+					</div>
+				}
+			</div>
+		}
+		<div class="flex flex-wrap items-end justify-between gap-3 mb-2">
+			<div>
+				<div class="section-label">STATEMENTS</div>
+				if page.StatsReset != "" {
+					<p class="text-xs font-mono text-white/40 mt-1">Since { page.StatsReset }. Totals are cumulative until cleared.</p>
+				} else {
+					<p class="text-xs font-mono text-white/40 mt-1">Totals are cumulative until cleared.</p>
+				}
+			</div>
+			if !page.StatementsMissing {
+				<div class="flex flex-wrap items-center gap-3 text-xs font-mono uppercase tracking-wider">
+					<nav class="flex gap-3" aria-label="Sort statements">
+						<a class={ databaseSortClass(page.Sort, "total") } href={ templ.SafeURL(databaseHref("total", page.ShowNoise)) }>Total</a>
+						<a class={ databaseSortClass(page.Sort, "mean") } href={ templ.SafeURL(databaseHref("mean", page.ShowNoise)) }>Mean</a>
+						<a class={ databaseSortClass(page.Sort, "calls") } href={ templ.SafeURL(databaseHref("calls", page.ShowNoise)) }>Calls</a>
+					</nav>
+					if page.ShowNoise {
+						<a class="text-white/50 hover:text-white" href={ templ.SafeURL(databaseHref(page.Sort, false)) }>Hide utilities</a>
+					} else {
+						<a class="text-white/50 hover:text-white" href={ templ.SafeURL(databaseHref(page.Sort, true)) }>Show utilities</a>
+					}
+				</div>
+			}
+		</div>
+		if page.StatementsMissing {
+			@Alert("warning", "pg_stat_statements is not loaded. Rebuild the postgres image and restart postgres so shared_preload_libraries takes effect.")
+		} else if len(page.Statements) == 0 {
+			@EmptyState("database", "NO STATEMENTS", "No statements in this window. Wait for traffic, or show utilities.")
+		} else {
+			<div class="overflow-x-auto">
+				@components.Table([]string{"QUERY", "CALLS", "TOTAL", "MEAN", "ROWS"}, true) {
+					for _, stmt := range page.Statements {
+						@components.TableRow(false, "") {
+							@components.TableCell(true) {
+								<span class="text-xs text-white/80 break-all">{ stmt.Query }</span>
+							}
+							@components.TableCell(true) {
+								{ format.Itoa64(stmt.Calls) }
+							}
+							@components.TableCell(true) {
+								{ formatExecMs(stmt.TotalTime) }
+							}
+							@components.TableCell(true) {
+								{ formatExecMs(stmt.MeanTime) }
+							}
+							@components.TableCell(true) {
+								{ format.Itoa64(stmt.Rows) }
+							}
+						}
+					}
+				}
+			</div>
+		}
+	}
+}

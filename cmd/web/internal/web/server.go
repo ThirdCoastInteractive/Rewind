@@ -2,47 +2,69 @@ package web
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
+	"path"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	ygowebsocket "github.com/reearth/ygo/provider/websocket"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/handlers/admin"
 	authhandlers "thirdcoast.systems/rewind/cmd/web/handlers/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/content"
-	"thirdcoast.systems/rewind/cmd/web/handlers/sessions"
 	settingspage "thirdcoast.systems/rewind/cmd/web/handlers/settings"
 
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/audio_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/channel_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/clip_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/compilation_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/creator_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/font_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/home_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/job_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/marker_api"
 	settingsapi "thirdcoast.systems/rewind/cmd/web/handlers/api/settings_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/shownote_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/stitch_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/tag_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/upload_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/video_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/vision_api"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/watch_api"
 
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/agent_api"
+	"thirdcoast.systems/rewind/cmd/web/handlers/api/runtime_api"
 	"thirdcoast.systems/rewind/cmd/web/internal/producer"
+	"thirdcoast.systems/rewind/cmd/web/internal/shownote"
 	"thirdcoast.systems/rewind/cmd/web/internal/telemetry"
 	staticpkg "thirdcoast.systems/rewind/cmd/web/internal/web/utils/static"
+	"thirdcoast.systems/rewind/internal/agent"
+	"thirdcoast.systems/rewind/internal/compilation"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/events"
 	rewindmcp "thirdcoast.systems/rewind/internal/mcp"
+	"thirdcoast.systems/rewind/internal/runtimecfg"
+	workspace "thirdcoast.systems/rewind/internal/shownote"
 	"thirdcoast.systems/rewind/pkg/encryption"
 )
 
 // Webserver is the main HTTP server that wires together routing, middleware, and all handler groups.
 type Webserver struct {
 	*echo.Echo
+	ctx                 context.Context
 	sessionManager      *auth.SessionManager
 	encryptionManager   *encryption.Manager
 	dbc                 *db.DatabaseConnection
@@ -51,12 +73,30 @@ type Webserver struct {
 	settingsCache       *db.SettingsCache
 	telemetryHub        *telemetry.Hub
 	sceneHub            *producer.SceneHub
+	showNoteHub         *shownote.Hub
+	showNoteCollab      *ygowebsocket.Server
+	collaborationAccess collaborationAccess
 	allowedExtensionIDs map[string]struct{}
+}
+
+// Shutdown drains persisted collaboration updates before closing HTTP peers.
+func (s *Webserver) Shutdown(ctx context.Context) error {
+	return errors.Join(s.showNoteCollab.Shutdown(ctx), s.Echo.Shutdown(ctx))
 }
 
 // NewWebserver initializes the Echo server, registers all routes and middleware, and returns a ready-to-start Webserver.
 func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionManager *encryption.Manager, sessionManager *auth.SessionManager) (*Webserver, error) {
+	if err := runtimecfg.Start(ctx, dbc, "web"); err != nil {
+		return nil, err
+	}
 	e := echo.New()
+	runtime_api.Register(e, sessionManager, dbc)
+	agent_api.Register(e, sessionManager, dbc)
+	agent.Start(ctx, dbc)
+	events.Default.Start(ctx, dbc)
+	go compilation.Run(ctx, dbc)
+	vision_api.Register(e, sessionManager, dbc)
+	compilation_api.Register(e, sessionManager, dbc)
 
 	// Initialize static cache
 	staticCache, err := staticpkg.NewStaticCache()
@@ -69,9 +109,49 @@ func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionMan
 	if err != nil {
 		return nil, err
 	}
+	report := workspace.WorkspacePreflight(ctx, dbc)
+	if !report.CanEnable {
+		return nil, fmt.Errorf("show-note workspace preflight failed: %d pending, %d failed", report.Pending, report.Failed)
+	}
+
+	collab := ygowebsocket.NewServerWithPersistence(workspace.NewPostgresPersistence(dbc))
+	collab.PersistCoalesceWindow = -1
+	go shownote_api.RunMaterializations(ctx, dbc, collab)
+	collab.MaxPeersPerRoom = 32
+	collab.MaxConnections = 512
+	collab.MaxMessageBytes = 8 << 20
+	collab.MaxUpdateBytes = 8 << 20
+	collab.MaxAwarenessClientsPerRoom = 32
+	collab.MaxAwarenessBytesPerRoom = 1 << 20
+	collab.AwarenessExpiry = 45 * time.Second
+	collab.Authorize = func(r *http.Request) (ygowebsocket.ConnectionConfig, bool) {
+		if r.Context().Err() != nil {
+			return ygowebsocket.ConnectionConfig{}, false
+		}
+		userID, _, err := sessionManager.GetSession(r)
+		if err != nil {
+			return ygowebsocket.ConnectionConfig{}, false
+		}
+		var userUUID, noteUUID pgtype.UUID
+		if err := userUUID.Scan(userID); err != nil {
+			return ygowebsocket.ConnectionConfig{}, false
+		}
+		if err := noteUUID.Scan(path.Base(r.URL.Path)); err != nil {
+			return ygowebsocket.ConnectionConfig{}, false
+		}
+		access := workspace.UserAccess(r.Context(), dbc, noteUUID, userUUID)
+		if access.Allowed {
+			if err := workspace.EnsureWorkspaceDocument(r.Context(), dbc, noteUUID); err != nil {
+				slog.Error("show-note workspace migration failed", "show_note_id", noteUUID.String(), "error", err)
+				return ygowebsocket.ConnectionConfig{}, false
+			}
+		}
+		return ygowebsocket.ConnectionConfig{ReadOnly: access.ReadOnly}, access.Allowed
+	}
 
 	webserver := &Webserver{
 		Echo:                e,
+		ctx:                 ctx,
 		sessionManager:      sessionManager,
 		encryptionManager:   encryptionManager,
 		dbc:                 dbc,
@@ -80,8 +160,11 @@ func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionMan
 		settingsCache:       settingsCache,
 		telemetryHub:        telemetry.NewHub(),
 		sceneHub:            producer.NewSceneHub(),
+		showNoteHub:         shownote.NewHub(),
+		showNoteCollab:      collab,
 		allowedExtensionIDs: parseCommaSeparatedSet(os.Getenv("EXTENSION_ALLOWED_CLIENT_IDS")),
 	}
+	shownote.StartRoomEventNotifications(ctx, dbc, webserver.showNoteHub)
 
 	if len(webserver.allowedExtensionIDs) == 0 {
 		slog.Info("EXTENSION_ALLOWED_CLIENT_IDS not set; extension CORS will be allowed only on localhost/private IP")
@@ -110,6 +193,27 @@ func parseCommaSeparatedSet(raw string) map[string]struct{} {
 	return set
 }
 
+// skipGzip avoids compressing media. Gzip on a multi-GB stitch MP4 stalls
+// the download (no Content-Length, CPU-bound, browser tab hangs).
+func skipGzip(c echo.Context) bool {
+	if c.Request().Header.Get("Range") != "" {
+		return true
+	}
+	p := c.Request().URL.Path
+	switch {
+	case p == "/mcp", p == "/api/ml/jobs/clear":
+		return true
+	case strings.Contains(p, "/download"), strings.Contains(p, "/stream"):
+		return true
+	case strings.HasPrefix(p, "/admin/debug/pprof"):
+		return true
+	case strings.Contains(c.Request().Header.Get("Accept"), "text/event-stream"):
+		return true
+	default:
+		return false
+	}
+}
+
 // securityHeaders adds standard security and privacy headers to every response.
 func securityHeaders(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -117,7 +221,7 @@ func securityHeaders(next echo.HandlerFunc) echo.HandlerFunc {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		h.Set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
 		return next(c)
 	}
 }
@@ -134,19 +238,23 @@ func (s *Webserver) setupMiddleware() error {
 	s.Use(middleware.Recover())
 	s.Use(middleware.RequestID())
 	s.Use(middleware.GzipWithConfig(middleware.GzipConfig{
-		Level: 5,
-		Skipper: func(c echo.Context) bool {
-			return c.Path() == "/mcp"
-		},
+		Level:   5,
+		Skipper: skipGzip,
 	}))
 	s.Use(securityHeaders)
+	s.Use(pageNavigation)
 	s.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		Skipper: func(c echo.Context) bool {
 			switch c.Path() {
 			case "/mcp",
 				"/api/player-sessions/:code/player/telemetry",
 				"/api/player-sessions/:code/player/stream",
-				"/api/player-sessions/:code/producer/stream":
+				"/api/player-sessions/:code/producer/stream",
+				"/api/show-notes/:id/events",
+				"/api/show-notes/:id/signal",
+				"/api/show-notes/:id/producer/stream",
+				"/api/show-notes/:id/scene/stream",
+				"/api/show-notes/:id/telemetry":
 				return true
 			default:
 				return false
@@ -193,10 +301,14 @@ func (s *Webserver) setupMiddleware() error {
 					q := s.dbc.Queries(c.Request().Context())
 					row, err := q.GetSessionInvalidation(c.Request().Context(), uid)
 					if err != nil {
-						// User deleted or DB error - clear session
-						slog.Warn("session invalidation check failed", "user_id", userID, "error", err)
-						s.sessionManager.ClearSession(c.Response().Writer, c.Request())
-						accessLevel = auth.AccessUnauthenticated
+						if errors.Is(err, pgx.ErrNoRows) {
+							slog.Info("missing user session cleared", "user_id", userID)
+							s.sessionManager.ClearSession(c.Response().Writer, c.Request())
+							accessLevel = auth.AccessUnauthenticated
+						} else {
+							// Transient DB errors (pool exhaustion, network) must not log the user out.
+							slog.Warn("session invalidation check failed", "user_id", userID, "error", err)
+						}
 					} else if !row.Enabled {
 						// User is disabled - clear session
 						slog.Info("disabled user session cleared", "user_id", userID)
@@ -223,6 +335,18 @@ func (s *Webserver) setupMiddleware() error {
 			ctx := context.WithValue(c.Request().Context(), ctxkeys.AccessLevel, string(accessLevel))
 			ctx = context.WithValue(ctx, ctxkeys.RegistrationEnabled, regEnabled)
 			ctx = context.WithValue(ctx, ctxkeys.StaticVersion, s.staticCache.DistVersion())
+			if accessLevel != auth.AccessUnauthenticated {
+				userID, _, _ := s.sessionManager.GetSession(c.Request())
+				var uid pgtype.UUID
+				if uid.Scan(userID) == nil {
+					if raw, err := s.dbc.Queries(ctx).GetInterfacePreferences(ctx, uid); err == nil {
+						var prefs map[string]any
+						if json.Unmarshal(raw, &prefs) == nil {
+							ctx = context.WithValue(ctx, ctxkeys.InterfacePreferences, prefs)
+						}
+					}
+				}
+			}
 			c.SetRequest(c.Request().WithContext(ctx))
 
 			return next(c)
@@ -258,7 +382,7 @@ func (s *Webserver) registerRoutes() error {
 	})
 
 	adminGroup.GET("", admin.HandleAdminHomePage(s.sessionManager, s.dbc))
-	adminGroup.GET("/settings", admin.HandleAdminSettingsPage())
+	adminGroup.GET("/settings", admin.HandleAdminSettingsPage(s.sessionManager, s.dbc))
 	adminGroup.POST("/settings", admin.HandleAdminSettings(s.sessionManager, s.dbc, s.settingsCache))
 	adminGroup.GET("/users", admin.HandleAdminUsersPage(s.sessionManager, s.dbc))
 	adminGroup.POST("/users/:id/enable", admin.HandleAdminUserEnable(s.sessionManager, s.dbc))
@@ -268,6 +392,9 @@ func (s *Webserver) registerRoutes() error {
 	adminGroup.GET("/asset-health", admin.HandleAdminAssetHealthPage(s.sessionManager, s.dbc))
 	adminGroup.POST("/asset-health/:id/retry", admin.HandleAdminAssetHealthRetry(s.sessionManager, s.dbc))
 	adminGroup.POST("/asset-health/retry-all", admin.HandleAdminAssetHealthRetryAll(s.sessionManager, s.dbc))
+	adminGroup.GET("/database", admin.HandleAdminDatabasePage(s.sessionManager, s.dbc))
+	adminGroup.POST("/database/reset-statements", admin.HandleAdminDatabaseResetStatements(s.sessionManager, s.dbc))
+	registerAdminPprof(adminGroup)
 	// Exports management
 	adminGroup.GET("/exports", admin.HandleAdminExportsPage(s.sessionManager, s.dbc))
 	adminGroup.GET("/exports/index", admin.HandleAdminExportsIndex(s.sessionManager, s.dbc))
@@ -282,6 +409,7 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.GET("/home/recent-published", home_api.HandleRecentPublished(s.sessionManager, s.dbc))
 	apiGroup.GET("/home/recent-clips", home_api.HandleRecentClips(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/index", video_api.HandleIndex(s.sessionManager, s.dbc))
+	apiGroup.GET("/videos/uploaders", video_api.HandleUploaderOptions(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/recent", video_api.HandleRecent(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/stream", video_api.HandleStream(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/streams/:filename", video_api.HandleStreamFile(s.sessionManager, s.dbc))
@@ -302,7 +430,19 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.DELETE("/videos/:id/tags/:tagId", tag_api.HandleRemoveTag(s.sessionManager, s.dbc))
 	apiGroup.GET("/tags", tag_api.HandleListTags(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/bulk-tag", tag_api.HandleBulkTag(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/bulk-delete", video_api.HandleBulkDelete(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/transcript/render", video_api.HandleTranscriptRender(s.sessionManager))
+	apiGroup.GET("/videos/:id/context-windows", video_api.HandleContextWindowsList(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/:id/context-windows", video_api.HandleContextWindowCreate(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/:id/generation-retry", video_api.HandleGenerationRetry(s.sessionManager, s.dbc))
+	apiGroup.POST("/videos/:id/context-windows/generate", video_api.HandleGenerateContextWindows(s.sessionManager, s.dbc))
+	apiGroup.POST("/ml-jobs/:id/retry", video_api.HandleRetryMLJob(s.sessionManager, s.dbc))
+	apiGroup.POST("/ml-jobs/:id/priority", video_api.HandleSetMLJobPriority(s.sessionManager, s.dbc))
+	apiGroup.GET("/ml/health", video_api.HandleMLRuntimeHealth(s.sessionManager, s.dbc))
+	apiGroup.GET("/ml/jobs", video_api.HandleMLJobs(s.sessionManager, s.dbc))
+	apiGroup.POST("/ml/jobs/clear", video_api.HandleClearMLQueue(s.sessionManager, s.dbc))
+	apiGroup.PUT("/context-windows/:id", video_api.HandleContextWindowUpdate(s.sessionManager, s.dbc))
+	apiGroup.DELETE("/context-windows/:id", video_api.HandleContextWindowDelete(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/markers", video_api.HandleMarkersUpdate(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/clips", video_api.HandleClips(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/clips", video_api.HandleClipsCreate(s.sessionManager, s.dbc))
@@ -312,14 +452,6 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.DELETE("/videos/:id", video_api.HandleDelete(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/jobs", video_api.HandleJobs(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/position", settingsapi.HandleSavePlaybackPosition(s.sessionManager, s.dbc))
-
-	apiGroup.GET("/channels/index", channel_api.HandleIndex(s.sessionManager, s.dbc))
-	apiGroup.GET("/creators/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
-	apiGroup.GET("/creators/:id/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
-	apiGroup.POST("/watches", watch_api.HandleCreate(s.sessionManager, s.dbc))
-	apiGroup.POST("/watches/:id/toggle", watch_api.HandleToggle(s.sessionManager, s.dbc))
-	apiGroup.POST("/watches/:id/scan", watch_api.HandleScanNow(s.sessionManager, s.dbc))
-	apiGroup.POST("/watches/:id/delete", watch_api.HandleDelete(s.sessionManager, s.dbc))
 
 	apiGroup.PUT("/markers/:id", marker_api.HandleCreateOrUpdate(s.sessionManager, s.dbc))
 	apiGroup.DELETE("/markers/:id", marker_api.HandleDelete(s.sessionManager, s.dbc))
@@ -355,15 +487,53 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.GET("/jobs/:id/logs", job_api.HandleLogs(s.sessionManager, s.dbc))
 	apiGroup.GET("/jobs/:id/logs/stream", job_api.HandleLogsStream(s.sessionManager, s.dbc))
 
+	// Channel pages + channel watching (scheduled channel scans)
+	apiGroup.GET("/channels/index", channel_api.HandleIndex(s.sessionManager, s.dbc))
+	apiGroup.GET("/network/inspect", content.HandleNetworkInspect(s.sessionManager, s.dbc))
+	apiGroup.GET("/network/context", content.HandleNetworkContext(s.sessionManager, s.dbc))
+	apiGroup.POST("/network/group", content.HandleNetworkGroup(s.sessionManager, s.dbc))
+	apiGroup.POST("/network/unlink", content.HandleNetworkUnlink(s.sessionManager, s.dbc))
+	apiGroup.GET("/creators/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
+	apiGroup.GET("/creators/:id/channel-search", creator_api.HandleChannelSearch(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches", watch_api.HandleCreate(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/toggle", watch_api.HandleToggle(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/scan", watch_api.HandleScanNow(s.sessionManager, s.dbc))
+	apiGroup.POST("/watches/:id/delete", watch_api.HandleDelete(s.sessionManager, s.dbc))
+
 	apiGroup.POST("/settings/keybindings", settingsapi.HandleKeybindingUpdate(s.sessionManager, s.dbc))
 	apiGroup.DELETE("/settings/keybindings/:action", settingsapi.HandleKeybindingDelete(s.sessionManager, s.dbc))
 	apiGroup.POST("/settings/keybindings/reset", settingsapi.HandleKeybindingReset(s.sessionManager, s.dbc))
 
-	apiGroup.GET("/player-sessions/:code/producer/stream", sessions.HandleProducerStream(s.sessionManager, s.dbc, s.telemetryHub))
-	apiGroup.GET("/player-sessions/:code/player/stream", sessions.HandlePlayerStream(s.sessionManager, s.dbc, s.telemetryHub, s.sceneHub))
-	apiGroup.POST("/player-sessions/:code/player/telemetry", sessions.HandlePlayerTelemetry(s.telemetryHub))
+	// Show Notes API (workspace/collab document, hosts, live session)
+	apiGroup.GET("/show-notes/:id/document/:room", echo.WrapHandler(s.collaborationAccess.wrap(s.showNoteCollab)))
+	apiGroup.GET("/show-notes/:id/workspace", shownote_api.HandleWorkspaceState(s.sessionManager, s.dbc))
+	apiGroup.GET("/show-notes/:id/events", shownote_api.HandleRoomEventStream(s.sessionManager, s.dbc, s.showNoteHub))
+	apiGroup.POST("/show-notes/:id/messages", shownote_api.HandlePostRoomMessage(s.sessionManager, s.dbc))
+	apiGroup.POST("/show-notes/:id/reviews", shownote_api.HandleCreateReview(s.sessionManager, s.dbc, s.showNoteCollab))
+	apiGroup.POST("/show-notes/:id/reviews/:threadId/replies", shownote_api.HandlePostReviewReply(s.sessionManager, s.dbc))
+	apiGroup.PUT("/show-notes/:id/reviews/:threadId/status", shownote_api.HandleReviewStatus(s.sessionManager, s.dbc, s.showNoteCollab))
+	apiGroup.POST("/show-notes/:id/references/:referenceId/materialize", shownote_api.HandleMaterializeReference(s.sessionManager, s.dbc, s.showNoteCollab))
+	apiGroup.GET("/show-notes/:id/signal", shownote_api.HandleSignalProxy(s.sessionManager, s.dbc)) // WebRTC signaling -> SFU
+	apiGroup.POST("/show-notes/:id/hosts", s.collaborationAccess.changingHosts(shownote_api.HandleAddHost(s.sessionManager, s.dbc)))
+	apiGroup.DELETE("/show-notes/:id/hosts/:userId", s.collaborationAccess.changingHosts(shownote_api.HandleRemoveHost(s.sessionManager, s.dbc)))
+	apiGroup.PUT("/show-notes/:id", shownote_api.HandleUpdateShowNote(s.sessionManager, s.dbc))
+	apiGroup.DELETE("/show-notes/:id", shownote_api.HandleDeleteShowNote(s.sessionManager, s.dbc))
 
-	apiGroup.DELETE("/player-sessions/:id", sessions.HandleDeletePlayerSession(s.sessionManager, s.dbc))
+	// Show Notes live session (producer v2: the show note IS the session)
+	apiGroup.POST("/show-notes/:id/live", shownote_api.HandleGoLive(s.sessionManager, s.dbc, s.sceneHub))
+	apiGroup.POST("/show-notes/:id/offline", shownote_api.HandleEndLive(s.sessionManager, s.dbc))
+	apiGroup.POST("/show-notes/:id/scene/apply", shownote_api.HandleApplyScene(s.sessionManager, s.dbc, s.sceneHub))
+	apiGroup.POST("/show-notes/:id/scene/set", shownote_api.HandleSetScene(s.sessionManager, s.dbc, s.sceneHub))
+	apiGroup.GET("/show-notes/:id/scene/presets/render", shownote_api.HandleScenePresetsRender(s.sessionManager, s.dbc))
+	apiGroup.POST("/show-notes/:id/scene/presets", shownote_api.HandleSaveScenePreset(s.sessionManager, s.dbc))
+	apiGroup.POST("/show-notes/:id/scene/presets/:presetId/apply", shownote_api.HandleApplyScenePreset(s.sessionManager, s.dbc, s.sceneHub))
+	apiGroup.DELETE("/show-notes/:id/scene/presets/:presetId", shownote_api.HandleDeleteScenePreset(s.sessionManager, s.dbc))
+	apiGroup.GET("/show-notes/:id/content-sources", shownote_api.HandleContentSourcesRender(s.sessionManager, s.dbc))
+	apiGroup.GET("/show-notes/:id/content/:videoId", shownote_api.HandleContentStream(s.dbc))
+	apiGroup.POST("/show-notes/:id/director", shownote_api.HandleTakeDirector(s.sessionManager, s.dbc))
+	apiGroup.GET("/show-notes/:id/producer/stream", shownote_api.HandleLiveProducerStream(s.sessionManager, s.dbc, s.telemetryHub))
+	apiGroup.GET("/show-notes/:id/scene/stream", shownote_api.HandleLiveSceneStream(s.sessionManager, s.dbc, s.telemetryHub, s.sceneHub))
+	apiGroup.POST("/show-notes/:id/telemetry", shownote_api.HandleLiveTelemetryPost(s.telemetryHub))
 
 	// Extension API routes with CORS
 	extensionAPIGroup := s.Group("/api/extension")
@@ -383,24 +553,13 @@ func (s *Webserver) registerRoutes() error {
 	settingsGroup.GET("/cookies/download", settingspage.HandleSettingsDownloadCookies(s.sessionManager, s.dbc, s.encryptionManager))
 	settingsGroup.POST("/cookies/delete", settingspage.HandleSettingsDeleteCookies(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 	settingsGroup.POST("/interface", settingspage.HandleSettingsInterface(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
+	settingsGroup.POST("/appearance", settingspage.HandleSettingsAppearance(s.sessionManager, s.dbc))
 	settingsGroup.GET("/keybindings", settingspage.HandleSettingsKeybindingsPage(s.sessionManager, s.dbc))
 	settingsGroup.POST("/tokens", settingspage.HandleCreateToken(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 	settingsGroup.POST("/tokens/:id/revoke", settingspage.HandleRevokeToken(s.sessionManager, s.dbc, s.encryptionManager, s.settingsCache))
 
-	producerGroup := s.Group("/producer")
-	producerGroup.GET("", sessions.HandleProducerHomePage(s.sessionManager, s.dbc))
-	producerGroup.GET("/sessions/manage", sessions.HandleProducerSessionManagePage(s.sessionManager, s.dbc))
-	producerGroup.POST("/sessions", sessions.HandleProducerCreateSession(s.sessionManager, s.dbc))
-	producerGroup.GET("/:code", sessions.HandleProducerSessionPage(s.sessionManager, s.dbc))
-	producerGroup.POST("/:code/scenes/apply", sessions.HandleProducerApplyScene(s.sessionManager, s.dbc, s.sceneHub))
-	producerGroup.POST("/:code/scenes/presets", sessions.HandleProducerSaveScenePreset(s.sessionManager, s.dbc))
-	producerGroup.POST("/:code/scenes/presets/:id/apply", sessions.HandleProducerApplyScenePreset(s.sessionManager, s.dbc, s.sceneHub))
-	producerGroup.POST("/:code/scenes/presets/:id/delete", sessions.HandleProducerDeleteScenePreset(s.sessionManager, s.dbc))
-
-	playerGroup := s.Group("/player")
-	playerGroup.GET("", sessions.HandlePlayerPage())
-	playerGroup.POST("/join", sessions.HandlePlayerJoin(s.dbc))
-	playerGroup.GET("/:code", sessions.HandlePlayerSessionPage(s.dbc))
+	// MCP Streamable HTTP — bearer API tokens, not session cookies.
+	s.Any("/mcp", echo.WrapHandler(rewindmcp.Handler(s.ctx, s.dbc)))
 
 	// Health check
 	s.GET("/healthz", func(c echo.Context) error {
@@ -436,43 +595,82 @@ func (s *Webserver) registerRoutes() error {
 	s.GET("/logout", authhandlers.HandleLogout(s.sessionManager))
 
 	// Stitch routes
-	apiGroup.GET("/stitch/sources", stitch_api.HandleStitchSourceBrowser(s.sessionManager, s.dbc))
-	apiGroup.POST("/stitch/enqueue", stitch_api.HandleStitchEnqueue(s.sessionManager, s.dbc))
+	stitch_api.RegisterEditor(apiGroup, s.sessionManager, s.dbc)
+	stitchExportsDir := strings.TrimSpace(os.Getenv("EXPORTS_DIR"))
+	if stitchExportsDir == "" {
+		stitchExportsDir = "/exports"
+	}
+	stitch_api.RegisterEditorMedia(apiGroup, s.sessionManager, s.dbc, stitchExportsDir)
+	apiGroup.GET("/audio", audio_api.HandleList(s.sessionManager))
+	apiGroup.GET("/audio/json", audio_api.HandleJSON(s.sessionManager))
+	apiGroup.GET("/audio/:id/file", audio_api.HandleFile(s.sessionManager))
+	apiGroup.POST("/audio", audio_api.HandleUpload(s.sessionManager))
+	apiGroup.GET("/fonts", font_api.HandleList(s.sessionManager))
+	apiGroup.GET("/fonts/json", font_api.HandleJSON(s.sessionManager))
+	apiGroup.GET("/fonts/catalog", font_api.HandleCatalog(s.sessionManager))
+	apiGroup.POST("/fonts", font_api.HandleInstall(s.sessionManager))
+	apiGroup.DELETE("/fonts/:id", font_api.HandleRemove(s.sessionManager))
+
+	apiGroup.GET("/stitch/sources/json", stitch_api.HandleStitchSourceBrowserJSON(s.sessionManager, s.dbc))
 	apiGroup.GET("/stitch/:id/download", stitch_api.HandleStitchDownload(s.sessionManager, s.dbc))
+	apiGroup.GET("/stitch/:id/captions", stitch_api.HandleStitchCaptions(s.sessionManager, s.dbc))
 	apiGroup.GET("/stitch/:id/stream", stitch_api.HandleStitchStream(s.sessionManager, s.dbc))
 	apiGroup.POST("/stitch/projects", stitch_api.HandleCreateProject(s.sessionManager, s.dbc))
-	apiGroup.PUT("/stitch/projects/:id", stitch_api.HandleSaveProject(s.sessionManager, s.dbc))
 	apiGroup.DELETE("/stitch/projects/:id", stitch_api.HandleDeleteProject(s.sessionManager, s.dbc))
-	apiGroup.GET("/stitch/projects/:id/exports", stitch_api.HandleProjectExports(s.sessionManager, s.dbc))
-	apiGroup.POST("/stitch/render-timeline", stitch_api.HandleRenderTimeline())
-	apiGroup.POST("/stitch/render-detail", stitch_api.HandleRenderDetail())
-	apiGroup.POST("/stitch/render-transition-popup", stitch_api.HandleRenderTransitionPopup())
-
-	s.Any("/mcp", echo.WrapHandler(rewindmcp.Handler(s.dbc)))
+	apiGroup.POST("/stitch/folders", stitch_api.HandleCreateFolder(s.sessionManager, s.dbc))
+	apiGroup.POST("/stitch/folders/:id/delete", stitch_api.HandleDeleteFolder(s.sessionManager, s.dbc))
+	apiGroup.POST("/stitch/projects/:id/folder", stitch_api.HandleMoveProject(s.sessionManager, s.dbc))
 
 	// Content routes
 	s.GET("/stitch", content.HandleStitchLibrary(s.sessionManager, s.dbc))
 	s.GET("/stitch/:id", content.HandleStitchEditor(s.sessionManager, s.dbc))
+	s.GET("/show-notes", content.HandleShowNotesLibrary(s.sessionManager, s.dbc))
+	s.POST("/show-notes", content.HandleShowNoteCreate(s.sessionManager, s.dbc))
+	s.GET("/show-notes/:id", content.HandleShowNoteEditor(s.sessionManager, s.dbc))
+	s.GET("/show-notes/:id/panel/:panel", content.HandleShowNotePanel(s.sessionManager, s.dbc))
+	s.GET("/show-notes/:id/live", content.HandleShowNoteLivePage(s.sessionManager, s.dbc))
+	s.GET("/show/:code", content.HandleShowViewerPage(s.dbc))
 	s.GET("/jobs", content.HandleJobsPage(s.sessionManager, s.dbc))
 	s.GET("/follows", content.HandleFollowsPage(s.sessionManager, s.dbc))
 	s.GET("/watches", func(c echo.Context) error {
-		if q := c.Request().URL.RawQuery; q != "" {
+		q := c.Request().URL.RawQuery
+		if q != "" {
 			return c.Redirect(302, "/follows?"+q)
 		}
 		return c.Redirect(302, "/follows")
 	})
+	s.GET("/wiki", content.HandleWikiIndex(s.sessionManager, s.dbc))
+	s.POST("/wiki/save", content.HandleWikiSave(s.sessionManager, s.dbc))
+	s.GET("/wiki/:tree", content.HandleWikiPage(s.sessionManager, s.dbc))
+	s.GET("/wiki/:tree/*", content.HandleWikiPage(s.sessionManager, s.dbc))
 	s.GET("/creators", content.HandleCreatorsPage(s.sessionManager, s.dbc))
 	s.POST("/creators", content.HandleCreatorCreate(s.sessionManager, s.dbc))
 	s.GET("/creators/new", content.HandleCreatorWizardPage(s.sessionManager))
+	s.GET("/creators/bundles/new", content.HandleCreatorBundleWizardPage(s.sessionManager, s.dbc))
+	s.POST("/creators/bundles", content.HandleCreatorBundleCreate(s.sessionManager, s.dbc))
+	s.GET("/creators/bundles/:id", content.HandleCreatorBundleViewPage(s.sessionManager, s.dbc))
+	s.POST("/creators/bundles/:id/add", content.HandleCreatorBundleAddMember(s.sessionManager, s.dbc))
+	s.POST("/creators/bundles/:id/remove", content.HandleCreatorBundleRemoveMember(s.sessionManager, s.dbc))
 	s.GET("/creators/:id", content.HandleCreatorViewPage(s.sessionManager, s.dbc))
 	s.POST("/creators/:id/link", content.HandleCreatorLinkChannel(s.sessionManager, s.dbc))
 	s.POST("/creators/:id/unlink", content.HandleCreatorUnlinkChannel(s.sessionManager, s.dbc))
+	s.POST("/creators/:id/catalog", content.HandleCreatorCatalog(s.sessionManager, s.dbc))
 	s.POST("/creators/suggestions/:id/accept", content.HandleCreatorSuggestionAccept(s.sessionManager, s.dbc))
 	s.POST("/creators/suggestions/:id/dismiss", content.HandleCreatorSuggestionDismiss(s.sessionManager, s.dbc))
 	s.GET("/network", content.HandleNetworkPage(s.sessionManager, s.dbc))
+	s.GET("/investigate", content.HandleInvestigatePage(s.sessionManager, s.dbc))
+	s.POST("/investigate/x-replies", content.HandleInvestigateIndexXReplies(s.sessionManager, s.dbc, s.encryptionManager))
+	s.GET("/investigate/commenters/:id", content.HandleInvestigateCommenterPage(s.sessionManager, s.dbc))
+	s.GET("/investigate/campaigns/:id", content.HandleInvestigateCampaignPage(s.sessionManager, s.dbc))
+	s.POST("/api/investigate/commenters/:id/watch", content.HandleInvestigateWatch(s.sessionManager, s.dbc))
+	s.POST("/api/investigate/commenters/:id/unwatch", content.HandleInvestigateUnwatch(s.sessionManager, s.dbc))
+	s.POST("/api/investigate/commenters/:id/link", content.HandleInvestigateLinkCommenters(s.sessionManager, s.dbc))
+	s.POST("/api/investigate/flags/:id/dismiss", content.HandleInvestigateDismissFlag(s.sessionManager, s.dbc))
 	s.GET("/channels", content.HandleChannelsPage(s.sessionManager, s.dbc))
 	s.GET("/channels/view", content.HandleChannelViewPage(s.sessionManager, s.dbc))
 	s.POST("/channels/view/index-metadata", content.HandleIndexChannelMetadata(s.sessionManager, s.dbc))
+	s.POST("/channels/view/catalog", content.HandleIndexChannelCatalog(s.sessionManager, s.dbc))
+	s.POST("/catalog-crawls/:id/:action", content.HandleCatalogCrawlControl(s.sessionManager, s.dbc))
 	s.GET("/jobs/:id", content.HandleJobDetailPage(s.sessionManager, s.dbc))
 	s.GET("/videos", content.HandleVideosPage(s.sessionManager, s.dbc))
 	s.GET("/videos/:id/cut", content.HandleVideoCutPage(s.sessionManager, s.dbc))
@@ -483,4 +681,85 @@ func (s *Webserver) registerRoutes() error {
 	s.POST("/archive", content.HandleArchiveSubmit(s.sessionManager, s.dbc))
 
 	return nil
+}
+
+func registerAdminPprof(g *echo.Group) {
+	pprofGroup := g.Group("/debug/pprof")
+	pprofGroup.Use(pprofMiddleware("/admin/debug/pprof"))
+	pprofGroup.GET("", pprofNoop)
+	pprofGroup.GET("/*", pprofNoop)
+	pprofGroup.POST("/symbol", pprofNoop)
+}
+
+func pprofNoop(echo.Context) error { return nil }
+
+func pprofMiddleware(prefix string) echo.MiddlewareFunc {
+	prefix = strings.TrimRight(prefix, "/")
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if !pprofLocalRequest(c) {
+				return c.String(http.StatusForbidden, "pprof is only available from localhost")
+			}
+			req := c.Request()
+			reqPath := req.URL.Path
+			switch {
+			case strings.HasPrefix(reqPath, prefix+"/cmdline"):
+				pprof.Cmdline(c.Response(), req)
+			case strings.HasPrefix(reqPath, prefix+"/profile"):
+				pprof.Profile(c.Response(), req)
+			case strings.HasPrefix(reqPath, prefix+"/symbol"):
+				pprof.Symbol(c.Response(), req)
+			case strings.HasPrefix(reqPath, prefix+"/trace"):
+				pprof.Trace(c.Response(), req)
+			default:
+				name := strings.TrimPrefix(reqPath, prefix)
+				name = strings.TrimPrefix(name, "/")
+				if name != "" {
+					pprof.Handler(name).ServeHTTP(c.Response(), req)
+				} else {
+					pprof.Index(c.Response(), req)
+				}
+			}
+			return nil
+		}
+	}
+}
+
+func pprofLocalRequest(c echo.Context) bool {
+	if isLoopbackHost(hostWithoutPort(c.Request().Host)) {
+		return true
+	}
+	if isLoopbackHost(c.RealIP()) {
+		return true
+	}
+	if xff := c.Request().Header.Get(echo.HeaderXForwardedFor); xff != "" {
+		first := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if isLoopbackHost(hostWithoutPort(first)) {
+			return true
+		}
+	}
+	if xri := c.Request().Header.Get(echo.HeaderXRealIP); xri != "" && isLoopbackHost(hostWithoutPort(xri)) {
+		return true
+	}
+	return false
+}
+
+func hostWithoutPort(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

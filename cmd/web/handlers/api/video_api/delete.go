@@ -109,8 +109,10 @@ func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		}
 
 		var sig struct {
-			SelectedVideoIDs []string `json:"selectedVideoIds"`
-			BulkDeleteDisk   bool     `json:"bulkDeleteDisk"`
+			AssetFilters     map[string]bool `json:"assetFilters"`
+			RequiredAssets   []string        `json:"requiredAssets"`
+			SelectedVideoIDs []string        `json:"selectedVideoIds"`
+			BulkDeleteDisk   bool            `json:"bulkDeleteDisk"`
 			// List filters — used to re-render the grid after deletion.
 			Query      string   `json:"q"`
 			Sort       string   `json:"sort"`
@@ -247,19 +249,21 @@ func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		})
 
 		listSig := &videosListSignals{
-			Query:      sig.Query,
-			Sort:       sig.Sort,
-			Duration:   sig.Duration,
-			Uploader:   sig.Uploader,
-			Tags:       sig.Tags,
-			TagIDs:     sig.TagIDs,
-			DateType:   sig.DateType,
-			DateFrom:   sig.DateFrom,
-			DateTo:     sig.DateTo,
-			HasClips:   sig.HasClips,
-			HasMarkers: sig.HasMarkers,
-			Page:       sig.Page,
-			PageSize:   sig.PageSize,
+			Query:          sig.Query,
+			Sort:           sig.Sort,
+			Duration:       sig.Duration,
+			Uploader:       sig.Uploader,
+			Tags:           sig.Tags,
+			TagIDs:         sig.TagIDs,
+			DateType:       sig.DateType,
+			DateFrom:       sig.DateFrom,
+			DateTo:         sig.DateTo,
+			AssetFilters:   sig.AssetFilters,
+			RequiredAssets: sig.RequiredAssets,
+			HasClips:       sig.HasClips,
+			HasMarkers:     sig.HasMarkers,
+			Page:           sig.Page,
+			PageSize:       sig.PageSize,
 		}
 		if err := patchVideosList(c, dbc, sse, listSig); err != nil {
 			// Still clear the progress UI even if refresh fails.

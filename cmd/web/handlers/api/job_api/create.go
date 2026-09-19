@@ -11,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleCreateDownload serves POST /download-jobs, enqueuing a new URL for download.
 func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -20,7 +21,10 @@ func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 		}
 
 		var req struct {
-			URL string `json:"url"`
+			URL           string `json:"url"`
+			LiveFromStart bool   `json:"live_from_start"`
+			WaitForVideo  int    `json:"wait_for_video"` // seconds
+			MediaURL      string `json:"media_url"`
 		}
 		if err := c.Bind(&req); err != nil {
 			return c.String(400, "invalid json")
@@ -30,7 +34,10 @@ func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 			return c.String(400, "url is required")
 		}
 
-		res, err := archival.EnqueueURL(c.Request().Context(), dbc.Queries(c.Request().Context()), req.URL, archivedByUUID)
+		extraArgs := archival.LiveExtraArgs(req.LiveFromStart, req.WaitForVideo, req.MediaURL)
+		res, err := archival.EnqueueURLOpts(c.Request().Context(), dbc.Queries(c.Request().Context()), req.URL, archivedByUUID, archival.EnqueueOptions{
+			ExtraArgs: extraArgs,
+		})
 		if err != nil {
 			slog.Error("failed to enqueue download", "error", err)
 			return c.String(500, "failed to enqueue")
@@ -40,6 +47,7 @@ func HandleCreateDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 			"id":       res.Job.ID.String(),
 			"status":   res.Job.Status,
 			"refresh":  res.Refresh,
+			"reused":   res.Reused,
 			"playlist": res.IsPlaylist,
 		}
 		return c.JSON(200, resp)

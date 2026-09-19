@@ -50,11 +50,6 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			"_selectedCropId":     "",
 			"_selectedCropName":   "",
 			"_selectedCropAspect": "",
-			"_cropX":              0.5,
-			"_cropY":              0.5,
-			"_cropWidth":          1,
-			"_cropHeight":         1,
-			"_cropSaveToken":      0,
 			"_clipDirty":          false,
 			"_clipStartTs":        clip.StartTs,
 			"_clipEndTs":          clip.EndTs,
@@ -63,7 +58,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			"_localCropsOpen":     true,
 		}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 34, Col: 4}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 29, Col: 4}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -101,7 +96,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var4).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -123,7 +118,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -158,7 +153,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("background: %s", clip.Color))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 78, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 73, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -180,7 +175,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var10).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
@@ -202,7 +197,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var12).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 			if templ_7745c5c3_Err != nil {
@@ -224,7 +219,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var14).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
@@ -247,7 +242,7 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/videos/%s/clips/' + $_selectedClipId + '/select')", clip.VideoID.String()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 176, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 171, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 		if templ_7745c5c3_Err != nil {
@@ -279,20 +274,20 @@ func ClipInspectorForm(clip *db.Clip) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"hidden\" data-crop-save-panel data-effect=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"hidden\" data-crop-save-panel data-on:crop-save=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("if ($_cropSaveToken && $_selectedCropId) { @put('/api/clips/%s/crops/' + $_selectedCropId, {payload: {x: $_cropX, y: $_cropY, width: $_cropWidth, height: $_cropHeight}}); }", clip.ID.String()))
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@put('/api/clips/%s/crops/' + evt.detail.cropId, {payload: evt.detail.crop})", clip.ID.String()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/clip_inspector.templ`, Line: 187, Col: 222}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `clip_inspector.templ`, Line: 182, Col: 132}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><input type=\"hidden\" data-bind=\"_clipDirty\" data-cut-clip-dirty> <input type=\"hidden\" data-bind=\"_clipStartTs\" data-cut-clip-start-ts> <input type=\"hidden\" data-bind=\"_clipEndTs\" data-cut-clip-end-ts> <input type=\"hidden\" data-bind=\"_selectedCropId\" data-cut-selected-crop-id> <input type=\"hidden\" data-bind=\"_cropX\" data-cut-crop-x> <input type=\"hidden\" data-bind=\"_cropY\" data-cut-crop-y> <input type=\"hidden\" data-bind=\"_cropWidth\" data-cut-crop-width> <input type=\"hidden\" data-bind=\"_cropHeight\" data-cut-crop-height> <input type=\"hidden\" data-bind=\"_cropSaveToken\" data-cut-crop-save-token></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><input type=\"hidden\" data-bind=\"_clipDirty\" data-cut-clip-dirty> <input type=\"hidden\" data-bind=\"_clipStartTs\" data-cut-clip-start-ts> <input type=\"hidden\" data-bind=\"_clipEndTs\" data-cut-clip-end-ts> <input type=\"hidden\" data-bind=\"_selectedCropId\" data-cut-selected-crop-id></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

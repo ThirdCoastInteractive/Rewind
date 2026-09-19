@@ -1,9 +1,12 @@
 package templates
 
 import (
+	"fmt"
 	"net/url"
 
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/osint"
+	"thirdcoast.systems/rewind/internal/wiki"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
@@ -77,6 +80,7 @@ templ ChannelRow(ch *db.ListChannelsRow) {
 					loading="lazy"
 					decoding="async"
 					alt=""
+					onerror="this.removeAttribute('src'); this.style.visibility='hidden'"
 				/>
 			}
 		</a>
@@ -109,13 +113,21 @@ templ ChannelRow(ch *db.ListChannelsRow) {
 	</div>
 }
 
-templ ChannelView(overview *db.GetChannelOverviewRow, videos []*db.ListVideosPaginatedRow, username string, edges []*db.ListChannelEdgesForChannelRow) {
+templ ChannelView(overview *db.GetChannelOverviewRow, videos []*db.ListVideosPaginatedRow, username string, edges []*db.ListChannelEdgesForChannelRow, crawls []*db.CatalogCrawl, skipCatalog bool, vaultPages []wiki.Page, vaultHomeSlug string, engagement osint.ChannelEngagement) {
 	@Layout(overview.Uploader, username) {
 		@Container("") {
 			<div class="mb-4 flex items-start justify-between gap-3 flex-wrap">
 				<div>
 					<p class="text-xs font-mono text-white/40 mb-0.5"><a href="/channels" class="hover:text-white/70">Channels</a> /</p>
-					<h1 class="page-heading text-xl tracking-tight mb-1">{ overview.Uploader }</h1>
+					<div class="flex items-center gap-2 flex-wrap mb-1">
+						<h1 class="page-heading text-xl tracking-tight mb-0">{ overview.Uploader }</h1>
+						if skipCatalog {
+							<span class="badge">twitter</span>
+						}
+					</div>
+					if skipCatalog {
+						<p class="font-mono text-xs text-white/40 mb-2">Twitter/X handles are tagged. Rewind does not crawl X.</p>
+					}
 					<div class="font-mono text-xs text-white/50 flex items-center gap-3 flex-wrap">
 						<span>{ format.Itoa64(overview.VideoCount) } videos archived</span>
 						<span>{ format.DurationHuman(overview.TotalDurationSeconds) }</span>
@@ -138,12 +150,17 @@ templ ChannelView(overview *db.GetChannelOverviewRow, videos []*db.ListVideosPag
 							<i class="fa-sharp fa-solid fa-satellite-dish mr-1" aria-hidden="true"></i>Follow this channel
 						</a>
 					}
-					if overview.ChannelURL != "" {
-						<form method="POST" action="/channels/view/index-metadata">
+					if overview.ChannelURL != "" && !skipCatalog {
+						<form method="POST" action="/channels/view/catalog">
 							<input type="hidden" name="uploader" value={ overview.Uploader }/>
-							<button type="submit" class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white" title="Index descriptions without downloading media">
-								<i class="fa-sharp fa-solid fa-list mr-1" aria-hidden="true"></i>Index descriptions
+							<button type="submit" class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white" title="Index complete metadata, thumbnails, and English subtitles">
+								<i class="fa-sharp fa-solid fa-list mr-1" aria-hidden="true"></i>Index catalog
 							</button>
+						</form>
+						<form method="POST" action="/channels/view/catalog">
+							<input type="hidden" name="uploader" value={ overview.Uploader }/>
+							<input type="hidden" name="refresh" value="true"/>
+							<button type="submit" class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white">Refresh catalog</button>
 						</form>
 					}
 					<a href={ templ.SafeURL(channelLibraryURL(overview.Uploader)) } class="ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white">
@@ -151,6 +168,23 @@ templ ChannelView(overview *db.GetChannelOverviewRow, videos []*db.ListVideosPag
 					</a>
 				</div>
 			</div>
+			@channelEngagement(engagement)
+			@VaultPanel(vaultPages, wiki.TreeChannel, vaultHomeSlug)
+			if len(crawls) > 0 {
+				<div class="mb-6">
+					<h2 class="sub-heading mb-2">Catalog progress</h2>
+					<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+						for _, crawl := range crawls {
+							if crawl != nil {
+								<div class="p-3 flex items-center justify-between gap-3 flex-wrap">
+									<div class="font-mono text-xs"><span class="badge mr-2">{ crawl.FeedKind }</span><span class="text-white/70">{ crawl.Status }</span><span class="text-white/40 ml-2">{ fmt.Sprintf("%d seen · %d new · page %d", crawl.EntriesSeen, crawl.EntriesAdded, crawl.NextPageIndex) }</span></div>
+									@catalogCrawlActions(crawl.ID.String(), crawl.Status)
+								</div>
+							}
+						}
+					</div>
+				</div>
+			}
 			if len(edges) > 0 {
 				<div class="mb-6">
 					<h2 class="sub-heading mb-2">Connected channels</h2>
@@ -174,6 +208,68 @@ templ ChannelView(overview *db.GetChannelOverviewRow, videos []*db.ListVideosPag
 			}
 		}
 	}
+}
+
+templ channelEngagement(e osint.ChannelEngagement) {
+	<section class="mb-6" aria-label="Comment engagement">
+		<div class="flex items-end justify-between gap-2 mb-2 flex-wrap">
+			<h2 class="sub-heading mb-0">Comment engagement</h2>
+			<a href="/investigate" class="font-mono text-xs text-white/40 hover:text-white/70">Investigate desk</a>
+		</div>
+		if e.HarvestedComments == 0 {
+			<div class="entity-card">
+				<p class="font-mono text-sm text-white/50">No harvested comments yet</p>
+				<p class="entity-card-notes">Index comments on this channel's videos to measure organic engagement versus raids, copypaste, and sock-suspect accounts.</p>
+			</div>
+		} else {
+			<div class="entity-card-grid">
+				<div class="entity-card">
+					<div class="entity-card-title">{ fmt.Sprintf("%.1f", e.OrganicPer1k) } / 1k views</div>
+					<div class="entity-card-meta">organic comments</div>
+					<p class="entity-card-notes">Harvested comments minus raid/copypaste members and open sock flags.</p>
+				</div>
+				<div class="entity-card">
+					<div class="entity-card-title">{ fmt.Sprintf("%.1f", e.HarvestedPer1k) } / 1k views</div>
+					<div class="entity-card-meta">harvested comments</div>
+					<p class="entity-card-notes">
+						{ format.Itoa64(e.HarvestedComments) } harvested
+						if e.PlatformComments > 0 {
+							of { format.Itoa64(e.PlatformComments) } listed
+						}
+						· { format.Itoa64(e.VideosCommented) }/{ format.Itoa64(e.Videos) } videos
+					</p>
+				</div>
+				<div class="entity-card">
+					<div class="entity-card-title">{ fmt.Sprintf("%.0f%%", e.Inflation*100) }</div>
+					<div class="entity-card-meta">inflation</div>
+					<p class="entity-card-notes">{ format.Itoa64(e.CampaignComments) } campaign · { format.Itoa64(e.SockComments) } sock-suspect comments from { format.Itoa64(e.SockCommenters) } flagged commenters</p>
+				</div>
+				<div class="entity-card">
+					<div class="entity-card-title">{ format.Itoa64(e.UniqueOrganic) }</div>
+					<div class="entity-card-meta">unique organic commenters</div>
+					<p class="entity-card-notes">{ format.Itoa64(e.UniqueCommenters) } unique harvested · { format.Itoa64(e.OrganicComments) } organic comments</p>
+				</div>
+			</div>
+			<p class="font-mono text-xs text-white/30 mt-2">Sock flags and style matches are observations, not proof of a real-world identity. Organic is “not in a detected campaign and not an open sock flag.”</p>
+		}
+	</section>
+}
+
+templ catalogCrawlActions(id string, status string) {
+	<div class="flex items-center gap-1">
+		if status == "running" || status == "queued" || status == "retry_wait" {
+			<form method="POST" action={ templ.SafeURL("/catalog-crawls/" + id + "/pause") }><button type="submit" class="ghost-btn-sm">Pause</button></form>
+		}
+		if status == "paused" {
+			<form method="POST" action={ templ.SafeURL("/catalog-crawls/" + id + "/resume") }><button type="submit" class="ghost-btn-sm">Resume</button></form>
+		}
+		if status == "failed" || status == "retry_wait" {
+			<form method="POST" action={ templ.SafeURL("/catalog-crawls/" + id + "/retry") }><button type="submit" class="ghost-btn-sm">Retry</button></form>
+		}
+		if status != "complete" && status != "cancelled" {
+			<form method="POST" action={ templ.SafeURL("/catalog-crawls/" + id + "/cancel") }><button type="submit" class="ghost-btn-sm text-red-400">Cancel</button></form>
+		}
+	</div>
 }
 
 templ channelEdgeRow(self string, e *db.ListChannelEdgesForChannelRow) {

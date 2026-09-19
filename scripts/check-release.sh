@@ -18,15 +18,14 @@ PUBLIC_EMAIL="git@thirdcoast.tv"
 # Service images GHCR builds from a v* tag (see build-containers.yml).
 # Local workstation bases (rewind-runtime-*:local) are fine under docker/.
 SERVICE_DOCKERFILES=(
-  web.Dockerfile
-  downloader.Dockerfile
-  ingest.Dockerfile
-  encoder.Dockerfile
-  pg-migrator.Dockerfile
+  rewind.Dockerfile
+  ml.Dockerfile
+  docker/postgres-vector.Dockerfile
 )
 
 # Paths that belong on the private repo only. Root-only; vendor copies are OK.
-PRIVATE_PATH_GREP='^(AGENTS\.md|CLAUDE\.md|\.grok/|\.claude/)'
+PRIVATE_PATHS=(AGENTS.md CLAUDE.md .grok .claude .codex .agents)
+PRIVATE_PATH_GREP='^(AGENTS\.md$|CLAUDE\.md$|\.(grok|claude|codex|agents)(/|$))'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -34,7 +33,7 @@ check_dockerfile_text() {
   local label="$1"
   local text="$2"
   local hits
-  hits="$(printf '%s\n' "$text" | grep -nE '^FROM[[:space:]].*(rewind-runtime|:local([[:space:]]|$))' || true)"
+  hits="$(printf '%s\n' "$text" | grep -niE '^[[:space:]]*FROM[[:space:]].*(rewind-runtime|:local([[:space:]]|$))' || true)"
   if [[ -n "$hits" ]]; then
     echo "$hits" >&2
     fail "$label FROMs a private/local image. GHCR cannot pull :local or rewind-runtime-*. Use a public base (debian, alpine, golang, nvidia/cuda, …) and install ffmpeg in the Dockerfile."
@@ -60,8 +59,9 @@ check_dockerfiles_commit() {
 
 check_private_files() {
   local ref="$1"
-  local hits
-  hits="$(git ls-tree -r --name-only "$ref" | grep -E "$PRIVATE_PATH_GREP" || true)"
+  local hits paths
+  paths="$(git ls-tree -r --name-only "$ref")" || fail "cannot read tree: $ref"
+  hits="$(printf '%s\n' "$paths" | grep -E "$PRIVATE_PATH_GREP" || true)"
   if [[ -n "$hits" ]]; then
     echo "$hits" >&2
     fail "$ref contains private agent/docs paths. Strip them before pushing public/main."
@@ -82,11 +82,8 @@ check_identity() {
 }
 
 strip_index() {
-  local p
-  for p in AGENTS.md CLAUDE.md; do
-    git rm --cached -f --ignore-unmatch -- "$p" >/dev/null 2>&1 || true
-  done
-  git rm -r --cached -f --ignore-unmatch -- .grok .claude >/dev/null 2>&1 || true
+  git rm -r --cached -f --ignore-unmatch -- "${PRIVATE_PATHS[@]}" >/dev/null || \
+    fail "cannot strip private paths from index"
 }
 
 usage() {

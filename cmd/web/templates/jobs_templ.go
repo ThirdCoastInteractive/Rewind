@@ -9,10 +9,14 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
+// Jobs renders the jobs workspace.
 func Jobs(jobs []*db.DownloadJob, username string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -52,7 +56,7 @@ func Jobs(jobs []*db.DownloadJob, username string) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("My Jobs", username).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Jobs", username).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -60,6 +64,7 @@ func Jobs(jobs []*db.DownloadJob, username string) templ.Component {
 	})
 }
 
+// JobsContent owns local controls and the page-scoped DataStar subscription.
 func JobsContent(jobs []*db.DownloadJob) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -93,63 +98,12 @@ func JobsContent(jobs []*db.DownloadJob) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"mb-4\"><div class=\"flex items-center justify-between\"><div><h1 class=\"page-heading text-xl tracking-tight mb-0.5\">Download Jobs</h1><p class=\"text-xs font-mono text-white/60\">All submitted download jobs and their status</p></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "toggleCheckboxes()"})
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<button id=\"toggle-checkboxes-btn\" type=\"button\" onclick=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var5 templ.ComponentScript = templ.ComponentScript{Call: "toggleCheckboxes()"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" class=\"ghost-btn-sm text-white/60 border-white/40 hover:border-white hover:text-white\"><i class=\"fa-sharp fa-solid fa-check-square mr-1\" aria-hidden=\"true\"></i> Select Mode</button></div></div><div id=\"bulk-actions-bar\" class=\"hidden mb-4 p-2 border-2 border-white/20 bg-white/5\"><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "toggleSelectAll(event)"})
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<input type=\"checkbox\" id=\"select-all-checkbox\" class=\"job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer\" style=\"display: none;\" onchange=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var6 templ.ComponentScript = templ.ComponentScript{Call: "toggleSelectAll(event)"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"> <span id=\"selection-count\" class=\"text-xs font-mono text-white\">0 selected</span></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "bulkArchiveJobs()"})
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<button id=\"bulk-archive-btn\" type=\"button\" onclick=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var7 templ.ComponentScript = templ.ComponentScript{Call: "bulkArchiveJobs()"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" class=\"btn-secondary btn-sm\">Archive Selected</button></div></div><div class=\"flex gap-0 mb-4 border-b-2 border-white/10\"><button class=\"tab-button tab-btn-active\" data-status=\"all\">All</button> <button class=\"tab-button tab-btn-inactive\" data-status=\"queued\">Queued</button> <button class=\"tab-button tab-btn-inactive\" data-status=\"processing\">Processing</button> <button class=\"tab-button tab-btn-inactive\" data-status=\"succeeded\">Succeeded</button> <button class=\"tab-button tab-btn-inactive\" data-status=\"failed\">Failed</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"jobs-workspace\" data-signals=\"{jobsTab: (['captions','context','visual'].includes(new URLSearchParams(location.search).get('tab')) ? 'processing' : (new URLSearchParams(location.search).get('tab') === 'processing' ? 'processing' : 'downloads')), jobsStatus: 'all', mlKind: (new URLSearchParams(location.search).get('tab') === 'captions' ? 'transcribe' : (new URLSearchParams(location.search).get('tab') === 'context' ? 'context_windows' : (new URLSearchParams(location.search).get('tab') === 'visual' ? 'visual_index' : 'all'))), mlStatus: 'all', jobsSearch: '', job_ids: [], jobsSelecting: false, jobsBusy: false, jobsNotice: '', jobsLastSync: 0, jobsHeartbeat: 0, jobsClock: Date.now(), clearingMl: false}\" data-on:datastar-fetch=\"if (evt.detail.el.closest('#jobs-workspace') && evt.detail.el.id !== 'jobs-live') { if (evt.detail.type === 'started') { $jobsBusy = true; $jobsNotice = '' }; if (evt.detail.type === 'finished') $jobsBusy = false; if (evt.detail.type === 'error') $jobsNotice = 'Could not complete the request. Check your connection and try again.' }\"><div class=\"flex flex-wrap items-start justify-between gap-4 mb-6\"><div><p class=\"text-xs font-mono uppercase tracking-widest text-white/50 mb-2\">Archive activity</p><h1 class=\"page-heading text-3xl mb-2\">Jobs</h1><p class=\"text-sm text-white/60\">Follow downloads and video processing as they happen.</p></div><div class=\"text-right text-xs font-mono\" data-on-interval__duration.1000ms=\"$jobsClock = Date.now()\"><div class=\"flex items-center gap-2\" role=\"status\"><span class=\"w-2 h-2 rounded-full bg-white/40\" data-class=\"{'bg-emerald-400': $jobsLastSync > 0 && $jobsClock - $jobsHeartbeat < 45000}\"></span> <span data-text=\"$jobsLastSync === 0 ? 'Connecting…' : ($jobsClock - $jobsHeartbeat < 45000 ? 'Live · push updates' : 'Reconnecting…')\">Connecting…</span></div><p class=\"text-white/50 mt-1\" data-show=\"$jobsLastSync > 0\" data-text=\"'Last update ' + new Date($jobsLastSync).toLocaleTimeString()\"></p></div></div><div id=\"jobs-live\" data-init=\"@get('/api/jobs/index?live=1', {retry: 'always'})\"></div><p role=\"status\" class=\"border border-white/20 bg-white/5 p-3 mb-4 text-sm\" data-show=\"$jobsNotice !== ''\" data-text=\"$jobsNotice\"></p><div class=\"flex flex-wrap gap-2 border-b border-white/10 mb-6\" role=\"group\" aria-label=\"Job queues\"><button type=\"button\" class=\"tab-button\" data-class:tab-btn-active=\"$jobsTab === 'downloads'\" data-attr:aria-pressed=\"$jobsTab === 'downloads'\" data-on:click=\"$jobsTab = 'downloads'\">Downloads</button> <button type=\"button\" class=\"tab-button\" data-class:tab-btn-active=\"$jobsTab === 'processing'\" data-attr:aria-pressed=\"$jobsTab === 'processing'\" data-on:click=\"$jobsTab = 'processing'\">Video processing</button></div><section data-show=\"$jobsTab === 'downloads'\" aria-label=\"Download jobs\"><div id=\"jobs-summary\" class=\"mb-5 text-sm text-white/50\">Loading download activity…</div><div class=\"flex flex-wrap items-end gap-3 mb-4\"><label class=\"flex-1 min-w-0\"><span class=\"block text-xs font-mono text-white/60 mb-2\">Search downloads</span> <input id=\"jobs-search\" type=\"search\" data-bind:jobs-search placeholder=\"Search URL, source, or job ID\" class=\"w-full bg-black border border-white/20 p-3 text-sm\"></label> <button type=\"button\" class=\"ghost-btn-sm\" data-attr:aria-pressed=\"$jobsSelecting\" data-on:click=\"$jobsSelecting = !$jobsSelecting; $job_ids = []\" data-text=\"$jobsSelecting ? 'Done selecting' : 'Select jobs'\">Select jobs</button></div><div class=\"flex flex-wrap items-center gap-3 p-3 mb-4 border border-white/20 bg-white/5\" data-show=\"$jobsSelecting\"><span class=\"text-sm font-mono\" data-text=\"$job_ids.length + ' selected'\"></span> <button type=\"button\" class=\"ghost-btn-sm\" data-on:click=\"$job_ids = $jobsVisibleIds\">Select visible</button> <button type=\"button\" class=\"ghost-btn-sm\" data-on:click=\"$job_ids = []\">Clear</button> <button type=\"button\" class=\"btn-secondary btn-sm disabled:opacity-50\" data-attr:disabled=\"$jobsBusy || $job_ids.length === 0\" data-on:click=\"@post('/api/jobs/archive?render=1')\" data-text=\"$jobsBusy ? 'Archiving…' : 'Archive selected'\">Archive selected</button> <span class=\"text-xs text-white/50\">Archiving hides job history. Video files are kept.</span></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if jobs == nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div id=\"jobs-list\" class=\"border-2 border-white/10\" data-init=\"@get('/api/jobs/index')\"><div class=\"p-2 text-xs font-mono text-white/40\">Loading…</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"jobs-list\" class=\"p-8 border border-white/10 text-sm text-white/50\">Loading jobs…</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -159,13 +113,13 @@ func JobsContent(jobs []*db.DownloadJob) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</section><section data-show=\"$jobsTab === 'processing'\" aria-label=\"Video processing jobs\"><h2 class=\"text-lg font-bold mb-2\">Video processing</h2><p class=\"text-sm text-white/60 mb-4\">Captions, context, and visual index — split by kind. Counts include succeeded jobs, not just the live queue.</p><div id=\"ml-jobs-list\" class=\"p-8 border border-white/10 text-sm text-white/50\">Loading processing activity…</div></section></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			return nil
 		})
 		templ_7745c5c3_Err = Container("").Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<script>\n\t\t// Multi-select state\n\t\tconst selectedJobs = new Set();\n\t\tlet checkboxesVisible = false;\n\t\tlet lastCheckedIndex = null;\n\n\t\tfunction toggleCheckboxes() {\n\t\t\tcheckboxesVisible = !checkboxesVisible;\n\t\t\tconst checkboxes = document.querySelectorAll('.job-checkbox');\n\t\t\tconst btn = document.getElementById('toggle-checkboxes-btn');\n\t\t\t\n\t\t\tcheckboxes.forEach(checkbox => {\n\t\t\t\tcheckbox.style.display = checkboxesVisible ? 'block' : 'none';\n\t\t\t});\n\t\t\t\n\t\t\tif (checkboxesVisible) {\n\t\t\t\tbtn.classList.remove('text-white/60', 'border-white/40');\n\t\t\t\tbtn.classList.add('text-white', 'border-white');\n\t\t\t} else {\n\t\t\t\tbtn.classList.remove('text-white', 'border-white');\n\t\t\t\tbtn.classList.add('text-white/60', 'border-white/40');\n\t\t\t\t// Clear selections when hiding\n\t\t\t\tselectedJobs.clear();\n\t\t\t\tcheckboxes.forEach(checkbox => checkbox.checked = false);\n\t\t\t\tupdateSelectionUI();\n\t\t\t}\n\t\t}\n\n\t\tfunction updateSelectionUI() {\n\t\t\tconst count = selectedJobs.size;\n\t\t\tconst bar = document.getElementById('bulk-actions-bar');\n\t\t\tconst countText = document.getElementById('selection-count');\n\t\t\t\n\t\t\tif (count > 0) {\n\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\tcountText.textContent = `${count} selected`;\n\t\t\t} else {\n\t\t\t\tbar.classList.add('hidden');\n\t\t\t}\n\n\t\t\t// Update select-all checkbox state\n\t\t\tconst allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');\n\t\t\tconst selectAllCheckbox = document.getElementById('select-all-checkbox');\n\t\t\tif (selectAllCheckbox) {\n\t\t\t\tselectAllCheckbox.checked = allCheckboxes.length > 0 && allCheckboxes.length === selectedJobs.size;\n\t\t\t\tselectAllCheckbox.indeterminate = selectedJobs.size > 0 && selectedJobs.size < allCheckboxes.length;\n\t\t\t}\n\t\t}\n\n\t\tfunction toggleJobSelection(event, jobId) {\n\t\t\tevent.stopPropagation();\n\t\t\t\n\t\t\tconst allCheckboxes = Array.from(document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)'));\n\t\t\tconst currentIndex = allCheckboxes.findIndex(cb => cb.dataset.jobId === jobId);\n\t\t\t\n\t\t\t// Shift-click range selection\n\t\t\tif (event.shiftKey && lastCheckedIndex !== null && currentIndex !== -1) {\n\t\t\t\tconst start = Math.min(lastCheckedIndex, currentIndex);\n\t\t\t\tconst end = Math.max(lastCheckedIndex, currentIndex);\n\t\t\t\tconst shouldSelect = event.target.checked;\n\t\t\t\t\n\t\t\t\tfor (let i = start; i <= end; i++) {\n\t\t\t\t\tconst checkbox = allCheckboxes[i];\n\t\t\t\t\tcheckbox.checked = shouldSelect;\n\t\t\t\t\tif (shouldSelect) {\n\t\t\t\t\t\tselectedJobs.add(checkbox.dataset.jobId);\n\t\t\t\t\t} else {\n\t\t\t\t\t\tselectedJobs.delete(checkbox.dataset.jobId);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\t// Normal click\n\t\t\t\tif (event.target.checked) {\n\t\t\t\t\tselectedJobs.add(jobId);\n\t\t\t\t} else {\n\t\t\t\t\tselectedJobs.delete(jobId);\n\t\t\t\t}\n\t\t\t}\n\t\t\t\n\t\t\tif (currentIndex !== -1) {\n\t\t\t\tlastCheckedIndex = currentIndex;\n\t\t\t}\n\t\t\t\n\t\t\tupdateSelectionUI();\n\t\t}\n\n\t\tfunction toggleSelectAll(event) {\n\t\t\tconst allCheckboxes = document.querySelectorAll('.job-checkbox:not(#select-all-checkbox)');\n\t\t\tconst shouldSelect = event.target.checked;\n\t\t\t\n\t\t\tselectedJobs.clear();\n\t\t\tallCheckboxes.forEach(checkbox => {\n\t\t\t\tcheckbox.checked = shouldSelect;\n\t\t\t\tif (shouldSelect) {\n\t\t\t\t\tselectedJobs.add(checkbox.dataset.jobId);\n\t\t\t\t}\n\t\t\t});\n\t\t\tupdateSelectionUI();\n\t\t}\n\n\t\tasync function bulkArchiveJobs() {\n\t\t\tif (selectedJobs.size === 0) return;\n\t\t\t\n\t\t\tconst count = selectedJobs.size;\n\t\t\tif (!confirm(`Archive ${count} job${count > 1 ? 's' : ''}?`)) return;\n\n\t\t\tconst btn = document.getElementById('bulk-archive-btn');\n\t\t\tbtn.disabled = true;\n\t\t\tbtn.textContent = 'Archiving...';\n\n\t\t\ttry {\n\t\t\t\tconst response = await fetch('/api/jobs/archive', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: { 'Content-Type': 'application/json' },\n\t\t\t\t\tbody: JSON.stringify({ job_ids: Array.from(selectedJobs) })\n\t\t\t\t});\n\n\t\t\t\tif (response.ok) {\n\t\t\t\t\t// Remove archived jobs from view\n\t\t\t\t\tselectedJobs.forEach(jobId => {\n\t\t\t\t\t\tconst card = document.getElementById(`job-card-${jobId}`);\n\t\t\t\t\t\tif (card) card.remove();\n\t\t\t\t\t});\n\t\t\t\t\tselectedJobs.clear();\n\t\t\t\t\tupdateSelectionUI();\n\t\t\t\t} else {\n\t\t\t\t\tconst text = await response.text();\n\t\t\t\t\talert('Failed to archive jobs: ' + text);\n\t\t\t\t}\n\t\t\t} catch (error) {\n\t\t\t\talert('Error: ' + error.message);\n\t\t\t} finally {\n\t\t\t\tbtn.disabled = false;\n\t\t\t\tbtn.textContent = 'Archive Selected';\n\t\t\t}\n\t\t}\n\n\t\tasync function archiveJob(event, jobId) {\n\t\t\tevent.preventDefault();\n\t\t\tevent.stopPropagation();\n\t\t\tif (!confirm('Archive this job?')) return;\n\n\t\t\tconst btn = event.target;\n\t\t\tbtn.disabled = true;\n\n\t\t\ttry {\n\t\t\t\tconst response = await fetch(`/api/jobs/${jobId}/archive`, {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: { 'Content-Type': 'application/json' },\n\t\t\t\t});\n\n\t\t\t\tif (response.ok) {\n\t\t\t\t\tconst card = document.getElementById(`job-card-${jobId}`);\n\t\t\t\t\tif (card) card.remove();\n\t\t\t\t} else {\n\t\t\t\t\tconst text = await response.text();\n\t\t\t\t\talert('Failed to archive job: ' + text);\n\t\t\t\t}\n\t\t\t} catch (error) {\n\t\t\t\talert('Error: ' + error.message);\n\t\t\t} finally {\n\t\t\t\tbtn.disabled = false;\n\t\t\t}\n\t\t}\n\n\t\tfunction applyJobsFilter(filterStatus) {\n\t\t\tdocument.querySelectorAll('.job-card').forEach(card => {\n\t\t\t\tconst cardStatus = (card.getAttribute('data-status') || '').toLowerCase();\n\t\t\t\tif (filterStatus === 'all' || cardStatus === filterStatus) {\n\t\t\t\t\tcard.style.display = 'block';\n\t\t\t\t} else {\n\t\t\t\t\tcard.style.display = 'none';\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction setActiveTab(activeButton) {\n\t\t\tconst tabButtons = document.querySelectorAll('.tab-button');\n\t\t\ttabButtons.forEach(btn => {\n\t\t\t\tif (btn === activeButton) {\n\t\t\t\t\tbtn.classList.remove('tab-btn-inactive');\n\t\t\t\t\tbtn.classList.add('tab-btn-active');\n\t\t\t\t} else {\n\t\t\t\t\tbtn.classList.remove('tab-btn-active');\n\t\t\t\t\tbtn.classList.add('tab-btn-inactive');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tasync function postJobAction(jobId, action) {\n\t\t\tconst response = await fetch(`/api/jobs/${jobId}/${action}`, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json' },\n\t\t\t});\n\t\t\tif (!response.ok) {\n\t\t\t\tconst text = await response.text();\n\t\t\t\tthrow new Error(text || `Failed to ${action} job`);\n\t\t\t}\n\t\t\treturn response.json().catch(() => ({}));\n\t\t}\n\n\t\t// Called by onclick handlers from templ.JSFuncCall\n\t\tasync function retryJob(event, jobId) {\n\t\t\tevent.preventDefault();\n\t\t\tevent.stopPropagation();\n\t\t\tconst btn = event.target;\n\t\t\tbtn.disabled = true;\n\t\t\ttry {\n\t\t\t\tawait postJobAction(jobId, 'retry');\n\t\t\t\t// No reload; SSE will refresh the job card\n\t\t\t} catch (err) {\n\t\t\t\tconsole.error(err);\n\t\t\t\talert(err.message || 'Failed to retry job');\n\t\t\t} finally {\n\t\t\t\tbtn.disabled = false;\n\t\t\t}\n\t\t}\n\n\t\tasync function cancelJob(event, jobId) {\n\t\t\tevent.preventDefault();\n\t\t\tevent.stopPropagation();\n\t\t\tif (!confirm('Are you sure you want to cancel this job?')) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst btn = event.target;\n\t\t\tbtn.disabled = true;\n\t\t\ttry {\n\t\t\t\tawait postJobAction(jobId, 'cancel');\n\t\t\t\t// No reload; SSE will refresh the job card\n\t\t\t} catch (err) {\n\t\t\t\tconsole.error(err);\n\t\t\t\talert(err.message || 'Failed to cancel job');\n\t\t\t} finally {\n\t\t\t\tbtn.disabled = false;\n\t\t\t}\n\t\t}\n\n\t\tfunction upsertJobCardHTML(html) {\n\t\t\tif (!html) return;\n\t\t\tconst parser = new DOMParser();\n\t\t\tconst doc = parser.parseFromString(html, 'text/html');\n\t\t\tconst node = doc.body.firstElementChild;\n\t\t\tif (!node) return;\n\t\t\tconst id = node.getAttribute('id');\n\t\t\tif (!id) return;\n\t\t\t\n\t\t\t// Preserve checkbox visibility when updating cards\n\t\t\tconst checkbox = node.querySelector('.job-checkbox');\n\t\t\tif (checkbox && checkboxesVisible) {\n\t\t\t\tcheckbox.style.display = 'block';\n\t\t\t}\n\t\t\t\n\t\t\tconst existing = document.getElementById(id);\n\t\t\tif (existing) {\n\t\t\t\texisting.replaceWith(node);\n\t\t\t} else {\n\t\t\t\tconst list = document.getElementById('jobs-list');\n\t\t\t\tif (list) list.prepend(node);\n\t\t\t}\n\t\t}\n\n\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t// Tabs\n\t\t\tdocument.querySelectorAll('.tab-button').forEach(button => {\n\t\t\t\tbutton.addEventListener('click', function() {\n\t\t\t\t\tconst filterStatus = this.getAttribute('data-status');\n\t\t\t\t\tsetActiveTab(this);\n\t\t\t\t\tapplyJobsFilter(filterStatus || 'all');\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// Live updates via SSE\n\t\t\ttry {\n\t\t\t\tconst es = new EventSource('/api/jobs/stream');\n\t\t\t\tes.addEventListener('download_job', (evt) => {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tconst payload = JSON.parse(evt.data);\n\t\t\t\t\t\tupsertJobCardHTML(payload.jobs_card_html);\n\t\t\t\t\t\tconst active = document.querySelector('.tab-button.tab-btn-active');\n\t\t\t\t\t\tconst status = active ? active.getAttribute('data-status') : 'all';\n\t\t\t\t\t\tapplyJobsFilter(status || 'all');\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\tconsole.warn('bad SSE payload', e);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t} catch (e) {\n\t\t\t\tconsole.warn('SSE unavailable', e);\n\t\t\t}\n\t\t});\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -173,6 +127,112 @@ func JobsContent(jobs []*db.DownloadJob) templ.Component {
 	})
 }
 
+// JobsSummary renders status counts for the loaded download window.
+func JobsSummary(jobs []*db.DownloadJob) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var5 == nil {
+			templ_7745c5c3_Var5 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div id=\"jobs-summary\" class=\"mb-5\"><div class=\"grid grid-cols-2 md:grid-cols-5 gap-2\" role=\"group\" aria-label=\"Filter downloads by status\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, status := range []string{"all", "processing", "queued", "failed", "succeeded"} {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40 transition-colors\" data-class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{'border-white/60': $jobsStatus === '%s'}", status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 85, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" data-attr:aria-pressed=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 string
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$jobsStatus === '%s'", status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 86, Col: 73}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" data-on:click=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$jobsStatus = '%s'; $job_ids = []", status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 87, Col: 77}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(status)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 89, Col: 89}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</span> <span class=\"block text-2xl font-mono mt-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(jobCount(jobs, status)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 90, Col: 85}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span></button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><p class=\"text-xs text-white/50 mt-3\">Latest 100 unarchived downloads · counts and search apply to this window</p></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// JobsList renders stable job rows and a reactive filtered empty state.
 func JobsList(jobs []*db.DownloadJob) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -189,37 +249,35 @@ func JobsList(jobs []*db.DownloadJob) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div id=\"jobs-list\" class=\"border-2 border-white/10\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div id=\"jobs-list\" data-computed:jobs-visible-ids=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if len(jobs) > 0 {
-			for _, job := range jobs {
-				templ_7745c5c3_Err = DownloadJobCard(job).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"p-8\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = EmptyState("inbox", "No jobs", "No download jobs have been submitted.").Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div>")
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(visibleJobIDs(jobs))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 100, Col: 73}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"><p class=\"text-xs font-mono text-white/50 mb-3\" data-text=\"$jobsVisibleIds.length + ' downloads shown'\"></p><div class=\"border border-white/10 divide-y divide-white/10\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, job := range jobs {
+			templ_7745c5c3_Err = DownloadJobCard(job).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><div class=\"p-10 border border-white/10 text-center\" data-show=\"$jobsVisibleIds.length === 0\"><h3 class=\"font-bold mb-2\">No matching downloads</h3><p class=\"text-sm text-white/60 mb-4\">New downloads will appear here automatically.</p><button type=\"button\" class=\"ghost-btn-sm\" data-on:click=\"$jobsStatus = 'all'; $jobsSearch = ''\">Clear filters</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -227,6 +285,7 @@ func JobsList(jobs []*db.DownloadJob) templ.Component {
 	})
 }
 
+// DownloadJobCard renders a job without nesting buttons inside its detail link.
 func DownloadJobCard(job *db.DownloadJob) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -243,98 +302,103 @@ func DownloadJobCard(job *db.DownloadJob) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var9 == nil {
-			templ_7745c5c3_Var9 = templ.NopComponent
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<a href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var10 templ.SafeURL
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/jobs/" + job.ID.String()))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 403, Col: 50}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue("job-card-" + job.ID.String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 404, Col: 36}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"job-card block border-b-2 border-white/10 p-2 hover:bg-white/5 transition-colors cursor-pointer\" data-status=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.Status)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 406, Col: 26}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><div class=\"flex items-center gap-3\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "event.stopPropagation()"})
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"flex-shrink-0\" onclick=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var13 templ.ComponentScript = templ.ComponentScript{Call: "event.stopPropagation()"}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13.Call)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("toggleJobSelection", templ.JSExpression("event"), job.ID.String()))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<input type=\"checkbox\" class=\"job-checkbox w-4 h-4 bg-black border-2 border-white/40 cursor-pointer\" style=\"display: none;\" data-job-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<article id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.ID.String())
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue("job-card-" + job.ID.String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 414, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 117, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" onchange=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"job-card grid grid-cols-1 lg:grid-cols-3 p-4 hover:bg-white/5 transition-colors\" data-status=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var15 templ.ComponentScript = templ.JSFuncCall("toggleJobSelection", templ.JSExpression("event"), job.ID.String())
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15.Call)
+		var templ_7745c5c3_Var15 string
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.Status)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 117, Col: 159}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"></div><div class=\"flex-shrink-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" data-show=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(jobMatches(job))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 117, Col: 189}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><div class=\"flex items-start gap-3 lg:col-span-2\"><input type=\"checkbox\" class=\"w-4 h-4 mt-1 shrink-0\" data-show=\"$jobsSelecting\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.ID.String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 123, Col: 27}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue("Select " + job.URL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 124, Col: 36}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-effect=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var19 string
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("el.checked = $job_ids.includes('%s')", job.ID.String()))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 125, Col: 86}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" data-on:change=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$job_ids = evt.target.checked ? [...new Set([...$job_ids, '%s'])] : $job_ids.filter(id => id !== '%s')", job.ID.String(), job.ID.String()))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 126, Col: 172}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"><div class=\"flex-1 min-w-0\"><div class=\"flex flex-wrap items-center gap-3 mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -342,180 +406,738 @@ func DownloadJobCard(job *db.DownloadJob) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div><div class=\"flex-1 min-w-0\"><p class=\"text-xs font-mono text-white truncate\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span class=\"text-sm font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(job.URL)
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(jobSource(job))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 422, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 131, Col: 57}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</p></div><div class=\"flex items-center gap-4 text-xs font-mono text-white/60\"><span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(job.CreatedAt.Time.Format("Jan 2 15:04"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 425, Col: 52}
+		if job.Refresh {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"text-xs text-white/50\">Refresh</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span> <span>×")
+		var templ_7745c5c3_Var22 templ.SafeURL
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/jobs/" + job.ID.String()))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 136, Col: 55}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Attempts))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 426, Col: 45}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" class=\"block text-sm font-mono break-all hover:underline\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</span></div><div class=\"flex items-center gap-2\">")
+		var templ_7745c5c3_Var23 string
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(job.URL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 136, Col: 125}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</a><div class=\"flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-white/50\"><span>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var24 string
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(jobStage(job))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 138, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</span> <time datetime=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var25 string
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 139, Col: 76}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var26 string
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(job.CreatedAt.Time.Format("Jan 2 · 15:04"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 139, Col: 124}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</time> <span>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var27 string
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d attempts", job.Attempts))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 140, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span></div></div></div><div class=\"flex flex-wrap items-start gap-2 mt-3 lg:mt-0 lg:justify-end\"><a class=\"ghost-btn-sm\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var28 templ.SafeURL
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/jobs/" + job.ID.String()))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 145, Col: 75}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\">View logs</a> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if job.VideoID.Valid {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<a class=\"ghost-btn-sm\" href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var29 templ.SafeURL
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/videos/" + job.VideoID.String()))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 147, Col: 83}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\">Open video</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		if job.Status == "failed" || job.Status == "succeeded" {
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"})
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" class=\"btn-secondary btn-sm disabled:opacity-50\" data-attr:disabled=\"$jobsBusy\" data-on:click=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div onclick=\"")
+			var templ_7745c5c3_Var30 string
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/jobs/%s/retry?render=1')", job.ID.String()))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 150, Col: 190}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var19 templ.ComponentScript = templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("retryJob", templ.JSExpression("event"), job.ID.String()))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<button type=\"button\" onclick=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var20 templ.ComponentScript = templ.JSFuncCall("retryJob", templ.JSExpression("event"), job.ID.String())
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" class=\"btn-secondary btn-sm\">RETRY</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\">Retry</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if job.Status == "processing" {
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"})
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<button type=\"button\" class=\"ghost-btn-sm disabled:opacity-50\" data-attr:disabled=\"$jobsBusy\" data-on:click=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div onclick=\"")
+			var templ_7745c5c3_Var31 string
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("if (confirm('Cancel this download?')) @post('/api/jobs/%s/cancel?render=1')", job.ID.String()))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 153, Col: 221}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var21 templ.ComponentScript = templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("cancelJob", templ.JSExpression("event"), job.ID.String()))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<button type=\"button\" onclick=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var22 templ.ComponentScript = templ.JSFuncCall("cancelJob", templ.JSExpression("event"), job.ID.String())
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"btn-primary btn-sm\">CANCEL</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\">Cancel</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"})
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<button type=\"button\" class=\"ghost-btn-sm disabled:opacity-50\" data-attr:disabled=\"$jobsBusy\" title=\"Hide this job from history; keep video files\" data-on:click=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<div onclick=\"")
+		var templ_7745c5c3_Var32 string
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/jobs/%s/archive?render=1')", job.ID.String()))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 155, Col: 236}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var23 templ.ComponentScript = templ.ComponentScript{Call: "event.preventDefault(); event.stopPropagation();"}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23.Call)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("archiveJob", templ.JSExpression("event"), job.ID.String()))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<button type=\"button\" onclick=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var24 templ.ComponentScript = templ.JSFuncCall("archiveJob", templ.JSExpression("event"), job.ID.String())
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24.Call)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" class=\"btn-ghost btn-sm\" title=\"Archive job (soft delete)\">ARCHIVE</button></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\">Archive</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if job.LastError != nil && *job.LastError != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"mt-1 ml-8 text-xs font-mono text-white/60 truncate\">ERROR: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<details id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var25 string
-			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(*job.LastError)
+			var templ_7745c5c3_Var33 string
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue("job-error-" + job.ID.String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/jobs.templ`, Line: 465, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 158, Col: 47}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" data-preserve-attr=\"open\" class=\"lg:col-span-3 mt-3 border-l-2 border-red-400/60 pl-3 text-xs\"><summary class=\"cursor-pointer text-red-300\">Download error · show details</summary><pre class=\"whitespace-pre-wrap break-all text-white/60 mt-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(*job.LastError)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 160, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</pre></details>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
+}
+
+// MLJobsList renders processing jobs with stable disclosures for live patches.
+func MLJobsList(jobs []*db.ListRecentMLJobsRow, health []*db.MlRuntimeHealth, counts []*db.CountMLJobsRow, notice string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var35 == nil {
+			templ_7745c5c3_Var35 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div id=\"ml-jobs-list\"><div class=\"grid grid-cols-2 md:grid-cols-4 gap-2 mb-4\" role=\"group\" aria-label=\"Filter processing by kind\"><button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'all'}\" data-on:click=\"$mlKind = 'all'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">All</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var36 string
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "all")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 172, Col: 90}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</span></button> <button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'transcribe'}\" data-on:click=\"$mlKind = 'transcribe'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">Captions</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "transcribe")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 176, Col: 97}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</span></button> <button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'context_windows'}\" data-on:click=\"$mlKind = 'context_windows'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">Context</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var38 string
+		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "context_windows")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 180, Col: 102}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</span></button> <button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'visual_index'}\" data-on:click=\"$mlKind = 'visual_index'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">Visual</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var39 string
+		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "visual_index")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 184, Col: 99}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</span></button> <button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'comment_classify'}\" data-on:click=\"$mlKind = 'comment_classify'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">Comment tone</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var40 string
+		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "comment_classify")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 188, Col: 103}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</span></button> <button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"{'border-white/60': $mlKind === 'speech_tone'}\" data-on:click=\"$mlKind = 'speech_tone'\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">Speech tone</span> <span class=\"block text-2xl font-mono mt-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var41 string
+		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByKind(counts, "speech_tone")))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 192, Col: 98}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</span></button></div><div class=\"grid grid-cols-2 md:grid-cols-5 gap-2 mb-4\" role=\"group\" aria-label=\"Filter processing by status\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, status := range []string{"all", "processing", "queued", "succeeded", "failed"} {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<button type=\"button\" class=\"text-left p-4 border border-white/10 bg-white/5 hover:border-white/40\" data-class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 string
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{'border-white/60': $mlStatus === '%s'}", status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 200, Col: 80}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" data-on:click=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("$mlStatus = '%s'", status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 201, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\"><span class=\"block text-xs font-mono uppercase tracking-wide text-white/60\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var44 string
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(status)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 203, Col: 89}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span> <span class=\"block text-2xl font-mono mt-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var45 string
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(mlCountByStatus(counts, status)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 204, Col: 94}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</span></button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div><div class=\"flex flex-wrap items-center justify-between gap-3 p-4 border border-white/10 bg-white/5 mb-4\"><div><p class=\"text-sm font-mono\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var46 string
+		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(mlQueueSummary(counts))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 210, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</p><p class=\"text-xs text-white/50 mt-1\">Kind cards are live work only. Status cards include history. List is the latest 100.</p></div><button type=\"button\" class=\"ghost-btn-sm disabled:opacity-50\" data-indicator:clearing-ml data-attr:disabled=\"$clearingMl\" data-on:click=\"if (confirm('Cancel all queued and in-flight video processing?')) @post('/api/ml/jobs/clear?render=1')\">Cancel queue</button></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if notice != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<p role=\"status\" class=\"text-sm mb-3\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var47 string
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(notice)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 216, Col: 49}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if len(health) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<details id=\"ml-runtime-health\" data-preserve-attr=\"open\" class=\"border border-white/10 p-4 mb-4\"><summary class=\"text-sm cursor-pointer\">Worker health</summary><ul class=\"text-xs font-mono text-white/60 mt-3 space-y-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, h := range health {
+				if healthHasError(h) {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<li>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var48 string
+					templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s · failures %d · %s", mlRuntimeHeadline(h.Kind), h.Failures, mlErrorCopy(h.LastError).Headline))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 224, Col: 125}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</li>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<li>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var49 string
+					templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s · failures %d", mlRuntimeHeadline(h.Kind), h.Failures))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 226, Col: 84}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</li>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</ul></details>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div class=\"border border-white/10 divide-y divide-white/10\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(jobs) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<p class=\"p-8 text-sm text-white/50\">No processing jobs. Requested work will appear automatically.</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		for _, j := range jobs {
+			detail := mlJobNotice(j.Kind, j.Status, j.Attempts, j.LastError)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<article id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var50 string
+			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue("ml-job-" + j.ID.String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 238, Col: 43}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" class=\"p-4 flex flex-wrap items-start justify-between gap-3\" data-show=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var51 string
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(mlJobMatches(j.Kind, j.Status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 238, Col: 149}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\"><div class=\"flex-1 min-w-0\"><p class=\"font-mono text-xs text-white/60 mb-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var52 string
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(mlJobHeadline(j.Kind, j.Status, j.Attempts, j.LastError))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 240, Col: 112}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</p><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var53 templ.SafeURL
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/videos/" + j.VideoID.String()))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 241, Col: 62}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" class=\"text-sm font-semibold break-words hover:underline\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var54 string
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(j.VideoTitle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 241, Col: 137}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if p := mlJobProgress(j.Checkpoint); p != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<p class=\"text-xs font-mono text-white/70 mt-2\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var55 string
+				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(p)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 243, Col: 58}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if detail.Headline != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<p class=\"text-xs mt-2\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var56 string
+				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(detail.Headline)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 246, Col: 48}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if detail.Detail != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<details id=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var57 string
+				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue("ml-error-" + j.ID.String())
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 249, Col: 48}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\" data-preserve-attr=\"open\" class=\"text-xs text-white/50 mt-2\"><summary class=\"cursor-pointer\">Details</summary><p class=\"break-all font-mono mt-2\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var58 string
+				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(detail.Detail)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 251, Col: 59}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</p></details>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if mlJobRetryable(j.Status) || j.Status == "superseded" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<button type=\"button\" class=\"ghost-btn-sm disabled:opacity-50\" data-attr:disabled=\"$jobsBusy\" data-on:click=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var59 string
+				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/ml-jobs/%s/retry?render=jobs')", j.ID.String()))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `jobs.templ`, Line: 256, Col: 188}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\">Retry</button>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</article>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func jobSource(job *db.DownloadJob) string {
+	if job.BatchLabel != nil && strings.TrimSpace(*job.BatchLabel) != "" {
+		return *job.BatchLabel
+	}
+	u, err := url.Parse(job.URL)
+	if err == nil && u.Hostname() != "" {
+		return strings.TrimPrefix(u.Hostname(), "www.")
+	}
+	return "Download"
+}
+
+func jobJSON(value any) string {
+	b, _ := json.Marshal(value)
+	return string(b)
+}
+
+func jobMatches(job *db.DownloadJob) string {
+	return fmt.Sprintf("($jobsStatus === 'all' || $jobsStatus === %s) && %s.includes($jobsSearch.trim().toLowerCase())", jobJSON(string(job.Status)), jobJSON(strings.ToLower(job.URL+" "+jobSource(job)+" "+job.ID.String())))
+}
+
+func visibleJobIDs(jobs []*db.DownloadJob) string {
+	parts := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		parts = append(parts, fmt.Sprintf("((%s) ? %s : null)", jobMatches(job), jobJSON(job.ID.String())))
+	}
+	return "[" + strings.Join(parts, ",") + "].filter(Boolean)"
+}
+
+func mlJobMatches(kind, status string) string {
+	kindExpr := fmt.Sprintf("($mlKind === 'all' || $mlKind === %s)", jobJSON(kind))
+	statusGroup := status
+	switch status {
+	case "queued", "retry_wait":
+		statusGroup = "queued"
+	case "processing", "waiting_model", "waiting_assets":
+		statusGroup = "processing"
+	}
+	return fmt.Sprintf("%s && ($mlStatus === 'all' || $mlStatus === %s)", kindExpr, jobJSON(statusGroup))
+}
+
+func jobCount(jobs []*db.DownloadJob, status string) int {
+	if status == "all" {
+		return len(jobs)
+	}
+	n := 0
+	for _, job := range jobs {
+		if string(job.Status) == status {
+			n++
+		}
+	}
+	return n
+}
+
+func jobStage(job *db.DownloadJob) string {
+	switch job.Status {
+	case "queued":
+		return "Waiting for a download worker"
+	case "processing":
+		return "Downloading · open logs for live output"
+	case "succeeded":
+		return "Download complete"
+	case "failed":
+		return "Download failed · review the error below"
+	default:
+		return string(job.Status)
+	}
 }
 
 var _ = templruntime.GeneratedTemplate

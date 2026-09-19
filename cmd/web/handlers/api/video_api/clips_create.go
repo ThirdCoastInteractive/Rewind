@@ -42,15 +42,30 @@ func HandleClipsCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 		}
 
 		var req struct {
-			StartTs     float64         `json:"start_ts"`
-			EndTs       float64         `json:"end_ts"`
-			Title       string          `json:"title"`
-			Description string          `json:"description"`
-			Color       string          `json:"color"`
-			Tags        json.RawMessage `json:"tags"`
+			ContextWindowID string          `json:"context_window_id"`
+			StartTs         float64         `json:"start_ts"`
+			EndTs           float64         `json:"end_ts"`
+			Title           string          `json:"title"`
+			Description     string          `json:"description"`
+			Color           string          `json:"color"`
+			Tags            json.RawMessage `json:"tags"`
 		}
 		if err := c.Bind(&req); err != nil {
 			return c.String(400, "invalid json")
+		}
+
+		if req.ContextWindowID != "" {
+			var windowID pgtype.UUID
+			if err := windowID.Scan(req.ContextWindowID); err != nil {
+				return c.String(400, "invalid context window")
+			}
+			window, err := dbc.Queries(ctx).GetContextWindow(ctx, windowID)
+			if err != nil || window == nil || window.VideoID != videoUUID || window.Stale {
+				return c.String(404, "context window not found for this video")
+			}
+			req.StartTs, req.EndTs = window.StartTs, window.EndTs
+			req.Title, req.Description = window.Title, window.Summary
+			req.Tags, _ = json.Marshal(window.Topics)
 		}
 
 		if req.StartTs < 0 || req.EndTs < 0 {
@@ -115,6 +130,9 @@ func HandleClipsCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 
 		// Re-hydrate export status badges that were wiped by the full list replace.
 		clip_api.PatchClipExportStatuses(sse, ctx, dbc, clips)
+		if req.ContextWindowID != "" {
+			_ = sse.PatchElementTempl(templates.ContextClipCreated(req.ContextWindowID, videoUUID.String(), created.ID.String()), datastar.WithSelectorID("context-clip-"+req.ContextWindowID), datastar.WithModeReplace())
+		}
 
 		// For the cut interface, directly patch the inspector form + signals
 		// so the new clip is immediately selected and editable.

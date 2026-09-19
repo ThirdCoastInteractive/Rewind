@@ -4,6 +4,7 @@ import (
 	"errors"
 	"mime"
 	"os"
+	"path/filepath"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
@@ -16,7 +17,8 @@ import (
 // HandleStitchDownload serves the finished stitch file as an attachment.
 func HandleStitchDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if _, _, err := sm.GetSession(c.Request()); err != nil {
+		_, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
 			return c.String(401, "unauthorized")
 		}
 
@@ -46,7 +48,7 @@ func HandleStitchDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 
 		_ = q.UpdateStitchJobLastAccessed(ctx, jobUUID)
 
-		ext := "." + job.Format
+		ext := filepath.Ext(job.FilePath)
 		if ct := mime.TypeByExtension(ext); ct != "" {
 			c.Response().Header().Set(echo.HeaderContentType, ct)
 		}

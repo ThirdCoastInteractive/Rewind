@@ -17,7 +17,7 @@
 .scrub-input-label {
   flex-shrink: 0;
   min-width: 1.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgb(var(--rw-ink-rgb) / 0.4);
   cursor: ew-resize;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -29,7 +29,7 @@
 .scrub-label.scrub-active,
 .scrub-input-label:hover,
 .scrub-input-label.scrub-active {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgb(var(--rw-ink-rgb) / 0.9);
 }
 
 .scrub-value,
@@ -37,16 +37,16 @@
   flex: 1;
   min-width: 0;
   padding: 3px 4px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgb(var(--rw-ink-rgb) / 0.8);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--rw-ink-rgb) / 0.1);
   cursor: text;
   text-align: right;
   transition: border-color 0.1s;
 }
 .scrub-value:hover,
 .scrub-input-value:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: rgb(var(--rw-ink-rgb) / 0.3);
 }
 
 .scrub-editor,
@@ -56,7 +56,7 @@
   padding: 2px 4px;
   color: white;
   background: black;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid rgb(var(--rw-ink-rgb) / 0.5);
   font-family: inherit;
   font-size: inherit;
   text-align: right;
@@ -64,5 +64,5 @@
 }
 .scrub-editor:focus,
 .scrub-input-editor:focus {
-  border-color: rgba(255, 255, 255, 0.8);
+  border-color: rgb(var(--rw-ink-rgb) / 0.8);
 }

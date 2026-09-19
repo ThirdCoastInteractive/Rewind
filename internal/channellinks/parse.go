@@ -12,8 +12,8 @@ import (
 
 // Edge kinds stored on channel_edges.kind.
 const (
-	KindOutlink   = "outlink"   // youtube.com/@, /channel/UC, rumble.com/c/, kick.com/
-	KindMention   = "mention"   // @handle that looks like a channel
+	KindOutlink   = "outlink"   // youtube.com/@, /channel/UC, rumble.com/c/, kick.com/ — scrapeable channel URLs
+	KindMention   = "mention"   // @handle or twitter/x.com profile; detected, not crawled
 	KindCommented = "commented" // comment author_url matches another archived channel
 )
 
@@ -183,7 +183,8 @@ func classifyOutlink(raw string) (abs string, kind string, ok bool) {
 				return "", "", false
 			}
 			if h != "" {
-				return "https://x.com/" + h, KindOutlink, true
+				// Detect the handle, but do not treat X profiles as scrape targets.
+				return "https://x.com/" + h, KindMention, true
 			}
 		}
 		return "", "", false

@@ -33,8 +33,9 @@ If the extension cannot connect, check:
 
 Once authenticated:
 
-- **Toolbar button** - click the Rewind icon on any page with a video to archive it
-- **Context menu** - right-click on any page and select the Rewind option to send the current URL
-- **Status** - the extension shows whether the URL has already been archived
+- **Toolbar button** — click the Rewind icon on any page with a video to archive it
+- **Context menu** — right-click on any page and select the Rewind option to send the current URL
+- **Status** — the extension shows whether the URL has already been archived
+- **Live tab** — on a live stream, the popup can start an in-progress archive instead of waiting for a VOD
 
 The extension sends the URL to your Rewind instance, which creates a download job just like pasting the URL into the Home page. You can monitor progress from the Jobs page.

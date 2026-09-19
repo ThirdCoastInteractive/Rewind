@@ -18,6 +18,19 @@ type Config struct {
 	// Database Configuration
 	DatabaseDSN     string `mapstructure:"DATABASE_DSN" validate:"required"`
 	DatabaseRetries int    `mapstructure:"DATABASE_RETRIES"`
+
+	// SFU / WebRTC Configuration
+	// SFUPort is the port the Pion SFU service listens on (signaling + health).
+	SFUPort int `mapstructure:"SFU_PORT"`
+	// SFUSignalURL is the internal WebSocket URL the web service proxies signaling
+	// to (e.g. ws://127.0.0.1:8081/signal). Empty disables producer WebRTC.
+	SFUSignalURL string `mapstructure:"SFU_SIGNAL_URL"`
+	// STUNUrls / TURNUrls are comma-separated ICE server URLs. STUN defaults to a
+	// public server; TURN is optional (LAN works without it).
+	STUNUrls     string `mapstructure:"STUN_URLS"`
+	TURNUrls     string `mapstructure:"TURN_URLS"`
+	TURNUsername string `mapstructure:"TURN_USERNAME"`
+	TURNPassword string `mapstructure:"TURN_PASSWORD"`
 }
 
 // use reflect to bind environment variables based on mapstructure tags
@@ -46,7 +59,7 @@ func bindEnv(c Config) {
 			}
 		}
 	}
-	slog.Info("Environment variables bound", "config", c)
+	slog.Debug("Environment variables bound")
 }
 
 // LoadConfig reads environment variables, applies defaults, and returns a validated Config.
@@ -56,13 +69,16 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 
 	// Defaults
 	viper.SetDefault("DATABASE_RETRIES", 10)
+	viper.SetDefault("SFU_PORT", 8081)
+	viper.SetDefault("SFU_SIGNAL_URL", "ws://127.0.0.1:8081/signal")
+	viper.SetDefault("STUN_URLS", "stun:stun.l.google.com:19302")
 
 	cfg := Config{}
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	slog.Info("Loaded configuration", "config", cfg)
+	slog.Debug("Loaded configuration")
 
 	validate := validator.New()
 	if err := validate.Struct(cfg); err != nil {

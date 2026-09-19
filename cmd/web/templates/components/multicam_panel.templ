@@ -8,12 +8,29 @@ import (
 // MulticamPanel renders the multicam shot-list editor in the cut page sidebar.
 // It shows crop "camera" buttons, a shot timeline, and export controls.
 templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.ShotList) {
-	<div class="p-2 space-y-3" id="multicam-panel" data-multicam-panel data-clip-id={ clipID }
-		data-signals={ fmt.Sprintf("{_multicamFormat: 'mp4', _multicamQuality: 'high', _multicamResolution: 1920, _multicamShotCount: %d}", len(shotList)) }>
+	<div
+		class="p-2 space-y-3"
+		id="multicam-panel"
+		data-multicam-panel
+		data-clip-id={ clipID }
+		data-init={ fmt.Sprintf("window.cutEditor?.multicam?.refreshPanel(); /* %d cameras */", len(clipCrops)) }
+		data-signals={ fmt.Sprintf("{_multicamFormat: 'mp4', _multicamQuality: 'high', _multicamResolution: 1920, _multicamShotCount: %d, _multicamSaving: false, _multicamSaveFailed: false}", len(shotList)) }
+	>
 		<div data-show="$_selectedClipId === ''" class="text-xs text-white/40 font-mono py-2 text-center">
 			Select a clip to use multicam.
 		</div>
-		<div data-show="$_selectedClipId !== ''">
+		<div data-show="$_selectedClipId !== ''" class="space-y-4">
+			<section class="border border-red-500/40 bg-black" aria-label="Program output">
+				<div class="flex items-center justify-between gap-2 px-2 py-2 border-b border-red-500/30 text-xs font-mono">
+					<span class="text-red-400 shrink-0">● PROGRAM</span>
+					<span class="text-white/80 truncate" data-multicam-program-camera>No camera</span>
+				</div>
+				<div class="relative aspect-video">
+					<canvas width="640" height="360" class="block w-full h-full" data-multicam-program aria-label="Active camera output"></canvas>
+					<div class="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-white/50" data-multicam-program-empty>Choose an opening camera to preview the sequence.</div>
+				</div>
+				<p class="px-2 py-1 text-xs text-white/40">Follows the playhead · Transitions applied on export</p>
+			</section>
 			if len(clipCrops) < 2 {
 				<div class="text-xs text-white/40 font-mono py-2 text-center">
 					Add at least 2 crops in the INSPECTOR panel to enable multicam editing.
@@ -21,8 +38,9 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 			} else {
 				<!-- Camera buttons: click to cut to this crop at the playhead -->
 				<div>
-					<div class="section-label mb-1">CAMERAS</div>
-					<div class="flex flex-wrap gap-1">
+					<div class="section-label mb-1">1 · CAMERA FRAMING</div>
+					<p class="text-xs text-white/50 mb-2">Crops act as cameras. Edit their framing, then choose the opening camera.</p>
+					<div class="grid grid-cols-2 gap-2">
 						for _, crop := range clipCrops {
 							@MulticamCameraButton(crop)
 						}
@@ -31,13 +49,13 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 				<!-- Shot timeline -->
 				<div>
 					<div class="section-label mb-1">
-						SHOT LIST
+						2 · CAMERA SEQUENCE
 						<span class="text-white/30 ml-1" data-multicam-shot-count>
 							({ fmt.Sprintf("%d", len(shotList)) } shots)
 						</span>
 					</div>
 					<div
-						class="relative h-8 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer"
+						class="relative h-10 border-2 border-white/10 bg-neutral-950 overflow-hidden cursor-pointer"
 						data-multicam-timeline
 						title="Click a camera button to add a shot at the playhead position"
 					>
@@ -59,10 +77,11 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 				</div>
 				<!-- Transition defaults -->
 				<div>
-					<div class="section-label mb-1">DEFAULT TRANSITION</div>
+					<div class="section-label mb-1">TRANSITION AT NEXT SWITCH</div>
 					<div class="flex gap-2 items-center">
 						<select
 							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+							aria-label="Transition at next camera switch"
 							data-multicam-transition-type
 						>
 							<option value="cut">Hard Cut</option>
@@ -81,6 +100,7 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 								step="0.1"
 								value="0.5"
 								class="w-14 px-1 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none text-center"
+								aria-label="Transition duration in seconds"
 								data-multicam-transition-dur
 							/>
 							<span class="text-xs text-white/40 font-mono">s</span>
@@ -101,44 +121,52 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 						type="button"
 						class="flex-1 ghost-btn-sm"
 						data-multicam-undo
-						title="Undo last shot"
+						title="Undo last sequence edit"
 					>
 						UNDO
 					</button>
 				</div>
+				<p class="text-xs text-white/60" role="status" data-multicam-notice>Sequence changes save automatically.</p>
+				<button type="button" class="ghost-btn-sm" data-show="$_multicamSaveFailed" data-multicam-retry-save>Retry save</button>
 				<!-- Export -->
 				<div class="border-t-2 border-white/10 pt-2">
-					<div class="flex flex-wrap gap-1 mb-2">
-						<select
-							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
-							data-bind="_multicamResolution"
-						>
-							<option value="1080">1080p</option>
-							<option value="1440">1440p</option>
-							<option value="1920" selected>1920p</option>
-							<option value="2160">4K</option>
-						</select>
-						<select
-							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
-							data-bind="_multicamFormat"
-						>
-							<option value="mp4">MP4</option>
-							<option value="webm">WebM</option>
-						</select>
-						<select
-							class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
-							data-bind="_multicamQuality"
-						>
-							<option value="high">High</option>
-							<option value="max">Maximum</option>
-						</select>
-					</div>
+					<details id="multicam-export-options" data-preserve-attr="open" class="mb-3">
+						<summary class="text-xs font-mono cursor-pointer mb-2">Export settings</summary>
+						<div class="flex flex-wrap gap-1 mb-2">
+							<select
+								class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+								aria-label="Export resolution"
+								data-bind="_multicamResolution"
+							>
+								<option value="1080">1080p</option>
+								<option value="1440">1440p</option>
+								<option value="1920" selected>1920p</option>
+								<option value="2160">4K</option>
+							</select>
+							<select
+								class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+								aria-label="Export format"
+								data-bind="_multicamFormat"
+							>
+								<option value="mp4">MP4</option>
+								<option value="webm">WebM</option>
+							</select>
+							<select
+								class="flex-1 px-2 py-1 text-xs font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+								aria-label="Export quality"
+								data-bind="_multicamQuality"
+							>
+								<option value="high">High</option>
+								<option value="max">Maximum</option>
+							</select>
+						</div>
+					</details>
 					<button
 						type="button"
 						class="w-full btn-primary btn-md disabled:opacity-30 disabled:pointer-events-none"
 						data-multicam-export
 						data-on:click="@post('/api/clips/' + $_selectedClipId + '/multicam-export', {payload: {format: $_multicamFormat, quality: $_multicamQuality, resolution: Number($_multicamResolution)}})"
-						data-attr:disabled="$_selectedClipId === '' || $_multicamShotCount < 2"
+						data-attr:disabled="$_selectedClipId === '' || $_multicamShotCount < 2 || $_multicamSaving"
 					>
 						<i class="fa-sharp fa-solid fa-clapperboard mr-2" aria-hidden="true"></i>
 						EXPORT MULTICAM
@@ -154,20 +182,17 @@ templ MulticamPanel(clipID string, clipCrops crops.CropArray, shotList crops.Sho
 
 // MulticamCameraButton is a clickable crop "camera" for the multicam panel.
 templ MulticamCameraButton(crop crops.Crop) {
-	<button
-		type="button"
-		class="px-2 py-1.5 text-xs font-mono transition-all border-2 bg-black text-white border-white/20 hover:border-amber-400/60 hover:bg-amber-400/10 active:scale-95"
-		data-multicam-camera={ crop.ID }
-		data-crop-name={ crop.Name }
-		title={ fmt.Sprintf("Cut to %s at playhead", crop.Name) }
-	>
-		<i class="fa-sharp fa-solid fa-video mr-1 text-amber-400/60" aria-hidden="true"></i>
-		if crop.Name != "" {
-			{ crop.Name }
-		} else {
-			{ crop.AspectRatio }
-		}
-	</button>
+	<div class="border border-white/20 bg-black p-2 space-y-2 min-w-0">
+		<div class="flex items-center gap-2">
+			<i class="fa-sharp fa-solid fa-video text-amber-400/60" aria-hidden="true"></i>
+			<span class="text-xs font-mono font-semibold truncate">{ multicamShotCropName(crop.ID, crops.CropArray{crop}) }</span>
+		</div>
+		<p class="text-xs text-white/50">{ crop.AspectRatio }</p>
+		<button type="button" class="w-full ghost-btn-sm" data-multicam-preview={ crop.ID } title={ "Edit framing for " + crop.Name }>Edit framing</button>
+		<button type="button" class="w-full btn-secondary btn-sm" data-multicam-camera={ crop.ID } data-crop-name={ crop.Name } title={ "Switch to " + crop.Name + " at the playhead" }>
+			Use camera
+		</button>
+	</div>
 }
 
 // multicamShotCropName resolves a crop ID to its display name.

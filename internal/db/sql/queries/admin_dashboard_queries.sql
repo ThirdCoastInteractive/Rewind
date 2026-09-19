@@ -3,17 +3,28 @@
 -- ============================================================================
 
 -- GetDashboardOverview returns high-level counts and totals for the admin dashboard.
+-- Comment totals use videos.comment_count (maintained on ingest). COUNT(*) on
+-- video_comments seq-scans a multi-GB heap whenever autovacuum has not marked
+-- pages all-visible, which made this page take several seconds.
 -- name: GetDashboardOverview :one
 SELECT
-    (SELECT COUNT(*)::bigint FROM videos) AS total_videos,
+    v.total_videos,
     (SELECT COUNT(*)::bigint FROM clips) AS total_clips,
     (SELECT COUNT(*)::bigint FROM markers) AS total_markers,
     (SELECT COUNT(*)::bigint FROM users WHERE deleted_at IS NULL) AS total_users,
-    (SELECT COUNT(*)::bigint FROM video_comments) AS total_comments,
-    (SELECT COALESCE(SUM(file_size), 0)::bigint FROM videos WHERE file_size IS NOT NULL) AS total_storage_bytes,
-    (SELECT COALESCE(SUM(duration_seconds), 0)::bigint FROM videos WHERE duration_seconds IS NOT NULL) AS total_duration_seconds;
+    v.total_comments,
+    v.total_storage_bytes,
+    v.total_duration_seconds
+FROM (
+    SELECT
+        COUNT(*)::bigint AS total_videos,
+        COALESCE(SUM(comment_count), 0)::bigint AS total_comments,
+        COALESCE(SUM(file_size), 0)::bigint AS total_storage_bytes,
+        COALESCE(SUM(duration_seconds), 0)::bigint AS total_duration_seconds
+    FROM videos
+) v;
 
--- GetJobStatusCounts returns download and ingest job counts grouped by status.
+-- GetJobStatusCounts returns download, ingest, export, and ML job counts grouped by status.
 -- name: GetJobStatusCounts :many
 SELECT
     'download' AS job_type,
@@ -27,6 +38,28 @@ SELECT
     status::text AS status,
     COUNT(*)::bigint AS count
 FROM ingest_jobs
+GROUP BY status
+UNION ALL
+SELECT
+    'clip_export' AS job_type,
+    status::text AS status,
+    COUNT(*)::bigint AS count
+FROM clip_exports
+GROUP BY status
+UNION ALL
+SELECT
+    'stitch' AS job_type,
+    status::text AS status,
+    COUNT(*)::bigint AS count
+FROM stitch_jobs
+WHERE COALESCE(render_kind, 'export') = 'export'
+GROUP BY status
+UNION ALL
+SELECT
+    'ml' AS job_type,
+    status::text AS status,
+    COUNT(*)::bigint AS count
+FROM ml_jobs
 GROUP BY status
 ORDER BY job_type, status;
 

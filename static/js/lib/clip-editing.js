@@ -1,3 +1,4 @@
+import { pageTimeout, pageFetch } from './page-scope.js';
 /**
  * ClipEditingMixin - clip selection, editing, trimming nudges, split, create/delete,
  * and autosave helpers.
@@ -63,7 +64,7 @@ export const ClipEditingMixin = {
       const formEl = document.querySelector('[data-cut-clip-form]');
       if (!formEl || formEl.classList.contains('hidden')) {
         if (triesLeft > 0) {
-          setTimeout(() => attemptFocus(triesLeft - 1), 60);
+          pageTimeout(() => attemptFocus(triesLeft - 1), 60);
         }
         return;
       }
@@ -84,7 +85,7 @@ export const ClipEditingMixin = {
       }
 
       if (triesLeft > 0) {
-        setTimeout(() => attemptFocus(triesLeft - 1), 60);
+        pageTimeout(() => attemptFocus(triesLeft - 1), 60);
       }
     };
 
@@ -178,7 +179,7 @@ export const ClipEditingMixin = {
     }
 
     try {
-      const res = await fetch(`/api/clips/${encodeURIComponent(this.selectedClipId)}/split`, {
+      const res = await pageFetch(`/api/clips/${encodeURIComponent(this.selectedClipId)}/split`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ at: playhead }),
@@ -246,7 +247,7 @@ export const ClipEditingMixin = {
     if (!api) return;
     if (!api.getPath('_localAutoSave')) return;
 
-    this._autoSaveTimer = setTimeout(() => {
+    this._autoSaveTimer = pageTimeout(() => {
       const trigger = document.querySelector('[data-cut-autosave-trigger]');
       if (trigger) trigger.click();
     }, 600);

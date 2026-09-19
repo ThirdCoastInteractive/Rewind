@@ -52,31 +52,39 @@ await esbuild.build({
 
 console.log('✓ Built cut-page.js');
 
-// Bundle stitch-page.js
+// Bundle the real-time Stitch workspace editor.
 await esbuild.build({
-  entryPoints: ['static/js/stitch-page.js'],
+  entryPoints: ['static/js/stitch-workspace.js'],
   bundle: true,
   minify: true,
   sourcemap: false,
-  outfile: 'static/dist/stitch-page.js',
+  outfile: 'static/dist/stitch-workspace.js',
   target: ['es2020'],
   format: 'iife'
 });
 
-console.log('✓ Built stitch-page.js');
+console.log('✓ Built stitch-workspace.js');
 
-// Bundle show-notes.js (drag-drop for the show-note outline)
 await esbuild.build({
-  entryPoints: ['static/js/show-notes.js'],
+  entryPoints: ['static/css/stitch-workspace.css'],
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/stitch-workspace.css',
+  loader: { '.css': 'css' }
+});
+
+// Bundle collaborative Markdown show workspace.
+await esbuild.build({
+  entryPoints: ['static/js/show-workspace.js'],
   bundle: true,
   minify: true,
   sourcemap: false,
-  outfile: 'static/dist/show-notes.js',
+  outfile: 'static/dist/show-workspace.js',
   target: ['es2020'],
   format: 'iife'
 });
 
-console.log('✓ Built show-notes.js');
+console.log('✓ Built show-workspace.js');
 
 // Bundle webrtc-room.js (producer/viewer WebRTC client driving the SFU)
 await esbuild.build({
@@ -130,19 +138,6 @@ await esbuild.build({
 
 console.log('✓ Built remote-player-background.js');
 
-// Bundle producer-scene-preview.js
-await esbuild.build({
-  entryPoints: ['static/js/producer-scene-preview.js'],
-  bundle: true,
-  minify: true,
-  sourcemap: false,
-  outfile: 'static/dist/producer-scene-preview.js',
-  target: ['es2020'],
-  format: 'iife'
-});
-
-console.log('✓ Built producer-scene-preview.js');
-
 // Bundle admin-dashboard.js (D3 charts for admin metrics)
 await esbuild.build({
   entryPoints: ['static/js/admin-dashboard.js'],
@@ -167,6 +162,18 @@ await esbuild.build({
 });
 
 console.log('✓ Built network-page.js');
+
+await esbuild.build({
+  entryPoints: ['static/js/investigate-graph.js'],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  outfile: 'static/dist/investigate-graph.js',
+  target: ['es2020'],
+  format: 'iife'
+});
+
+console.log('✓ Built investigate-graph.js');
 
 // Minify video-player.css to dist
 await esbuild.build({

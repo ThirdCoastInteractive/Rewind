@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test release guardrails
+        run: make test-tools
       - name: Check public release commit
         run: bash scripts/check-release.sh --commit HEAD
 
@@ -29,16 +31,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: web
-            dockerfile: web.Dockerfile
-          - service: downloader
-            dockerfile: downloader.Dockerfile
-          - service: ingest
-            dockerfile: ingest.Dockerfile
-          - service: encoder
-            dockerfile: encoder.Dockerfile
-          - service: pg-migrator
-            dockerfile: pg-migrator.Dockerfile
+          - service: rewind
+            dockerfile: rewind.Dockerfile
+            image: rewind
+          - service: ml
+            dockerfile: ml.Dockerfile
+            target: runtime-cpu
+            image: rewind-ml
+          - service: ml
+            dockerfile: ml.Dockerfile
+            target: runtime-cuda
+            suffix: -cuda
+            image: rewind-ml
+          - service: postgres-vector
+            dockerfile: docker/postgres-vector.Dockerfile
+            image: rewind-postgres-vector
 
     steps:
       - name: Checkout
@@ -58,20 +65,21 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/thirdcoastinteractive/rewind-${{ matrix.service }}
+          images: ghcr.io/thirdcoastinteractive/${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=sha,prefix=
+            type=raw,value=latest${{ matrix.suffix }}
+            type=semver,pattern={{version}}${{ matrix.suffix }}
+            type=sha,prefix=,suffix=${{ matrix.suffix }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}${{ matrix.suffix }}
           provenance: false

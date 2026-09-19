@@ -7,8 +7,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
+	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
 
@@ -58,6 +60,22 @@ func HandleRegenerateAssets(sm *auth.SessionManager, dbc *db.DatabaseConnection)
 
 		// Create a special ingest job that will regenerate assets.
 		// The ingest worker will discover the video file on disk even if video_path is NULL.
+		active, err := dbc.Queries(c.Request().Context()).GetActiveAssetJobsForVideo(c.Request().Context(), videoUUID)
+		if err != nil {
+			return err
+		}
+		for _, existing := range active {
+			existingScope := ""
+			if existing.AssetScope != nil {
+				existingScope = strings.TrimSpace(*existing.AssetScope)
+			}
+			if assetScope == nil || existingScope == "" || existingScope == "all" || *existing.AssetScope == *assetScope {
+				if c.QueryParam("render") == "1" {
+					return datastar.NewSSE(c.Response(), c.Request()).PatchElementTempl(templates.VideoProcessingNotice("This asset already has queued or running work. See Download and asset jobs for progress."))
+				}
+				return c.JSON(409, map[string]string{"error": "asset regeneration already queued or running"})
+			}
+		}
 		job, err := dbc.Queries(c.Request().Context()).EnqueueAssetRegenerationJob(c.Request().Context(), &db.EnqueueAssetRegenerationJobParams{
 			VideoID:    videoUUID,
 			AssetScope: assetScope,
@@ -72,6 +90,12 @@ func HandleRegenerateAssets(sm *auth.SessionManager, dbc *db.DatabaseConnection)
 			scopeLabel = *assetScope
 		}
 		slog.Info("created asset regeneration job", "ingest_job_id", job.IngestJobID, "download_job_id", job.DownloadJobID, "video_id", videoUUID, "scope", scopeLabel)
+		if c.QueryParam("render") == "1" {
+			if err := datastar.NewSSE(c.Response(), c.Request()).PatchElementTempl(templates.VideoProcessingNotice("Asset regeneration queued: " + scopeLabel + ". Track it under Download and asset jobs.")); err != nil {
+				return err
+			}
+			return HandleJobs(sm, dbc)(c)
+		}
 
 		return c.JSON(200, map[string]any{
 			"ingest_job_id":   job.IngestJobID.String(),

@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addCreatorBundleMember = `-- name: AddCreatorBundleMember :exec
+INSERT INTO creator_bundle_members (bundle_id, creator_id)
+VALUES ($1, $2)
+ON CONFLICT (bundle_id, creator_id) DO NOTHING
+`
+
+type AddCreatorBundleMemberParams struct {
+	BundleID  pgtype.UUID `db:"bundle_id" json:"BundleID"`
+	CreatorID pgtype.UUID `db:"creator_id" json:"CreatorID"`
+}
+
+// AddCreatorBundleMember links a creator into a bundle.
+//
+//	INSERT INTO creator_bundle_members (bundle_id, creator_id)
+//	VALUES ($1, $2)
+//	ON CONFLICT (bundle_id, creator_id) DO NOTHING
+func (q *Queries) AddCreatorBundleMember(ctx context.Context, arg *AddCreatorBundleMemberParams) error {
+	_, err := q.db.Exec(ctx, addCreatorBundleMember, arg.BundleID, arg.CreatorID)
+	return err
+}
+
 const addCreatorSuggestionMember = `-- name: AddCreatorSuggestionMember :exec
 INSERT INTO creator_suggestion_members (suggestion_id, channel_id)
 VALUES ($1, $2)
@@ -62,6 +83,36 @@ func (q *Queries) CreateCreator(ctx context.Context, arg *CreateCreatorParams) (
 	return &i, err
 }
 
+const createCreatorBundle = `-- name: CreateCreatorBundle :one
+INSERT INTO creator_bundles (name, notes, search)
+VALUES ($1, COALESCE($2, ''), setweight(to_tsvector('simple', $1), 'A'))
+RETURNING id, created_at, updated_at, name, notes, search
+`
+
+type CreateCreatorBundleParams struct {
+	Name  string      `db:"name" json:"Name"`
+	Notes interface{} `db:"notes" json:"Notes"`
+}
+
+// CreateCreatorBundle inserts a named grouping of creators (e.g. Gas Digital).
+//
+//	INSERT INTO creator_bundles (name, notes, search)
+//	VALUES ($1, COALESCE($2, ''), setweight(to_tsvector('simple', $1), 'A'))
+//	RETURNING id, created_at, updated_at, name, notes, search
+func (q *Queries) CreateCreatorBundle(ctx context.Context, arg *CreateCreatorBundleParams) (*CreatorBundle, error) {
+	row := q.db.QueryRow(ctx, createCreatorBundle, arg.Name, arg.Notes)
+	var i CreatorBundle
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Notes,
+		&i.Search,
+	)
+	return &i, err
+}
+
 const getCreator = `-- name: GetCreator :one
 SELECT id, created_at, updated_at, name, notes, search FROM creators WHERE id = $1
 `
@@ -72,6 +123,27 @@ SELECT id, created_at, updated_at, name, notes, search FROM creators WHERE id = 
 func (q *Queries) GetCreator(ctx context.Context, id pgtype.UUID) (*Creator, error) {
 	row := q.db.QueryRow(ctx, getCreator, id)
 	var i Creator
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Notes,
+		&i.Search,
+	)
+	return &i, err
+}
+
+const getCreatorBundle = `-- name: GetCreatorBundle :one
+SELECT id, created_at, updated_at, name, notes, search FROM creator_bundles WHERE id = $1
+`
+
+// GetCreatorBundle fetches one bundle by id.
+//
+//	SELECT id, created_at, updated_at, name, notes, search FROM creator_bundles WHERE id = $1
+func (q *Queries) GetCreatorBundle(ctx context.Context, id pgtype.UUID) (*CreatorBundle, error) {
+	row := q.db.QueryRow(ctx, getCreatorBundle, id)
+	var i CreatorBundle
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
@@ -238,6 +310,48 @@ func (q *Queries) LinkChannelsToCreator(ctx context.Context, arg *LinkChannelsTo
 	return err
 }
 
+const listBundlesForCreator = `-- name: ListBundlesForCreator :many
+SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search
+FROM creator_bundle_members m
+JOIN creator_bundles b ON b.id = m.bundle_id
+WHERE m.creator_id = $1
+ORDER BY b.name
+`
+
+// ListBundlesForCreator returns bundles that include this creator.
+//
+//	SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search
+//	FROM creator_bundle_members m
+//	JOIN creator_bundles b ON b.id = m.bundle_id
+//	WHERE m.creator_id = $1
+//	ORDER BY b.name
+func (q *Queries) ListBundlesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*CreatorBundle, error) {
+	rows, err := q.db.Query(ctx, listBundlesForCreator, creatorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*CreatorBundle
+	for rows.Next() {
+		var i CreatorBundle
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+			&i.Notes,
+			&i.Search,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChannelsByCreator = `-- name: ListChannelsByCreator :many
 SELECT id, created_at, updated_at, platform, identity_key, channel_id, uploader, canonical_url, creator_id, search FROM channels WHERE creator_id = $1 ORDER BY platform, uploader
 `
@@ -265,6 +379,101 @@ func (q *Queries) ListChannelsByCreator(ctx context.Context, creatorID pgtype.UU
 			&i.CanonicalURL,
 			&i.CreatorID,
 			&i.Search,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCreatorBundleMembers = `-- name: ListCreatorBundleMembers :many
+SELECT c.id, c.created_at, c.updated_at, c.name, c.notes, c.search
+FROM creator_bundle_members m
+JOIN creators c ON c.id = m.creator_id
+WHERE m.bundle_id = $1
+ORDER BY c.name
+`
+
+// ListCreatorBundleMembers returns the creators in a bundle.
+//
+//	SELECT c.id, c.created_at, c.updated_at, c.name, c.notes, c.search
+//	FROM creator_bundle_members m
+//	JOIN creators c ON c.id = m.creator_id
+//	WHERE m.bundle_id = $1
+//	ORDER BY c.name
+func (q *Queries) ListCreatorBundleMembers(ctx context.Context, bundleID pgtype.UUID) ([]*Creator, error) {
+	rows, err := q.db.Query(ctx, listCreatorBundleMembers, bundleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Creator
+	for rows.Next() {
+		var i Creator
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+			&i.Notes,
+			&i.Search,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCreatorBundles = `-- name: ListCreatorBundles :many
+SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search, COUNT(m.creator_id)::bigint AS member_count
+FROM creator_bundles b
+LEFT JOIN creator_bundle_members m ON m.bundle_id = b.id
+GROUP BY b.id
+ORDER BY b.name
+`
+
+type ListCreatorBundlesRow struct {
+	ID          pgtype.UUID        `db:"id" json:"ID"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	Name        string             `db:"name" json:"Name"`
+	Notes       string             `db:"notes" json:"Notes"`
+	Search      string             `db:"search" json:"Search"`
+	MemberCount int64              `db:"member_count" json:"MemberCount"`
+}
+
+// ListCreatorBundles returns every bundle with how many creators it contains.
+//
+//	SELECT b.id, b.created_at, b.updated_at, b.name, b.notes, b.search, COUNT(m.creator_id)::bigint AS member_count
+//	FROM creator_bundles b
+//	LEFT JOIN creator_bundle_members m ON m.bundle_id = b.id
+//	GROUP BY b.id
+//	ORDER BY b.name
+func (q *Queries) ListCreatorBundles(ctx context.Context) ([]*ListCreatorBundlesRow, error) {
+	rows, err := q.db.Query(ctx, listCreatorBundles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*ListCreatorBundlesRow
+	for rows.Next() {
+		var i ListCreatorBundlesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+			&i.Notes,
+			&i.Search,
+			&i.MemberCount,
 		); err != nil {
 			return nil, err
 		}
@@ -695,6 +904,27 @@ func (q *Queries) ListUnassignedChannels(ctx context.Context) ([]*Channel, error
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeCreatorBundleMember = `-- name: RemoveCreatorBundleMember :exec
+DELETE FROM creator_bundle_members
+WHERE bundle_id = $1
+  AND creator_id = $2
+`
+
+type RemoveCreatorBundleMemberParams struct {
+	BundleID  pgtype.UUID `db:"bundle_id" json:"BundleID"`
+	CreatorID pgtype.UUID `db:"creator_id" json:"CreatorID"`
+}
+
+// RemoveCreatorBundleMember unlinks a creator from a bundle.
+//
+//	DELETE FROM creator_bundle_members
+//	WHERE bundle_id = $1
+//	  AND creator_id = $2
+func (q *Queries) RemoveCreatorBundleMember(ctx context.Context, arg *RemoveCreatorBundleMemberParams) error {
+	_, err := q.db.Exec(ctx, removeCreatorBundleMember, arg.BundleID, arg.CreatorID)
+	return err
 }
 
 const searchUnassignedChannels = `-- name: SearchUnassignedChannels :many

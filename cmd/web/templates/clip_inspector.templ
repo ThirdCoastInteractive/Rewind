@@ -20,11 +20,6 @@ templ ClipInspectorForm(clip *db.Clip) {
 			"_selectedCropId": "",
 			"_selectedCropName": "",
 			"_selectedCropAspect": "",
-			"_cropX": 0.5,
-			"_cropY": 0.5,
-			"_cropWidth": 1,
-			"_cropHeight": 1,
-			"_cropSaveToken": 0,
 			"_clipDirty": false,
 			"_clipStartTs": clip.StartTs,
 			"_clipEndTs": clip.EndTs,
@@ -184,17 +179,12 @@ templ ClipInspectorForm(clip *db.Clip) {
 		<div
 			class="hidden"
 			data-crop-save-panel
-			data-effect={ fmt.Sprintf("if ($_cropSaveToken && $_selectedCropId) { @put('/api/clips/%s/crops/' + $_selectedCropId, {payload: {x: $_cropX, y: $_cropY, width: $_cropWidth, height: $_cropHeight}}); }", clip.ID.String()) }
+			data-on:crop-save={ fmt.Sprintf("@put('/api/clips/%s/crops/' + evt.detail.cropId, {payload: evt.detail.crop})", clip.ID.String()) }
 		>
 			<input type="hidden" data-bind="_clipDirty" data-cut-clip-dirty/>
 			<input type="hidden" data-bind="_clipStartTs" data-cut-clip-start-ts/>
 			<input type="hidden" data-bind="_clipEndTs" data-cut-clip-end-ts/>
 			<input type="hidden" data-bind="_selectedCropId" data-cut-selected-crop-id/>
-			<input type="hidden" data-bind="_cropX" data-cut-crop-x/>
-			<input type="hidden" data-bind="_cropY" data-cut-crop-y/>
-			<input type="hidden" data-bind="_cropWidth" data-cut-crop-width/>
-			<input type="hidden" data-bind="_cropHeight" data-cut-crop-height/>
-			<input type="hidden" data-bind="_cropSaveToken" data-cut-crop-save-token/>
 		</div>
 	</div>
 }

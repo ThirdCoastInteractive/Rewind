@@ -10,14 +10,14 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"encoding/json"
+	"github.com/jackc/pgx/v5/pgtype"
 	"net/url"
 	"strings"
 
 	"thirdcoast.systems/rewind/internal/db"
-	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
-func Network(edges []*db.ListChannelEdgesRow, username string) templ.Component {
+func Network(edges []*db.ListChannelEdgesRow, bundles []*db.ListCreatorBundlesRow, bundleID string, hanging bool, username string, channels []*db.ListNetworkChannelsRow, wikiPages []*db.WikiPage, wikiLinks []*db.WikiLink, commenters []NetworkCommenter, commenterEdges []NetworkCommenterEdge) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -50,61 +50,74 @@ func Network(edges []*db.ListChannelEdgesRow, username string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex-1 min-h-0 flex flex-col overflow-hidden bg-black\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex-1 min-h-0 flex flex-col\" data-network-workspace data-signals=\"{networkNode: '', networkContextQuery: ''}\"><header class=\"p-3 border-b border-white/20 space-y-2\"><div class=\"flex flex-wrap gap-3 items-center\"><h1 class=\"font-bold\">Network</h1><p class=\"text-xs text-white/60\">Explore creators, inspect evidence, and find something to watch.</p></div><div class=\"flex flex-wrap gap-2 items-center\"><label class=\"text-xs\">Creator group <select id=\"network-bundle\" class=\"bg-black border border-white/30 p-2\"><option value=\"\">All groups</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if len(edges) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"flex-1 flex flex-col items-center justify-center text-center px-6\"><i class=\"fa-sharp fa-solid fa-diagram-project text-3xl text-white/20 mb-2\" aria-hidden=\"true\"></i><p class=\"font-mono text-sm text-white/50\">No connections yet</p><p class=\"font-mono text-xs text-white/30 mt-1\">Ingest backfills existing videos. Unresolved URLs still show; they attach once that channel is archived.</p></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"shrink-0 border-b-2 border-white/10 px-3 py-1.5 flex items-center gap-3 flex-wrap\"><h1 class=\"font-mono text-sm uppercase tracking-wider text-white/80\">Network</h1><span class=\"font-mono text-xs text-white/30\">")
+			for _, b := range bundles {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var3 string
-				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(format.Itoa(len(edges)))
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(b.ID.String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 24, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 23, Col: 37}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " edges</span> <input id=\"network-filter\" type=\"search\" placeholder=\"Filter channels…\" class=\"w-52 bg-black border-2 border-white/20 text-white font-mono text-xs px-2 py-1 focus:border-white/60 focus:outline-none\"> <label class=\"flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer\"><input type=\"checkbox\" data-network-kind=\"outlink\" checked class=\"accent-white\"> outlink</label> <label class=\"flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer\"><input type=\"checkbox\" data-network-kind=\"mention\" checked class=\"accent-white\"> mention</label> <label class=\"flex items-center gap-1.5 font-mono text-xs text-white/70 cursor-pointer\"><input type=\"checkbox\" data-network-kind=\"commented\" checked class=\"accent-white\"> commented</label> <span class=\"font-mono text-[10px] text-white/30 ml-auto hidden md:inline\">Dashed ring = same creator · filled = archived</span></div><div class=\"flex-1 min-h-0 relative isolate\"><div id=\"network-graph\" class=\"absolute inset-0 z-0 bg-black\"></div><aside id=\"network-inspector-panel\" class=\"hidden absolute top-2 right-2 bottom-2 w-80 max-w-[calc(100%-1rem)] border-2 border-white/40 bg-black z-50 isolate flex flex-col overflow-hidden pointer-events-auto\"><div class=\"shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-white/10\"><span class=\"font-mono text-xs uppercase tracking-wider text-white/50\">Inspector</span> <button type=\"button\" id=\"network-inspector-close\" class=\"font-mono text-xs text-white/40 hover:text-white px-1\" title=\"Close\"><i class=\"fa-sharp fa-solid fa-xmark\" aria-hidden=\"true\"></i></button></div><div id=\"network-inspector\" class=\"p-3 overflow-y-auto flex-1 min-h-0\"></div></aside></div><div id=\"network-graph-data\" class=\"hidden\" data-graph=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if bundleID == b.ID.String() {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " selected")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, ">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(networkGraphJSON(edges))
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(b.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 60, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 23, Col: 86}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></div><script src=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var5 string
-				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/network-page.js"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 61, Col: 69}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"></script>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</select></label> <label class=\"text-xs\">Find <input id=\"network-filter\" type=\"search\" placeholder=\"Creator, channel, handle, or vault\" class=\"bg-black border border-white/30 p-2\"></label> <label class=\"text-xs\"><input id=\"network-group\" type=\"checkbox\" checked> Group by creator</label> <label class=\"text-xs\">Show <select id=\"network-mode\" class=\"bg-black border border-white/30 p-2\"><option value=\"graph\">Graph</option><option value=\"list\">Connections list</option></select></label> <label class=\"text-xs\">Order <select id=\"network-sort\" class=\"bg-black border border-white/30 p-2\"><option value=\"weight\">Most evidence</option><option value=\"name\">Name</option></select></label> <button id=\"network-reset\" class=\"ghost-btn-sm\">Show all / fit</button> <button id=\"network-expand\" class=\"ghost-btn-sm\">Expand one step</button></div><div class=\"flex flex-wrap gap-3 text-xs\"><label><input type=\"checkbox\" data-network-kind=\"outlink\" checked> Links</label> <label><input type=\"checkbox\" data-network-kind=\"mention\" checked> Mentions</label> <label><input type=\"checkbox\" data-network-kind=\"commented\" checked> Comments</label> <label><input type=\"checkbox\" data-network-kind=\"wiki\" checked> Vault</label> <label><input id=\"network-commenters\" type=\"checkbox\" data-network-commenters> Commenters</label> <label><input id=\"network-hanging\" type=\"checkbox\"> Unarchived URLs</label> <span id=\"network-count\" role=\"status\"></span> <span class=\"text-white/50\">Select a creator to focus. Select a connection to read its evidence. Vault edges are encyclopedia wikilinks, not harvested observations.</span></div></header><div class=\"flex-1 min-h-0 flex flex-col lg:flex-row\"><div class=\"relative flex-1 min-h-0\" style=\"min-height:320px\"><div id=\"network-graph\" class=\"absolute inset-0\"></div><div id=\"network-list\" class=\"absolute inset-0 overflow-auto p-3 hidden\"></div></div><aside id=\"network-inspector-panel\" class=\"hidden fixed inset-x-0 bottom-0 h-[80dvh] z-40 bg-black lg:static lg:h-auto lg:w-96 w-full border-l border-t border-white/20 flex flex-col min-h-0\" style=\"max-height:80dvh\"><div class=\"p-2 flex justify-between\"><h2 class=\"font-bold text-sm\">Connections & evidence</h2><button id=\"network-inspector-close\" aria-label=\"Close details\">Close</button></div><div id=\"network-inspector\" class=\"p-3 overflow-auto\"></div></aside></div><button class=\"hidden\" data-network-inspect data-on:click=\"@get('/api/network/inspect?node=' + encodeURIComponent($networkNode))\"></button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = NetworkData(edges, channels, wikiPages, wikiLinks, commenters, commenterEdges).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<script src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/network-page.js"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 57, Col: 68}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"></script></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -118,7 +131,7 @@ func Network(edges []*db.ListChannelEdgesRow, username string) templ.Component {
 	})
 }
 
-func networkChannelLink(uploader, platform string) templ.Component {
+func NetworkData(edges []*db.ListChannelEdgesRow, channels []*db.ListNetworkChannelsRow, wikiPages []*db.WikiPage, wikiLinks []*db.WikiLink, commenters []NetworkCommenter, commenterEdges []NetworkCommenterEdge) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -139,67 +152,146 @@ func networkChannelLink(uploader, platform string) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"min-w-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div id=\"network-graph-data\" class=\"hidden\" data-graph=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(networkFullGraphJSON(edges, channels, wikiPages, wikiLinks, commenters, commenterEdges))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 63, Col: 145}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func networkFullGraphJSON(edges []*db.ListChannelEdgesRow, channels []*db.ListNetworkChannelsRow, wikiPages []*db.WikiPage, wikiLinks []*db.WikiLink, commenters []NetworkCommenter, commenterEdges []NetworkCommenterEdge) string {
+	var graph networkGraph
+	_ = json.Unmarshal([]byte(networkGraphJSON(edges)), &graph)
+	byID := map[string]int{}
+	for i, n := range graph.Nodes {
+		byID[n.ID] = i
+	}
+	for _, ch := range channels {
+		n := networkNode{ID: ch.ID.String(), Label: ch.Uploader, Platform: ch.Platform, Archived: ch.VideoCount > 0, Search: ch.IdentityKey + " " + ch.CanonicalURL, Href: channelViewURL(ch.Uploader)}
+		if ch.CreatorID.Valid {
+			n.CreatorID = ch.CreatorID.String()
+			n.CreatorName = ch.CreatorName
+		}
+		if i, ok := byID[n.ID]; ok {
+			graph.Nodes[i] = n
+		} else {
+			graph.Nodes = append(graph.Nodes, n)
+		}
+	}
+	allowCreators := map[string]bool{}
+	allowChannels := map[string]bool{}
+	for _, n := range graph.Nodes {
+		allowChannels[n.ID] = true
+		if n.CreatorID != "" {
+			allowCreators[n.CreatorID] = true
+		}
+	}
+	if len(allowCreators) == 0 && len(allowChannels) == 0 {
+		attachWikiToGraph(&graph, wikiPages, wikiLinks, nil, nil)
+	} else {
+		attachWikiToGraph(&graph, wikiPages, wikiLinks, allowCreators, allowChannels)
+	}
+	attachCommentersToGraph(&graph, commenters, commenterEdges)
+	b, _ := json.Marshal(graph)
+	return string(b)
+}
+
+func networkChannelLink(uploader, platform string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var8 == nil {
+			templ_7745c5c3_Var8 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"min-w-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if uploader != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var7 templ.SafeURL
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(channelViewURL(uploader)))
+			var templ_7745c5c3_Var9 templ.SafeURL
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(channelViewURL(uploader)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 70, Col: 52}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"text-white hover:underline truncate block\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(uploader)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 70, Col: 115}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<span class=\"text-white/50\">unknown</span> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if platform != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"text-xs text-white/30\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(platform)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/web/templates/network.templ`, Line: 75, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 106, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" class=\"text-white hover:underline truncate block\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(uploader)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 106, Col: 115}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<span class=\"text-white/50\">unknown</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div>")
+		if platform != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"text-xs text-white/30\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var11 string
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(platform)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `network.templ`, Line: 111, Col: 48}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -213,13 +305,18 @@ type networkGraph struct {
 }
 
 type networkNode struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Platform    string `json:"platform"`
-	Archived    bool   `json:"archived"`
-	Href        string `json:"href,omitempty"`
-	CreatorID   string `json:"creatorId,omitempty"`
-	CreatorName string `json:"creatorName,omitempty"`
+	Search       string   `json:"search,omitempty"`
+	ID           string   `json:"id"`
+	Label        string   `json:"label"`
+	Platform     string   `json:"platform"`
+	Archived     bool     `json:"archived"`
+	Href         string   `json:"href,omitempty"`
+	CreatorID    string   `json:"creatorId,omitempty"`
+	CreatorName  string   `json:"creatorName,omitempty"`
+	Type         string   `json:"type,omitempty"`
+	CommentCount int64    `json:"commentCount,omitempty"`
+	Watchlisted  bool     `json:"watchlisted,omitempty"`
+	FlagKinds    []string `json:"flagKinds,omitempty"`
 }
 
 type networkLink struct {
@@ -228,6 +325,9 @@ type networkLink struct {
 	Kind     string `json:"kind"`
 	Weight   int32  `json:"weight"`
 	Evidence string `json:"evidence"`
+	ID       string `json:"id"`
+	VideoID  string `json:"videoId,omitempty"`
+	Href     string `json:"href,omitempty"`
 }
 
 func networkGraphJSON(edges []*db.ListChannelEdgesRow) string {
@@ -301,6 +401,8 @@ func networkGraphJSON(edges []*db.ListChannelEdgesRow) string {
 		}
 		add(toID, toLabel, toPlatform, toCreator, e.ToCreatorName, archived)
 		links = append(links, networkLink{
+			ID:       e.ID.String(),
+			VideoID:  networkVideoID(e.VideoID),
 			Source:   fromID,
 			Target:   toID,
 			Kind:     e.Kind,
@@ -352,6 +454,13 @@ func displayExternalTarget(toURL, fromPlatform string) (label, platform string) 
 		return "@" + strings.TrimPrefix(handle, "@"), "youtube"
 	}
 	return toURL, platform
+}
+
+func networkVideoID(id pgtype.UUID) string {
+	if id.Valid {
+		return id.String()
+	}
+	return ""
 }
 
 var _ = templruntime.GeneratedTemplate

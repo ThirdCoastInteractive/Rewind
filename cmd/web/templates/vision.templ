@@ -1,0 +1,94 @@
+package templates
+
+import (
+	"fmt"
+	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/vision"
+)
+
+templ VisualPage(username string, channels []*db.ListVisionChannelsRow, creators []*db.ListVisionCreatorsRow) {
+	@Layout("Visual search", username) {
+		@Container("") {
+			<h1 class="page-heading text-xl">Visual search</h1>
+			<p class="text-white/60 mb-4">Find scenes by description or a reference image, then inspect the matching video frames. Lexical transcript search stays on Videos.</p>
+			<form action="/api/visual/search" method="get" data-on:submit__prevent="@get('/api/visual/search?render=1&amp;q=' + encodeURIComponent($visualquery) + '&amp;channel_id=' + encodeURIComponent($visualchannel) + '&amp;creator_id=' + encodeURIComponent($visualcreator))" data-signals="{visualquery:'',visualchannel:'',visualcreator:''}" class="flex flex-wrap gap-2 mb-4">
+				<input name="q" aria-label="Describe a scene" placeholder="A person holding a red guitar" data-bind:visualquery class="form-input flex-1 min-w-48"/>
+				<select aria-label="Channel" data-bind:visualchannel class="form-input">
+					<option value="">All channels</option>
+					for _,c:=range channels {
+						<option value={ c.ID.String() }>{ c.Label }</option>
+					}
+				</select>
+				<select aria-label="Creator" data-bind:visualcreator class="form-input">
+					<option value="">All creators</option>
+					for _,c:=range creators {
+						<option value={ c.ID.String() }>{ c.Label }</option>
+					}
+				</select>
+				<button class="btn-primary">Search scenes</button>
+			</form>
+			<form action="/api/visual-references" method="post" enctype="multipart/form-data" class="flex gap-2 mb-6">
+				<input type="hidden" name="redirect" value="1"/>
+				<input type="file" name="image" accept="image/jpeg,image/png,image/webp" required aria-label="Reference image"/>
+				<button class="ghost-btn-sm">Find similar frames</button>
+			</form>
+			<div id="visual-results" data-init="if (new URLSearchParams(location.search).has('reference_id')) { @get('/api/visual/search?render=1&amp;reference_id=' + encodeURIComponent(new URLSearchParams(location.search).get('reference_id'))) }"></div>
+			<section class="border border-white/20 p-4 my-6" aria-label="Visual indexing">
+				<h2 class="font-bold mb-2">Index video scenes</h2>
+				<p class="text-sm text-white/60 mb-3">Build searchable scene samples for a video. Leave the end time blank to index through the end.</p>
+				<form action="/api/visual-index" method="post" class="flex flex-wrap items-end gap-3">
+					<label>Video ID<input class="form-input block" name="video_id" required/></label>
+					<label>Start (seconds)<input class="form-input block" type="number" name="start" min="0" step="any" value="0"/></label>
+					<label>End (seconds)<input class="form-input block" type="number" name="end" min="0" step="any"/></label>
+					<label><input type="checkbox" name="dense" value="true"/> One-second samples</label>
+					<button class="btn-primary">Queue indexing</button>
+					<a href="/jobs" class="underline">View jobs</a>
+				</form>
+			</section>
+			<a href="/compilations" class="text-white/60 underline ml-4">Open compilations</a>
+		}
+	}
+}
+
+templ VisualResults(rows []vision.Moment, message string) {
+	<div id="visual-results">
+		if message!="" {
+			<p role="alert" class="text-red-300 mb-4">{ message }</p>
+		}
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+			for _,row:=range rows {
+				{{ r := row.Hit }}
+				<article class="border border-white/20 p-3">
+					<a href={ templ.SafeURL(fmt.Sprintf("/videos/%s?t=%.3f", r.VideoID.String(), r.SampleTs)) }>
+						<img loading="lazy" src={ fmt.Sprintf("/api/videos/%s/frame?t=%.6f&quality=preview", r.VideoID.String(), r.SampleTs) } alt={ r.Title } class="w-full object-contain"/>
+						<h2 class="font-bold mt-2">{ r.Title }</h2>
+					</a>
+					<p class="text-sm text-white/60">{ fmt.Sprintf("%.1fs · similarity %.3f · %s",r.SampleTs,r.Similarity,r.Status) }</p>
+					<a class="underline text-sm" target="_blank" href={ templ.SafeURL(fmt.Sprintf("/api/videos/%s/frame?t=%.6f&quality=detail", r.VideoID.String(), r.SampleTs)) }>Inspect full frame</a>
+					if len(row.Windows) > 0 {
+						<ul class="text-xs text-white/60 mt-2">
+							for _,w:=range row.Windows {
+								<li>{ fmt.Sprintf("%s · %.0f–%.0fs", w.Title, w.StartTs, w.EndTs) }</li>
+							}
+						</ul>
+					}
+					<div class="flex flex-wrap gap-2 mt-3">
+						<form action="/show-notes" method="post">
+							<input type="hidden" name="title" value={ fmt.Sprintf("%s @ %.1fs", r.Title, r.SampleTs) }/>
+							<input type="hidden" name="video_id" value={ r.VideoID.String() }/>
+							<input type="hidden" name="t" value={ fmt.Sprintf("%.3f", r.SampleTs) }/>
+							<button class="ghost-btn-sm">Use in notes</button>
+						</form>
+						<form action="/api/compilations/segments" method="post">
+							<input type="hidden" name="video_id" value={ r.VideoID.String() }/>
+							<input type="hidden" name="start" value={ fmt.Sprintf("%.3f", r.SampleTs) }/>
+							<input type="hidden" name="end" value={ fmt.Sprintf("%.3f", r.SampleTs+5) }/>
+							<input type="hidden" name="title" value={ r.Title }/>
+							<button class="ghost-btn-sm">Add to compilation</button>
+						</form>
+					</div>
+				</article>
+			}
+		</div>
+	</div>
+}

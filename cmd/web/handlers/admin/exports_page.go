@@ -9,32 +9,34 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 )
 
-// HandleAdminExportsPage serves GET /admin/exports, rendering the clip export management page with statistics.
+// HandleAdminExportsPage serves GET /admin/exports with clip and stitch queues split.
 func HandleAdminExportsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		username, _ := c.Get("currentUsername").(string)
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
+		kind := exportKind(c)
 
-		dbStats, err := q.GetClipExportStats(ctx)
-		if err != nil {
-			slog.Error("failed to get export stats", "error", err)
-			return templates.AdminExports(username, nil, "", "").Render(ctx, c.Response().Writer)
+		clipCount, _ := q.CountClipExports(ctx)
+		stitchCount, _ := q.CountStitchExports(ctx)
+
+		var stats *templates.AdminExportStats
+		if kind == "stitch" {
+			row, err := q.GetStitchExportStats(ctx)
+			if err != nil {
+				slog.Error("failed to get stitch export stats", "error", err)
+			} else {
+				stats = stitchExportStats(row)
+			}
+		} else {
+			row, err := q.GetClipExportStats(ctx)
+			if err != nil {
+				slog.Error("failed to get clip export stats", "error", err)
+			} else {
+				stats = clipExportStats(row)
+			}
 		}
 
-		stats := &templates.AdminExportStats{
-			QueuedCount:     dbStats.QueuedCount,
-			ProcessingCount: dbStats.ProcessingCount,
-			ReadyCount:      dbStats.ReadyCount,
-			ErrorCount:      dbStats.ErrorCount,
-			TotalSizeBytes:  dbStats.TotalSizeBytes,
-		}
-
-		alertType := c.QueryParam("alert")
-		alertMsg := c.QueryParam("msg")
-
-		return templates.AdminExports(username, stats, alertType, alertMsg).Render(ctx, c.Response().Writer)
+		return templates.AdminExports(username, kind, clipCount, stitchCount, stats, c.QueryParam("alert"), c.QueryParam("msg")).Render(ctx, c.Response().Writer)
 	}
 }
-
-// HandleAdminExportsIndex returns the exports list via SSE.
