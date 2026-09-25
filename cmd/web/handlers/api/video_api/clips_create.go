@@ -19,6 +19,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/filters"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleClipsCreate creates a new clip for a video.
@@ -36,9 +37,8 @@ func HandleClipsCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 			return err
 		}
 
-		videoRow, err := dbc.Queries(ctx).GetVideoByID(ctx, videoUUID)
-		if err != nil || videoRow == nil {
-			return c.String(404, "video not found")
+		if _, err := common.RequireVideo(c, dbc.Queries(ctx), videoUUID, plugin.ActionVideoWrite); err != nil {
+			return err
 		}
 
 		var req struct {

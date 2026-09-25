@@ -5,7 +5,7 @@
 -- name: ListShowNotesForUser :many
 -- Show notes the user owns or is a host/viewer on, newest-updated first.
 SELECT DISTINCT sn.id, sn.owner_id, sn.title, sn.description, sn.is_live,
-       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at
+       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at, sn.tenant_id
 FROM show_notes sn
 LEFT JOIN show_note_hosts h ON h.show_note_id = sn.id
 WHERE sn.owner_id = sqlc.arg(user_id) OR h.user_id = sqlc.arg(user_id)
@@ -18,8 +18,8 @@ SELECT * FROM show_notes WHERE id = sqlc.arg(id);
 SELECT * FROM show_notes WHERE public_code = sqlc.arg(public_code);
 
 -- name: CreateShowNote :one
-INSERT INTO show_notes (owner_id, title)
-VALUES (sqlc.arg(owner_id), sqlc.arg(title))
+INSERT INTO show_notes (owner_id, title, tenant_id)
+VALUES (sqlc.arg(owner_id), sqlc.arg(title), sqlc.arg(tenant_id))
 RETURNING *;
 
 -- name: UpdateShowNote :one
@@ -61,8 +61,11 @@ SELECT * FROM show_note_blocks WHERE id = sqlc.arg(id);
 -- name: NoteReferencesVideo :one
 -- Authorizes viewer-scoped content streaming: true if the video is referenced by
 -- a block in this show note.
-SELECT COUNT(*) > 0 FROM show_note_blocks
-WHERE show_note_id = sqlc.arg(show_note_id) AND video_id = sqlc.arg(video_id);
+SELECT COUNT(*) > 0
+FROM show_note_blocks b
+JOIN show_notes sn ON sn.id = b.show_note_id
+JOIN videos v ON v.id = b.video_id AND v.tenant_id = sn.tenant_id
+WHERE b.show_note_id = sqlc.arg(show_note_id) AND b.video_id = sqlc.arg(video_id);
 
 -- name: CreateBlock :one
 INSERT INTO show_note_blocks (

@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/utils/commentfmt"
 )
 
@@ -32,6 +33,9 @@ func HandleCommentsRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 
 		videoUUID, err := common.RequireUUIDParam(c, "id")
 		if err != nil {
+			return err
+		}
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
 		videoID := c.Param("id")

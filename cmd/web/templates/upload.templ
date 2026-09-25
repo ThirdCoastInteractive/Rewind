@@ -1,7 +1,10 @@
 package templates
 
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
+
 templ Upload(username string) {
 	@Layout("Upload", username) {
+		{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 		@Container("") {
 			<div class="mb-4">
 				<h1 class="page-heading text-xl tracking-tight mb-0.5">Upload Video</h1>
@@ -35,6 +38,10 @@ templ Upload(username string) {
 			<div id="upload-list" class="mt-4 space-y-2"></div>
 		}
 		<script>
+			const liveProduct = {{ liveProduct }};
+			const TUS_CHUNK_BYTES = 52428800;
+			const TUS_RESUME_ATTEMPTS = 5;
+
 			function handleDrop(e) {
 				e.preventDefault();
 				e.currentTarget.classList.remove('border-white', 'bg-white/5');
@@ -42,11 +49,16 @@ templ Upload(username string) {
 			}
 
 			function handleFiles(files) {
-				for (const file of files) {
-					uploadFile(file);
-				}
+				const selected = Array.from(files);
 				// Reset the input so the same file can be re-selected
 				document.getElementById('file-input').value = '';
+				if (liveProduct) {
+					uploadLiveFiles(selected);
+					return;
+				}
+				for (const file of selected) {
+					uploadFile(file);
+				}
 			}
 
 			function formatBytes(bytes) {
@@ -57,7 +69,210 @@ templ Upload(username string) {
 				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 			}
 
-			function uploadFile(file) {
+			function tusB64(value) {
+				const bytes = new TextEncoder().encode(String(value));
+				let binary = '';
+				for (let i = 0; i < bytes.length; i++) {
+					binary += String.fromCharCode(bytes[i]);
+				}
+				return btoa(binary);
+			}
+
+			function tusMetadata(key, filename) {
+				return 'key ' + tusB64(key) + ',filename ' + tusB64(filename);
+			}
+
+			function resolveLocation(uploadUrl, location) {
+				const base = new URL(uploadUrl, window.location.href);
+				return new URL(location, base).href;
+			}
+
+			function setUploadProgress(card, loaded, total) {
+				if (!total) return;
+				const pct = (loaded / total * 100).toFixed(0);
+				card.querySelector('.upload-progress').style.width = pct + '%';
+			}
+
+			function markUploadFailed(card, label, detail) {
+				const bar = card.querySelector('.upload-progress');
+				const status = card.querySelector('.upload-status');
+				bar.classList.remove('bg-white');
+				bar.classList.add('bg-red-500');
+				bar.style.width = '100%';
+				status.textContent = label;
+				if (!detail) return;
+				const err = document.createElement('p');
+				err.className = 'font-mono text-xs text-white/40 mt-1';
+				err.textContent = detail;
+				card.querySelector('.flex-1').appendChild(err);
+			}
+
+			function markUploadDone(card) {
+				const bar = card.querySelector('.upload-progress');
+				const status = card.querySelector('.upload-status');
+				bar.style.width = '100%';
+				status.textContent = 'Done';
+				status.classList.remove('text-white/60');
+				status.classList.add('text-white');
+				card.classList.remove('border-white/10');
+				card.classList.add('border-white/20');
+			}
+
+			async function readError(res) {
+				try {
+					const resp = await res.json();
+					if (resp && resp.error) return String(resp.error);
+				} catch (e) {}
+				return '';
+			}
+
+			function patchChunk(location, offset, blob, onLoaded) {
+				return new Promise((resolve, reject) => {
+					const xhr = new XMLHttpRequest();
+					xhr.open('PATCH', location);
+					xhr.setRequestHeader('Tus-Resumable', '1.0.0');
+					xhr.setRequestHeader('Upload-Offset', String(offset));
+					xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
+					xhr.upload.onprogress = (e) => {
+						if (e.lengthComputable) onLoaded(e.loaded);
+					};
+					xhr.onload = () => resolve(xhr);
+					xhr.onerror = () => reject(new Error('network'));
+					xhr.send(blob);
+				});
+			}
+
+			async function readUploadOffset(location) {
+				const res = await fetch(location, {
+					method: 'HEAD',
+					cache: 'no-store',
+					headers: { 'Tus-Resumable': '1.0.0' },
+				});
+				if (!res.ok) throw new Error('HEAD failed');
+				const value = parseInt(res.headers.get('Upload-Offset') || '', 10);
+				if (!Number.isFinite(value) || value < 0) throw new Error('missing offset');
+				return value;
+			}
+
+			async function uploadLiveFiles(files) {
+				let lastId = '';
+				for (const file of files) {
+					const videoId = await uploadFileLive(file);
+					if (!videoId) return;
+					lastId = videoId;
+				}
+				if (lastId) {
+					window.location.href = '/videos/' + encodeURIComponent(lastId);
+				}
+			}
+
+			async function uploadFileLive(file) {
+				const card = createUploadCard(file);
+				try {
+					const createdRes = await fetch('/api/uploads', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ filename: file.name }),
+					});
+					if (!createdRes.ok) {
+						markUploadFailed(card, 'Failed', (await readError(createdRes)) || 'Upload failed');
+						return '';
+					}
+					const created = await createdRes.json();
+					if (!created.uploadUrl || !created.videoId || !created.key) {
+						markUploadFailed(card, 'Failed', 'Upload failed');
+						return '';
+					}
+
+					const createRes = await fetch(created.uploadUrl, {
+						method: 'POST',
+						cache: 'no-store',
+						headers: {
+							'Tus-Resumable': '1.0.0',
+							'Upload-Length': String(file.size),
+							'Upload-Metadata': tusMetadata(created.key, file.name),
+						},
+					});
+					if (!createRes.ok) {
+						markUploadFailed(card, 'Failed', 'Upload failed');
+						return '';
+					}
+					const loc = createRes.headers.get('Location');
+					if (!loc) {
+						markUploadFailed(card, 'Failed', 'Upload failed');
+						return '';
+					}
+					const location = resolveLocation(created.uploadUrl, loc);
+
+					let offset = 0;
+					let misses = 0;
+					while (offset < file.size) {
+						const end = Math.min(offset + TUS_CHUNK_BYTES, file.size);
+						let xhr = null;
+						try {
+							xhr = await patchChunk(location, offset, file.slice(offset, end), (loaded) => {
+								setUploadProgress(card, offset + loaded, file.size);
+							});
+						} catch (e) {
+							xhr = null;
+						}
+						if (!xhr || xhr.status === 409) {
+							misses++;
+							if (misses > TUS_RESUME_ATTEMPTS) {
+								markUploadFailed(card, xhr ? 'Failed' : 'Error');
+								return '';
+							}
+							try {
+								offset = await readUploadOffset(location);
+							} catch (e) {
+								markUploadFailed(card, 'Error');
+								return '';
+							}
+							setUploadProgress(card, offset, file.size);
+							continue;
+						}
+						if (xhr.status < 200 || xhr.status >= 300) {
+							markUploadFailed(card, 'Failed', 'Upload failed');
+							return '';
+						}
+						const headerOffset = parseInt(xhr.getResponseHeader('Upload-Offset') || '', 10);
+						const next = Number.isFinite(headerOffset) ? headerOffset : end;
+						if (next <= offset) {
+							markUploadFailed(card, 'Failed', 'Upload failed');
+							return '';
+						}
+						misses = 0;
+						offset = next;
+						setUploadProgress(card, offset, file.size);
+					}
+					if (offset !== file.size) {
+						markUploadFailed(card, 'Failed', 'Upload failed');
+						return '';
+					}
+
+					const doneRes = await fetch('/api/uploads/' + encodeURIComponent(created.videoId) + '/complete', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ filename: file.name }),
+					});
+					if (!doneRes.ok) {
+						markUploadFailed(card, 'Failed', (await readError(doneRes)) || 'Upload failed');
+						return '';
+					}
+					markUploadDone(card);
+					const link = document.createElement('a');
+					link.href = '/videos/' + encodeURIComponent(created.videoId);
+					link.className = 'font-mono text-xs text-white/40 hover:text-white underline mt-1 inline-block';
+					link.textContent = 'View video →';
+					card.querySelector('.flex-1').appendChild(link);
+					return created.videoId;
+				} catch (e) {
+					markUploadFailed(card, 'Error');
+					return '';
+				}
+			}
+
+			function createUploadCard(file) {
 				const id = 'upload-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 				const list = document.getElementById('upload-list');
 
@@ -77,6 +292,11 @@ templ Upload(username string) {
 					</div>
 				`;
 				list.prepend(card);
+				return card;
+			}
+
+			function uploadFile(file) {
+				const card = createUploadCard(file);
 
 				const form = new FormData();
 				form.append('file', file);

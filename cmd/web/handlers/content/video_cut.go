@@ -8,7 +8,9 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
+
 // HandleVideoCutPage serves GET /videos/:id/cut, rendering the clip editor for a video.
 func HandleVideoCutPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -22,7 +24,7 @@ func HandleVideoCutPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) ech
 			return err
 		}
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
 		if err != nil || videoRow == nil {
 			return c.String(404, "video not found")
 		}

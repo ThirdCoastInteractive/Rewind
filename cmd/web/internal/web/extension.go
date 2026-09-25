@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/encryption"
@@ -452,6 +453,10 @@ func (s *Webserver) HandleAPIExtensionStatusStream(c echo.Context) error {
 
 // HandleAPIExtensionArchive enqueues a download job and returns the job ID and a UI redirect.
 func (s *Webserver) HandleAPIExtensionArchive(c echo.Context) error {
+	if live, _ := c.Request().Context().Value(ctxkeys.LiveProduct).(bool); live {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+
 	user, _, err := s.requireExtensionBearerToken(c)
 	if err != nil {
 		return err

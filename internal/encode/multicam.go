@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
 
@@ -43,8 +45,42 @@ func processMulticam(ctx context.Context, q *db.Queries, exportsDir, downloadsDi
 		return fmt.Errorf("multicam job has no crops")
 	}
 
+	var videoUUID pgtype.UUID
+	if err := videoUUID.Scan(mcJob.VideoID); err != nil {
+		return fmt.Errorf("invalid multicam video_id %q: %w", mcJob.VideoID, err)
+	}
+	videoRow, err := q.GetVideoByID(ctx, videoUUID)
+	if err != nil {
+		return fmt.Errorf("load multicam video %q: %w", mcJob.VideoID, err)
+	}
+	if videoRow.TenantID.Valid && videoRow.TenantID.Bytes != [16]byte{} {
+		if incoming, scoped := plugin.TenantScope(ctx); scoped && incoming != videoRow.TenantID.String() {
+			return fmt.Errorf("multicam video tenant scope mismatch")
+		}
+		ctx = plugin.WithTenantScope(ctx, videoRow.TenantID.String(), true)
+	} else if plugin.LiveIngest() != nil {
+		return fmt.Errorf("live multicam video %q has no workspace tenant", mcJob.VideoID)
+	}
+	var videoPath string
+	if videoRow.VideoPath != nil {
+		videoPath = *videoRow.VideoPath
+	}
+	inputPath, inputCleanup, sourceErr := plugin.MasterSourceAt(ctx, videoPath)
+	if sourceErr != nil && plugin.LiveIngest() != nil {
+		return fmt.Errorf("resolve workspace multicam master: %w", sourceErr)
+	}
+	if inputPath == "" {
+		inputPath, inputCleanup, _ = plugin.MasterSource(ctx, mcJob.VideoID)
+	}
+	defer func() {
+		if inputCleanup != nil {
+			inputCleanup()
+		}
+	}()
 	videoDir := filepath.Join(downloadsDir, mcJob.VideoID)
-	inputPath := findVideoFile(videoDir, mcJob.VideoID)
+	if inputPath == "" {
+		inputPath = findVideoFile(videoDir, mcJob.VideoID)
+	}
 	if inputPath == "" {
 		return fmt.Errorf("video file not found in %s", videoDir)
 	}

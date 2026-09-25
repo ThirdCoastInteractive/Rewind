@@ -301,6 +301,73 @@ func (q *Queries) FilterExistingVideoIDs(ctx context.Context, ids []pgtype.UUID)
 	return items, nil
 }
 
+const getVideoByIDAndTenant = `-- name: GetVideoByIDAndTenant :one
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
+FROM videos
+WHERE id = $1
+  AND tenant_id = $2
+`
+
+type GetVideoByIDAndTenantParams struct {
+	ID       pgtype.UUID `db:"id" json:"ID"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+}
+
+// GetVideoByIDAndTenant returns a video by id scoped to one tenant.
+//
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
+//	FROM videos
+//	WHERE id = $1
+//	  AND tenant_id = $2
+func (q *Queries) GetVideoByIDAndTenant(ctx context.Context, arg *GetVideoByIDAndTenantParams) (*Video, error) {
+	row := q.db.QueryRow(ctx, getVideoByIDAndTenant, arg.ID, arg.TenantID)
+	var i Video
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Src,
+		&i.ArchivedBy,
+		&i.Title,
+		&i.Info,
+		&i.Comments,
+		&i.VideoPath,
+		&i.ThumbnailPath,
+		&i.Description,
+		&i.Tags,
+		&i.Uploader,
+		&i.UploaderID,
+		&i.ChannelID,
+		&i.UploadDate,
+		&i.DurationSeconds,
+		&i.ViewCount,
+		&i.LikeCount,
+		&i.ThumbGradientStart,
+		&i.ThumbGradientEnd,
+		&i.ThumbGradientAngle,
+		&i.FileHash,
+		&i.FileSize,
+		&i.AssetsStatus,
+		&i.Search,
+		&i.ProbeData,
+		&i.CommentsCheckedAt,
+		&i.ChannelURL,
+		&i.UploaderURL,
+		&i.ChannelRowID,
+		&i.Format,
+		&i.MetadataRefreshedAt,
+		&i.LinksHarvestedAt,
+		&i.Media,
+		&i.SubtitleState,
+		&i.SubtitleCheckedAt,
+		&i.SubtitleLastError,
+		&i.TranscriptVersion,
+		&i.CommentCount,
+		&i.TenantID,
+	)
+	return &i, err
+}
+
 const insertVideo = `-- name: InsertVideo :one
 INSERT INTO videos (
     id,
@@ -327,7 +394,8 @@ INSERT INTO videos (
     file_size,
     probe_data,
     search,
-    media
+    media,
+    tenant_id
 )
 VALUES (
     $1,
@@ -363,9 +431,10 @@ VALUES (
         $9::text[],
         $8
     ),
-    COALESCE(NULLIF(btrim($24), ''), 'file')
+    COALESCE(NULLIF(btrim($24), ''), 'file'),
+    COALESCE($25::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 )
-ON CONFLICT (src)
+ON CONFLICT (tenant_id, src)
 DO UPDATE SET
     updated_at = NOW(),
     title = EXCLUDED.title,
@@ -393,7 +462,7 @@ DO UPDATE SET
         ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
     END,
     search = EXCLUDED.search
-RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 `
 
 type InsertVideoParams struct {
@@ -421,6 +490,7 @@ type InsertVideoParams struct {
 	FileSize           *int64               `db:"file_size" json:"FileSize"`
 	ProbeData          *videoinfo.ProbeInfo `db:"probe_data" json:"ProbeData"`
 	Media              string               `db:"media" json:"Media"`
+	TenantID           pgtype.UUID          `db:"tenant_id" json:"TenantID"`
 }
 
 // InsertVideo inserts a video row.
@@ -450,7 +520,8 @@ type InsertVideoParams struct {
 //	    file_size,
 //	    probe_data,
 //	    search,
-//	    media
+//	    media,
+//	    tenant_id
 //	)
 //	VALUES (
 //	    $1,
@@ -486,9 +557,10 @@ type InsertVideoParams struct {
 //	        $9::text[],
 //	        $8
 //	    ),
-//	    COALESCE(NULLIF(btrim($24), ''), 'file')
+//	    COALESCE(NULLIF(btrim($24), ''), 'file'),
+//	    COALESCE($25::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 //	)
-//	ON CONFLICT (src)
+//	ON CONFLICT (tenant_id, src)
 //	DO UPDATE SET
 //	    updated_at = NOW(),
 //	    title = EXCLUDED.title,
@@ -516,7 +588,7 @@ type InsertVideoParams struct {
 //	        ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
 //	    END,
 //	    search = EXCLUDED.search
-//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+//	RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Video, error) {
 	row := q.db.QueryRow(ctx, insertVideo,
 		arg.ID,
@@ -543,6 +615,7 @@ func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Vid
 		arg.FileSize,
 		arg.ProbeData,
 		arg.Media,
+		arg.TenantID,
 	)
 	var i Video
 	err := row.Scan(
@@ -586,6 +659,7 @@ func (q *Queries) InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Vid
 		&i.SubtitleLastError,
 		&i.TranscriptVersion,
 		&i.CommentCount,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -594,6 +668,7 @@ const listVideosForAssetCatchup = `-- name: ListVideosForAssetCatchup :many
 SELECT id::text, video_path, thumbnail_path, file_hash, duration_seconds, assets_status
 FROM videos
 WHERE video_path IS NOT NULL AND btrim(video_path) <> ''
+AND video_path NOT LIKE 'org/%'
 AND (
     -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
     lower(video_path) NOT LIKE '%.mp4'
@@ -638,6 +713,7 @@ type ListVideosForAssetCatchupRow struct {
 //	SELECT id::text, video_path, thumbnail_path, file_hash, duration_seconds, assets_status
 //	FROM videos
 //	WHERE video_path IS NOT NULL AND btrim(video_path) <> ''
+//	AND video_path NOT LIKE 'org/%'
 //	AND (
 //	    -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
 //	    lower(video_path) NOT LIKE '%.mp4'
@@ -919,18 +995,25 @@ func (q *Queries) RefreshVideoMetadata(ctx context.Context, arg *RefreshVideoMet
 }
 
 const selectVideoBySrc = `-- name: SelectVideoBySrc :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 FROM videos
 WHERE src = $1
+  AND tenant_id = $2
 `
 
-// SelectVideoBySrc returns a video by src.
+type SelectVideoBySrcParams struct {
+	Src      string      `db:"src" json:"Src"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+}
+
+// SelectVideoBySrc returns a video by src and tenant.
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 //	FROM videos
 //	WHERE src = $1
-func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, error) {
-	row := q.db.QueryRow(ctx, selectVideoBySrc, src)
+//	  AND tenant_id = $2
+func (q *Queries) SelectVideoBySrc(ctx context.Context, arg *SelectVideoBySrcParams) (*Video, error) {
+	row := q.db.QueryRow(ctx, selectVideoBySrc, arg.Src, arg.TenantID)
 	var i Video
 	err := row.Scan(
 		&i.ID,
@@ -973,6 +1056,7 @@ func (q *Queries) SelectVideoBySrc(ctx context.Context, src string) (*Video, err
 		&i.SubtitleLastError,
 		&i.TranscriptVersion,
 		&i.CommentCount,
+		&i.TenantID,
 	)
 	return &i, err
 }

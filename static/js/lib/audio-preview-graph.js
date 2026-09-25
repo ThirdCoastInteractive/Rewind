@@ -13,7 +13,12 @@ export class AudioPreviewGraph {
   }
 
   ensureContext() {
-    if (this.ctx) return;
+    if (this.ctx) return true;
+    // createMediaElementSource permanently takes the element off the speakers.
+    // A remote master (signed media host, reached by redirect) has no CORS
+    // capture, so the call succeeds and then outputs silence. Leave those
+    // elements on their own audio path.
+    if (this.video?.dataset?.remoteMaster === '1') return false;
     this.ctx = new AudioContext();
     // MediaElementAudioSourceNode can only be created ONCE per <video>.
     this.source = this.ctx.createMediaElementSource(this.video);
@@ -22,11 +27,13 @@ export class AudioPreviewGraph {
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+    return true;
   }
 
   rebuild(audioNodes, muted) {
     // Don't create AudioContext until we actually need audio processing.
     // createMediaElementSource permanently routes video audio through Web Audio.
+    if (!this.ctx && this.video?.dataset?.remoteMaster === '1') return;
     if (audioNodes.length === 0 && !muted) {
       if (this.ctx) {
         // Context exists from prior filters - clean up and reconnect direct
@@ -39,7 +46,7 @@ export class AudioPreviewGraph {
       return;
     }
 
-    this.ensureContext();
+    if (!this.ensureContext() || !this.source) return;
     this.source.disconnect();
     this.activeNodes.forEach(n => n.disconnect());
     this.activeNodes = [];

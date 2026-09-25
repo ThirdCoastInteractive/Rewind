@@ -2,8 +2,12 @@
 package clip_api
 
 import (
+	"context"
+	"log/slog"
+	"os"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
@@ -30,11 +34,13 @@ func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		if err != nil || existing == nil {
 			return c.String(404, "clip not found")
 		}
-		if existing.CreatedBy != userUUID {
-			return c.String(403, "forbidden")
+		if err := requireClipMutate(c, sm, dbc.Queries(ctx), existing, userUUID); err != nil {
+			return err
 		}
 
 		videoID := existing.VideoID
+
+		removeClipExportFiles(ctx, dbc, clipUUID)
 
 		if err := dbc.Queries(ctx).DeleteClip(ctx, clipUUID); err != nil {
 			return c.String(500, "failed to delete clip")
@@ -70,6 +76,26 @@ func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		PatchClipExportStatuses(sse, ctx, dbc, clips)
 
 		return nil
+	}
+}
+
+func removeClipExportFiles(ctx context.Context, dbc *db.DatabaseConnection, clipID pgtype.UUID) {
+	if dbc == nil {
+		return
+	}
+	rows, err := dbc.Query(ctx, `SELECT file_path FROM clip_exports WHERE clip_id = $1 AND file_path <> ''`, clipID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil || strings.TrimSpace(p) == "" {
+			continue
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			slog.Warn("remove clip export", "path", p, "error", err)
+		}
 	}
 }
 

@@ -116,7 +116,15 @@ func seekDirForVideoPath(videoPath string) (string, error) {
 	if videoPath == "" {
 		return "", errors.New("missing video path")
 	}
-	return filepath.Join(filepath.Dir(videoPath), "seek"), nil
+	return seekDirForVideoDir(filepath.Dir(videoPath))
+}
+
+func seekDirForVideoDir(videoDir string) (string, error) {
+	videoDir = strings.TrimSpace(videoDir)
+	if videoDir == "" {
+		return "", errors.New("missing video dir")
+	}
+	return filepath.Join(videoDir, "seek"), nil
 }
 
 func loadSeekManifest(path string) (*seekManifest, error) {
@@ -179,8 +187,8 @@ func verifySeekAssetsDetailed(videoPath string) (map[string]bool, error) {
 	return levels, nil
 }
 
-func ensureSeekAssets(ctx context.Context, videoPath string, durationSeconds *int32) (bool, error) {
-	seekDir, err := seekDirForVideoPath(videoPath)
+func ensureSeekAssets(ctx context.Context, ffmpegSrc, videoDir string, durationSeconds *int32) (bool, error) {
+	seekDir, err := seekDirForVideoDir(videoDir)
 	if err != nil {
 		return false, err
 	}
@@ -195,7 +203,7 @@ func ensureSeekAssets(ctx context.Context, videoPath string, durationSeconds *in
 	existingLevels := make(map[string]bool)
 	if m, err := loadSeekManifest(manifestPath); err == nil && m.Format == seekFormatV1 {
 		// Manifest exists and is correct format - check individual levels
-		detailed, err := verifySeekAssetsDetailed(videoPath)
+		detailed, err := verifySeekAssetsDetailed(filepath.Join(videoDir, "x"))
 		if err == nil {
 			existingLevels = detailed
 		}
@@ -214,7 +222,7 @@ func ensureSeekAssets(ctx context.Context, videoPath string, durationSeconds *in
 		return false, nil
 	}
 
-	dur, err := resolveDurationSeconds(ctx, videoPath, durationSeconds)
+	dur, err := resolveDurationSeconds(ctx, ffmpegSrc, durationSeconds)
 	if err != nil {
 		return false, err
 	}
@@ -244,14 +252,14 @@ func ensureSeekAssets(ctx context.Context, videoPath string, durationSeconds *in
 
 		// Generate sheets
 		pattern := filepath.Join(levelDir, "seek-%03d.jpg")
-		if err := runFFmpegSeekSheets(ctx, videoPath, lvl, pattern); err != nil {
-			slog.Warn("seek sheet generation failed", "video", videoPath, "level", lvl.Name, "error", err)
+		if err := runFFmpegSeekSheets(ctx, ffmpegSrc, lvl, pattern); err != nil {
+			slog.Warn("seek sheet generation failed", "video", ffmpegSrc, "level", lvl.Name, "error", err)
 			continue
 		}
 
 		// Generate VTT mapping
 		if err := writeSeekVTT(vttAbs, lvl, dur); err != nil {
-			slog.Warn("seek vtt generation failed", "video", videoPath, "level", lvl.Name, "error", err)
+			slog.Warn("seek vtt generation failed", "video", ffmpegSrc, "level", lvl.Name, "error", err)
 			continue
 		}
 

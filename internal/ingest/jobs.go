@@ -18,6 +18,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/videoid"
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/videoinfo"
 )
 
@@ -35,6 +36,14 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 	if err != nil {
 		return fmt.Errorf("get video by id: %w", err)
 	}
+	if videoRow.TenantID.Valid && videoRow.TenantID.Bytes != [16]byte{} {
+		if incoming, scoped := plugin.TenantScope(ctx); scoped && incoming != videoRow.TenantID.String() {
+			return errors.New("asset regeneration tenant scope mismatch")
+		}
+		ctx = plugin.WithTenantScope(ctx, videoRow.TenantID.String(), true)
+	} else if plugin.LiveIngest() != nil {
+		return errors.New("live asset regeneration requires a workspace tenant")
+	}
 
 	videoID := videoRow.ID.String()
 
@@ -48,23 +57,31 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 		files, _ := filepath.Glob(filepath.Join(dir, "*"))
 		discovered := pickPreferredVideoPath(ctx, files)
 		if discovered == "" {
-			return fmt.Errorf("video %s has no video_path and no video file found in %s", videoID, dir)
-		}
-		videoPath = discovered
-		slog.Info("discovered video file on disk (video_path was NULL)", "video_id", videoID, "path", videoPath)
+			videoPath = ""
+			slog.Info("video_path unset; will resolve via MasterSource", "video_id", videoID)
+		} else {
+			videoPath = discovered
+			slog.Info("discovered video file on disk (video_path was NULL)", "video_id", videoID, "path", videoPath)
 
-		// Persist the discovered path so future operations don't need to re-discover
-		if err := q.UpdateVideoPath(ctx, &db.UpdateVideoPathParams{ID: videoRow.ID, VideoPath: &videoPath}); err != nil {
-			slog.Warn("failed to persist discovered video_path", "video_id", videoID, "error", err)
+			// Persist the discovered path so future operations don't need to re-discover
+			if err := q.UpdateVideoPath(ctx, &db.UpdateVideoPathParams{ID: videoRow.ID, VideoPath: &videoPath}); err != nil {
+				slog.Warn("failed to persist discovered video_path", "video_id", videoID, "error", err)
+			}
 		}
 	}
+
+	work, err := prepareAssetWork(ctx, videoID, videoPath)
+	if err != nil {
+		return fmt.Errorf("resolve asset source for %s: %w", videoID, err)
+	}
+	defer work.Cleanup()
 
 	// Parse the existing info JSON to get duration
 	var info ytdlpInfo
 	_ = json.Unmarshal(videoRow.Info.RawJSON(), &info)
 	norm := normalizeInfo(videoRow.Info.RawJSON())
 
-	slog.Info("regenerating assets", "video_id", videoID, "video_path", videoPath, "duration", norm.DurationSeconds)
+	slog.Info("regenerating assets", "video_id", videoID, "ffmpeg_src", work.Src, "out_dir", work.Dir, "duration", norm.DurationSeconds)
 
 	// Determine which assets to regenerate
 	scope := "all"
@@ -73,39 +90,33 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 	}
 	slog.Info("asset regeneration scope", "video_id", videoID, "scope", scope)
 
-	// Regenerate thumbnail
+	// Fast assets first. Seek decodes the whole master, so a full job queues it
+	// and returns. The claim order then lets other videos finish posters before
+	// any seek sheet starts.
 	if scope == "all" || scope == "thumbnail" {
-		if p, genErr := generateVideoThumbnail(ctx, videoPath, videoID, true); genErr != nil {
+		if p, genErr := generateVideoThumbnail(ctx, work.Src, work.Dir, videoID, true); genErr != nil {
 			slog.Warn("failed to generate thumbnail", "video_id", videoID, "error", genErr)
 		} else {
 			slog.Info("regenerated thumbnail", "video_id", videoID, "path", *p)
 			if err := q.UpdateVideoThumbnailPath(ctx, &db.UpdateVideoThumbnailPathParams{ID: videoRow.ID, ThumbnailPath: p}); err != nil {
 				slog.Warn("failed to update thumbnail path", "video_id", videoID, "error", err)
 			}
+			if err := persistDirToBlob(ctx, videoID, work.Dir); err != nil {
+				slog.Warn("persist thumbnail to blob failed", "video_id", videoID, "error", err)
+			}
 		}
 	}
 
-	// Regenerate preview
 	if scope == "all" || scope == "preview" {
-		if genErr := generateVideoPreview(ctx, videoPath, videoID, true); genErr != nil {
+		if genErr := generateVideoPreview(ctx, work.Src, work.Dir, videoID, true); genErr != nil {
 			slog.Warn("failed to generate preview", "video_id", videoID, "error", genErr)
 		} else {
 			slog.Info("regenerated preview", "video_id", videoID)
 		}
 	}
 
-	// Regenerate seek sprites
-	if scope == "all" || scope == "seek" {
-		if ok, genErr := generateVideoSeekAssets(ctx, videoPath, videoID, norm.DurationSeconds, true); genErr != nil {
-			slog.Warn("failed to generate seek assets", "video_id", videoID, "error", genErr)
-		} else if ok {
-			slog.Info("regenerated seek assets", "video_id", videoID)
-		}
-	}
-
-	// Regenerate waveform
 	if scope == "all" || scope == "waveform" {
-		if ok, genErr := generateVideoWaveform(ctx, videoPath, videoID, norm.DurationSeconds, true); genErr != nil {
+		if ok, genErr := generateVideoWaveform(ctx, work.Src, work.Dir, videoID, norm.DurationSeconds, true); genErr != nil {
 			slog.Warn("failed to generate waveform assets", "video_id", videoID, "error", genErr)
 		} else if ok {
 			slog.Info("regenerated waveform", "video_id", videoID)
@@ -125,12 +136,36 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 	// playback is a direct stream of the normalized MP4, and quality variants are
 	// offered as direct alternate <source> files.)
 	if scope == "all" || scope == "streams" {
-		writeStreamsManifest(ctx, videoPath)
+		if st, err := os.Stat(work.Src); err == nil && st.Mode().IsRegular() {
+			writeStreamsManifest(ctx, work.Src)
+		}
+	}
+
+	switch scheduleSeek(scope) {
+	case seekNow:
+		generateSeekAssets(ctx, work.Src, work.Dir, videoID, norm.DurationSeconds)
+	case seekAfter:
+		if err := enqueueDeferredSeek(ctx, q, videoRow.ID); err != nil {
+			slog.Warn("enqueue seek after fast assets failed", "video_id", videoID, "error", err)
+			generateSeekAssets(ctx, work.Src, work.Dir, videoID, norm.DurationSeconds)
+		}
+	}
+
+	if err := persistDirToBlob(ctx, videoID, work.Dir); err != nil {
+		slog.Warn("persist regenerated assets to blob failed", "video_id", videoID, "error", err)
 	}
 
 	slog.Info("asset regeneration complete", "video_id", videoID)
 
-	if err := updateVideoAssetsStatus(ctx, q, videoID, verifyAllAssetStatus(videoPath, videoID, videoRow.FileHash)); err != nil {
+	statusPath := work.Src
+	if st, err := os.Stat(work.Src); err != nil || !st.Mode().IsRegular() {
+		statusPath = filepath.Join(work.Dir, videoID+".video.mp4")
+	}
+	status := verifyAllAssetStatus(statusPath, videoID, videoRow.FileHash)
+	if videoRow.VideoPath != nil && isPrivateMasterKey(*videoRow.VideoPath) {
+		omitRemoteSourceStatus(status)
+	}
+	if err := updateVideoAssetsStatus(ctx, q, videoID, status); err != nil {
 		slog.Warn("failed to update assets_status after regeneration", "video_id", videoID, "error", err)
 	}
 
@@ -140,6 +175,68 @@ func processAssetRegenerationJob(ctx context.Context, q *db.Queries, job *db.Deq
 	}
 
 	return q.MarkIngestJobSucceeded(ctx, job.IngestJobID)
+}
+
+const (
+	seekSkip  = "skip"
+	seekNow   = "now"
+	seekAfter = "after"
+)
+
+// scheduleSeek reports when seek sheets run. A full job defers them so the
+// worker can finish posters for every queued video before decoding one master.
+func scheduleSeek(scope string) string {
+	switch strings.TrimSpace(scope) {
+	case "seek":
+		return seekNow
+	case "all":
+		return seekAfter
+	default:
+		return seekSkip
+	}
+}
+
+func generateSeekAssets(ctx context.Context, src, dir, videoID string, duration *int32) {
+	if ok, genErr := generateVideoSeekAssets(ctx, src, dir, videoID, duration, true); genErr != nil {
+		slog.Warn("failed to generate seek assets", "video_id", videoID, "error", genErr)
+		return
+	} else if ok {
+		slog.Info("regenerated seek assets", "video_id", videoID)
+	}
+}
+
+func enqueueDeferredSeek(ctx context.Context, q *db.Queries, videoID pgtype.UUID) error {
+	active, err := q.GetActiveAssetJobsForVideo(ctx, videoID)
+	if err != nil {
+		return err
+	}
+	for _, job := range active {
+		if job == nil || job.AssetScope == nil {
+			continue
+		}
+		if strings.TrimSpace(*job.AssetScope) == "seek" {
+			slog.Info("seek already queued", "video_id", videoID)
+			return nil
+		}
+	}
+	scope := "seek"
+	if _, err := q.EnqueueAssetRegenerationJob(ctx, &db.EnqueueAssetRegenerationJobParams{
+		VideoID:    videoID,
+		AssetScope: &scope,
+	}); err != nil {
+		return err
+	}
+	slog.Info("enqueued seek after fast assets", "video_id", videoID)
+	return nil
+}
+
+func omitRemoteSourceStatus(status map[string]any) {
+	// The source remains in R2, so local source/hash/MP4/caption checks do not
+	// apply. Derived asset checks still reflect generated temp files.
+	delete(status, "video_file")
+	delete(status, "file_hash")
+	delete(status, "faststart")
+	delete(status, "captions_clean")
 }
 
 // ingestMediaKind is "metadata" only for skip-download jobs that still have no
@@ -246,7 +343,7 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 	var existing *db.Video
 	{
 		for _, cand := range candidates {
-			v, selErr := q.SelectVideoBySrc(ctx, cand)
+			v, selErr := q.SelectVideoBySrc(ctx, &db.SelectVideoBySrcParams{Src: cand, TenantID: db.OSSTenant()})
 			if selErr == nil {
 				existing = v
 				break
@@ -327,6 +424,7 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 		FileSize:           nil,
 		ProbeData:          nil,
 		Media:              ingestMediaKind(job.Kind, preservedVideoPath),
+		TenantID:           db.OSSTenant(),
 	})
 	if err != nil {
 		return fmt.Errorf("insert video: %w", err)
@@ -457,7 +555,7 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 		slog.Info("publishing ingest media", "video_id", videoID, "video_path", *videoPath)
 
 		// Library cards need a thumbnail; a single JPEG is not long-tail generation.
-		if p, genErr := generateVideoThumbnail(ctx, *videoPath, videoID, false); genErr != nil {
+		if p, genErr := generateVideoThumbnail(ctx, *videoPath, filepath.Dir(*videoPath), videoID, false); genErr != nil {
 			slog.Warn("failed to generate thumbnail", "video_id", videoID, "error", genErr)
 		} else {
 			thumbPath = p
@@ -522,6 +620,7 @@ func processIngestJob(ctx context.Context, q *db.Queries, job *db.DequeueIngestJ
 			FileSize:           fileSize,
 			ProbeData:          probeInfo,
 			Media:              ingestMediaKind(job.Kind, videoPath),
+			TenantID:           db.OSSTenant(),
 		})
 		if err != nil {
 			return fmt.Errorf("update video with permanent paths: %w", err)

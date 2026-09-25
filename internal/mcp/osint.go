@@ -833,7 +833,7 @@ func indexXRepliesMCP(dbc *db.DatabaseConnection) func(context.Context, *mcpsdk.
 				return nil, nil, err
 			}
 		} else {
-			video, verr := q.SelectVideoBySrc(ctx, normalized)
+			video, verr := q.SelectVideoBySrc(ctx, &db.SelectVideoBySrcParams{Src: normalized, TenantID: db.OSSTenant()})
 			if verr != nil {
 				return nil, nil, fmt.Errorf("archive that X post first, then index replies")
 			}

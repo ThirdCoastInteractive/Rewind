@@ -4,22 +4,18 @@ import (
 	"os"
 	"strings"
 
-	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
-// Defaults fills any unset plugin slot with OSS builtins.
-func Defaults(sessions *auth.SessionManager, dbc *db.DatabaseConnection) {
+// Defaults fills any unset Blob, Authz, and ML slots. Authn is registered by the web process.
+func Defaults(dbc *db.DatabaseConnection) {
 	downloads := strings.TrimSpace(os.Getenv("DOWNLOADS_DIR"))
 	if downloads == "" {
 		downloads = "/downloads"
 	}
 	cur := plugin.Current()
 	s := plugin.Set{}
-	if cur.Authn == nil {
-		s.Authn = NewLocalAuth(sessions)
-	}
 	if cur.Authz == nil {
 		s.Authz = LocalAuthz{}
 	}

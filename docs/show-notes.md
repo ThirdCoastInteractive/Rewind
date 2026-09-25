@@ -22,6 +22,8 @@ Headings are sections. A supported media link at the start of a list item or par
 
 `M:SS` and `H:MM:SS` points create markers; ranges create clips after you confirm. Pasting a URL only previews it until you accept archival or an agent suggestion.
 
+YouTube `watch`, `shorts`, `youtu.be`, and `live` links also render an official player preview. An indented timestamp cue belongs to the preceding YouTube reference until the next heading or source. Use the player’s **Jump**, **Copy current time**, and **Copy timestamp link** controls to review or share a position. Hosted Live workspaces keep external providers view-only; external references cannot be archived, clipped, or exported as hosted sources.
+
 ## Layouts
 
 `/show-notes/{id}` has Planning, Recording, and Directing layouts. Individual panels (notes, conversation, call, program, controls) also have `/show-notes/{id}/panel/{panel}` URLs.

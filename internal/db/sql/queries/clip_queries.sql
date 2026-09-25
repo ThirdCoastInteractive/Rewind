@@ -346,7 +346,7 @@ ORDER BY clip_id, created_at DESC;
 -- name: GetClipForExport :one
 -- Get clip data needed for encoding
 SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack,
-       c.title AS clip_title, v.video_path
+       c.title AS clip_title, v.video_path, v.tenant_id
 FROM clips c
 JOIN videos v ON v.id = c.video_id
 WHERE c.id = sqlc.arg(id);

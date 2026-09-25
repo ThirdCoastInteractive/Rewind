@@ -10,6 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
@@ -69,7 +70,7 @@ func MarkerList(videoID string, markers []MarkerItem) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/videos/%s/markers/render')", videoID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 32, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 33, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -105,6 +106,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"flex items-start gap-3 border-b border-white/10 py-3 text-sm last:border-0\"><button type=\"button\" class=\"shrink-0 py-1 text-xs text-neutral-200 hover:text-white font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-white\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -125,7 +127,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(format.Duration(m.Timestamp))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 46, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 48, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -138,7 +140,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(format.Duration(m.Timestamp + m.Duration))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 47, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 49, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -152,7 +154,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(format.Duration(m.Timestamp))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 49, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 51, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -166,7 +168,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(markerTitle(m))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 52, Col: 97}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 54, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -179,7 +181,7 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(markerTitle(m))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 53, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components/marker_list.templ`, Line: 55, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -190,9 +192,11 @@ func MarkerRow(videoID string, m MarkerItem) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if m.IsSponsorBlock {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"text-xs text-neutral-400 py-1\" title=\"SponsorBlock\">SB</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if !liveProduct {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"text-xs text-neutral-400 py-1\" title=\"SponsorBlock\">SB</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
 		} else {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button type=\"button\" class=\"text-xs text-neutral-400 hover:text-neutral-200\"")

@@ -44,6 +44,48 @@ func TestWikiToolsRegistered(t *testing.T) {
 	}
 }
 
+func TestLiveMCPToolAllowlist(t *testing.T) {
+	srv := newServer(nil)
+	srv.AddReceivingMiddleware(liveMCPAllowlistMiddleware(liveMCPToolAllowlist()))
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{Name: "future_global_tool"}, func(context.Context, *mcpsdk.CallToolRequest, *struct{}) (*mcpsdk.CallToolResult, any, error) {
+		return jsonResult(map[string]any{"ok": true})
+	})
+	ctx := context.Background()
+	a, b := mcpsdk.NewInMemoryTransports()
+	ss, err := srv.Connect(ctx, a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test", Version: "test"}, nil)
+	cs, err := client.Connect(ctx, b, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	listed, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range listed.Tools {
+		names[tool.Name] = true
+	}
+	for _, name := range []string{"wiki_search", "list_show_notes", "stitch_inspect", "whoami", "get_clipping_workflow", "find_clip_candidates", "create_clip", "save_compilation_plan"} {
+		if !names[name] {
+			t.Fatalf("allowed Live tool missing: %s", name)
+		}
+	}
+	for _, name := range []string{"get_related", "search_library", "index_url", "get_osint_workflow", "future_global_tool"} {
+		if names[name] {
+			t.Fatalf("unscoped Live tool still exposed: %s", name)
+		}
+	}
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "future_global_tool", Arguments: map[string]any{}}); err == nil {
+		t.Fatal("unscoped tool call was not rejected")
+	}
+}
+
 func TestWikiPutRequiresWrite(t *testing.T) {
 	fn := wikiPutMCP()
 	if _, _, err := fn(context.Background(), nil, &wikiPutArgs{

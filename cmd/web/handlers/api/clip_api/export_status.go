@@ -10,14 +10,14 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleExportStatusStream serves GET /clip-exports/:id/stream, sending SSE progress updates for an encoding export.
 func HandleExportStatusStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		_, _, err := sm.GetSession(c.Request())
+		user, _, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.String(401, "unauthorized")
 		}
-
 		exportUUID, err := common.RequireUUIDParam(c, "id")
 		if err != nil {
 			return err
@@ -33,6 +33,13 @@ func HandleExportStatusStream(sm *auth.SessionManager, dbc *db.DatabaseConnectio
 				return c.String(404, "export not found")
 			}
 			return c.String(500, "failed to get export")
+		}
+		clip, clipErr := q.GetClip(ctx, exportRow.ClipID)
+		if clipErr != nil {
+			return c.String(404, "export not found")
+		}
+		if err := requireClipRead(c, sm, q, clip, user); err != nil {
+			return err
 		}
 
 		sse := datastar.NewSSE(c.Response().Writer, c.Request())

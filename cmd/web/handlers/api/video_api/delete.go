@@ -4,33 +4,35 @@ package video_api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 const maxBulkDelete = 200
+
+func canDeleteLibraryRow(sm *auth.SessionManager, c echo.Context, userID, archivedBy string) bool {
+	return libraryRowDeletable(sm.GetAccessLevel(c.Request()) == auth.AccessAdmin, userID == archivedBy, common.LiveWorkspaceWrite())
+}
+
+func libraryRowDeletable(admin, owner, liveWorkspace bool) bool {
+	return admin || owner || liveWorkspace
+}
 
 // HandleDelete serves DELETE /videos/:id, soft-deleting a video and its associated data.
 func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		isDatastarRequest := strings.EqualFold(strings.TrimSpace(c.Request().Header.Get("Datastar-Request")), "true")
-
-		accessLevel := fmt.Sprint(c.Get("accessLevel"))
-		if accessLevel == "unauthenticated" {
-			return c.String(401, "unauthorized")
-		}
 
 		userID, _, err := sm.GetSession(c.Request())
 		if err != nil {
@@ -42,36 +44,26 @@ func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 			return err
 		}
 
-		// Fetch video for auth + to capture paths before deletion.
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoWrite)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return c.String(404, "video not found")
-			}
-			return c.String(500, "failed to fetch video")
+			return err
 		}
-
-		// Ownership check (admins can delete anything)
-		if accessLevel != "admin" {
-			if userID != videoRow.ArchivedBy.String() {
-				return c.String(403, "forbidden")
-			}
+		if !canDeleteLibraryRow(sm, c, userID, videoRow.ArchivedBy.String()) {
+			return c.String(403, "forbidden")
 		}
 
 		deleteDisk := isTruthyQueryParam(c.QueryParam("delete_disk"))
-		deleteDir, ok := safeVideoDirForDeletion(videoUUID)
-		if deleteDisk && !ok {
-			return c.String(400, "refusing disk delete (no safe directory found for this video)")
-		}
+		deleteDir, hasLocal := safeVideoDirForDeletion(videoUUID)
 
 		ctx := c.Request().Context()
+		purgeGeneratedMedia(ctx, dbc, videoRow)
 		if err := deleteVideoDB(ctx, dbc, videoUUID); err != nil {
 			return c.String(500, "failed to delete video")
 		}
 
 		diskDeleted := false
 		var diskError string
-		if deleteDisk {
+		if removeLocalDir(deleteDisk, hasLocal) {
 			if err := os.RemoveAll(deleteDir); err != nil {
 				diskError = err.Error()
 			} else {
@@ -98,11 +90,6 @@ func HandleDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 // Datastar excludes them from request payloads by default.
 func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		accessLevel := fmt.Sprint(c.Get("accessLevel"))
-		if accessLevel == "unauthenticated" {
-			return c.String(401, "unauthorized")
-		}
-
 		userID, _, err := sm.GetSession(c.Request())
 		if err != nil {
 			return c.String(401, "unauthorized")
@@ -171,12 +158,12 @@ func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 
 			idStr := videoUUID.String()
 			title := idStr
-			videoRow, err := q.GetVideoByID(ctx, videoUUID)
+			videoRow, err := common.RequireVideo(c, q, videoUUID, plugin.ActionVideoWrite)
 			if err != nil {
 				skipped++
 				_ = patchBulkDeleteProgress(sse, bulkDeleteProgress{
 					Active: true, Done: deleted, Total: total, Skipped: skipped,
-					Status: fmt.Sprintf("Skipping missing video (%d/%d)", i+1, total),
+					Status: fmt.Sprintf("Skipping (no permission): %s", truncateRunes(idStr, 40)),
 				})
 				_ = sse.RemoveElementf(`[data-video-id="%s"]`, idStr)
 				continue
@@ -184,7 +171,7 @@ func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 			if videoRow.Title != "" {
 				title = videoRow.Title
 			}
-			if accessLevel != "admin" && userID != videoRow.ArchivedBy.String() {
+			if !canDeleteLibraryRow(sm, c, userID, videoRow.ArchivedBy.String()) {
 				skipped++
 				_ = patchBulkDeleteProgress(sse, bulkDeleteProgress{
 					Active: true, Done: deleted, Total: total, Skipped: skipped,
@@ -198,6 +185,7 @@ func HandleBulkDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 				Status: fmt.Sprintf("Deleting %d/%d — %s", i+1, total, truncateRunes(title, 48)),
 			})
 
+			purgeGeneratedMedia(ctx, dbc, videoRow)
 			if err := deleteVideoDB(ctx, dbc, videoUUID); err != nil {
 				skipped++
 				_ = patchBulkDeleteProgress(sse, bulkDeleteProgress{
@@ -350,6 +338,12 @@ func deleteVideoDB(ctx context.Context, dbc *db.DatabaseConnection, videoUUID pg
 	}
 	if err := qtx.DeleteMarkersByVideo(ctx, videoUUID); err != nil {
 		slog.Error("failed to delete markers for video", "error", err, "video_id", videoUUID)
+		return err
+	}
+	// context_window_sets cascade from videos. Chunks reference the set
+	// without a cascade on databases that have not applied that constraint yet.
+	if _, err := tx.Exec(ctx, `DELETE FROM context_window_chunks WHERE set_id IN (SELECT id FROM context_window_sets WHERE video_id = $1)`, videoUUID); err != nil {
+		slog.Error("failed to delete context chunks for video", "error", err, "video_id", videoUUID)
 		return err
 	}
 	if err := qtx.DeleteVideo(ctx, videoUUID); err != nil {

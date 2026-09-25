@@ -17,7 +17,7 @@ import (
 // HandleStitchDownload serves the finished stitch file as an attachment.
 func HandleStitchDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		_, _, err := common.RequireSessionUser(c, sm)
+		user, _, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.String(401, "unauthorized")
 		}
@@ -37,6 +37,12 @@ func HandleStitchDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 				return c.String(404, "stitch job not found")
 			}
 			return c.String(500, "failed to load stitch job")
+		}
+		if err := requireStitchJobAccess(c, sm, job, user); err != nil {
+			return err
+		}
+		if err := requireStitchRenderJobSources(c, dbc, job); err != nil {
+			return err
 		}
 		if job.Status != db.ExportStatusReady {
 			return c.String(409, "stitch job not ready")

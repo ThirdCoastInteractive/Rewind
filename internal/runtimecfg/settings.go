@@ -58,6 +58,9 @@ var Registry = []Definition{
 	{"textcls.sentiment_model", "Models & ML", "Comment/speech sentiment model", "string", "twitter-roberta-sentiment", "", "ml", 0, 0, []string{"twitter-roberta-sentiment"}},
 	{"textcls.toxicity_model", "Models & ML", "Comment/speech toxicity model", "string", "unbiased-toxic-roberta", "", "ml", 0, 0, []string{"unbiased-toxic-roberta"}},
 	{"textcls.device", "Models & ML", "Text classifier device", "string", "cpu", "TEXTCLS_DEVICE", "ml", 0, 0, []string{"cpu", "cuda"}},
+	{"diarize.model", "Models & ML", "Diarization model", "string", "off", "DIARIZE_MODEL", "ml", 0, 0, []string{"off", "nemotron-3"}},
+	{"diarize.device", "Models & ML", "Diarization device", "string", "cpu", "DIARIZE_DEVICE", "ml", 0, 0, []string{"cpu", "cuda"}},
+	{"diarize.backfill", "Models & ML", "Diarization backfill", "boolean", false, "DIARIZE_BACKFILL", "ml", 0, 0, nil},
 	{"osint.toxicity_flag", "OSINT", "Toxicity flag threshold", "number", 0.7, "", "ml", 0, 1, nil},
 	{"osint.raid_ratio", "OSINT", "Raid burst vs median ratio", "number", 4, "", "ml", 1, 20, nil},
 	{"osint.style_min_n", "OSINT", "Min comments before style sock suggest", "number", 8, "", "ml", 3, 100, nil},
@@ -351,12 +354,15 @@ func Start(ctx context.Context, dbc *db.DatabaseConnection, service string) erro
 		return e
 	}
 	wake := make(chan struct{}, 1)
-	go db.RunListenLoop(ctx, dbc, []string{"runtime_settings"}, func(*pgconn.Notification) {
+	wakeReload := func() {
 		select {
 		case wake <- struct{}{}:
 		default:
 		}
-	})
+	}
+	go db.RunListenLoop(ctx, dbc, []string{"runtime_settings"}, func(*pgconn.Notification) {
+		wakeReload()
+	}, wakeReload)
 	go func() {
 		tick := time.NewTicker(30 * time.Second)
 		defer tick.Stop()

@@ -33,8 +33,8 @@ func HandleUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		if err != nil || existing == nil {
 			return c.String(404, "clip not found")
 		}
-		if existing.CreatedBy != userUUID {
-			return c.String(403, "forbidden")
+		if err := requireClipMutate(c, sm, dbc.Queries(ctx), existing, userUUID); err != nil {
+			return err
 		}
 
 		body, _ := io.ReadAll(c.Request().Body)

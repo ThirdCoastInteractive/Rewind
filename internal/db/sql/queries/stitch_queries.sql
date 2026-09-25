@@ -14,8 +14,10 @@ LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
 -- name: GetClipsForStitch :many
 -- Bulk load clip data for the encoder (timestamps, crops).
-SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
+SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list,
+       v.video_path, v.tenant_id
 FROM clips c
+JOIN videos v ON v.id = c.video_id
 WHERE c.id = ANY(sqlc.arg(ids)::uuid[]);
 
 -- name: CreateStitchJob :one

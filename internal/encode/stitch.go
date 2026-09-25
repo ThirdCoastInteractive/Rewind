@@ -19,6 +19,7 @@ import (
 	"thirdcoast.systems/rewind/internal/stitch"
 	"thirdcoast.systems/rewind/pkg/audiobeds"
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
 
@@ -218,6 +219,14 @@ func processStitchBodyWithPostFinalize(ctx context.Context, q *db.Queries, expor
 	transitions := make([]*ffmpeg.Transition, 0, len(rawSegs))
 	var totalDur time.Duration
 	hasAudioCache := map[string]bool{}
+	var inputCleanups []func()
+	defer func() {
+		for _, cleanup := range inputCleanups {
+			if cleanup != nil {
+				cleanup()
+			}
+		}
+	}()
 
 	probeHasAudio := func(path string) (bool, error) {
 		if v, ok := hasAudioCache[path]; ok {
@@ -272,8 +281,33 @@ func processStitchBodyWithPostFinalize(ctx context.Context, q *db.Queries, expor
 			}
 
 			videoID := uuidString(clipData.VideoID)
+			if clipData.TenantID.Valid && clipData.TenantID.Bytes != [16]byte{} {
+				if incoming, scoped := plugin.TenantScope(ctx); scoped && incoming != clipData.TenantID.String() {
+					return fmt.Errorf("stitch clip tenant scope mismatch")
+				}
+				ctx = plugin.WithTenantScope(ctx, clipData.TenantID.String(), true)
+			} else if plugin.LiveIngest() != nil {
+				return fmt.Errorf("live stitch clip %q has no workspace tenant", raw.ClipID)
+			}
+			var inputPath string
+			var inputCleanup func()
+			var sourceErr error
+			if clipData.VideoPath != nil {
+				inputPath, inputCleanup, sourceErr = plugin.MasterSourceAt(ctx, *clipData.VideoPath)
+			}
+			if sourceErr != nil && plugin.LiveIngest() != nil {
+				return fmt.Errorf("resolve workspace master for clip %q: %w", raw.ClipID, sourceErr)
+			}
+			if inputPath == "" {
+				inputPath, inputCleanup, _ = plugin.MasterSource(ctx, videoID)
+			}
+			if inputCleanup != nil {
+				inputCleanups = append(inputCleanups, inputCleanup)
+			}
 			videoDir := filepath.Join(downloadsDir, videoID)
-			inputPath := findVideoFile(videoDir, videoID)
+			if inputPath == "" {
+				inputPath = findVideoFile(videoDir, videoID)
+			}
 			if inputPath == "" {
 				return fmt.Errorf("video file not found for clip %q in %s", raw.ClipID, videoDir)
 			}
@@ -348,8 +382,40 @@ func processStitchBodyWithPostFinalize(ctx context.Context, q *db.Queries, expor
 			if raw.VideoID == "" {
 				return fmt.Errorf("segment %d: video segment missing video_id", i)
 			}
+			var videoUUID pgtype.UUID
+			if err := videoUUID.Scan(raw.VideoID); err != nil {
+				return fmt.Errorf("invalid video_id %q: %w", raw.VideoID, err)
+			}
+			videoRow, rowErr := q.GetVideoByID(ctx, videoUUID)
+			if rowErr != nil {
+				return fmt.Errorf("video %q not found: %w", raw.VideoID, rowErr)
+			}
+			if videoRow.TenantID.Valid && videoRow.TenantID.Bytes != [16]byte{} {
+				if incoming, scoped := plugin.TenantScope(ctx); scoped && incoming != videoRow.TenantID.String() {
+					return fmt.Errorf("stitch video tenant scope mismatch")
+				}
+				ctx = plugin.WithTenantScope(ctx, videoRow.TenantID.String(), true)
+			} else if plugin.LiveIngest() != nil {
+				return fmt.Errorf("live stitch video %q has no workspace tenant", raw.VideoID)
+			}
+			var videoPath string
+			if videoRow.VideoPath != nil {
+				videoPath = *videoRow.VideoPath
+			}
+			inputPath, inputCleanup, sourceErr := plugin.MasterSourceAt(ctx, videoPath)
+			if sourceErr != nil && plugin.LiveIngest() != nil {
+				return fmt.Errorf("resolve workspace master for video %q: %w", raw.VideoID, sourceErr)
+			}
+			if inputPath == "" {
+				inputPath, inputCleanup, _ = plugin.MasterSource(ctx, raw.VideoID)
+			}
+			if inputCleanup != nil {
+				inputCleanups = append(inputCleanups, inputCleanup)
+			}
 			videoDir := filepath.Join(downloadsDir, raw.VideoID)
-			inputPath := findVideoFile(videoDir, raw.VideoID)
+			if inputPath == "" {
+				inputPath = findVideoFile(videoDir, raw.VideoID)
+			}
 			if inputPath == "" {
 				return fmt.Errorf("video file not found for video %q in %s", raw.VideoID, videoDir)
 			}

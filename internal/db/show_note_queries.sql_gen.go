@@ -102,23 +102,24 @@ func (q *Queries) CreateBlock(ctx context.Context, arg *CreateBlockParams) (*Sho
 }
 
 const createShowNote = `-- name: CreateShowNote :one
-INSERT INTO show_notes (owner_id, title)
-VALUES ($1, $2)
-RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+INSERT INTO show_notes (owner_id, title, tenant_id)
+VALUES ($1, $2, $3)
+RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 `
 
 type CreateShowNoteParams struct {
-	OwnerID pgtype.UUID `db:"owner_id" json:"OwnerID"`
-	Title   string      `db:"title" json:"Title"`
+	OwnerID  pgtype.UUID `db:"owner_id" json:"OwnerID"`
+	Title    string      `db:"title" json:"Title"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 // CreateShowNote
 //
-//	INSERT INTO show_notes (owner_id, title)
-//	VALUES ($1, $2)
-//	RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+//	INSERT INTO show_notes (owner_id, title, tenant_id)
+//	VALUES ($1, $2, $3)
+//	RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 func (q *Queries) CreateShowNote(ctx context.Context, arg *CreateShowNoteParams) (*ShowNote, error) {
-	row := q.db.QueryRow(ctx, createShowNote, arg.OwnerID, arg.Title)
+	row := q.db.QueryRow(ctx, createShowNote, arg.OwnerID, arg.Title, arg.TenantID)
 	var i ShowNote
 	err := row.Scan(
 		&i.ID,
@@ -133,6 +134,7 @@ func (q *Queries) CreateShowNote(ctx context.Context, arg *CreateShowNoteParams)
 		&i.UpdatedAt,
 		&i.WorkspaceMigratedAt,
 		&i.WorkspaceMigrationError,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -216,12 +218,12 @@ func (q *Queries) GetHostRole(ctx context.Context, arg *GetHostRoleParams) (stri
 }
 
 const getShowNote = `-- name: GetShowNote :one
-SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE id = $1
+SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE id = $1
 `
 
 // GetShowNote
 //
-//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE id = $1
+//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE id = $1
 func (q *Queries) GetShowNote(ctx context.Context, id pgtype.UUID) (*ShowNote, error) {
 	row := q.db.QueryRow(ctx, getShowNote, id)
 	var i ShowNote
@@ -238,17 +240,18 @@ func (q *Queries) GetShowNote(ctx context.Context, id pgtype.UUID) (*ShowNote, e
 		&i.UpdatedAt,
 		&i.WorkspaceMigratedAt,
 		&i.WorkspaceMigrationError,
+		&i.TenantID,
 	)
 	return &i, err
 }
 
 const getShowNoteByPublicCode = `-- name: GetShowNoteByPublicCode :one
-SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE public_code = $1
+SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE public_code = $1
 `
 
 // GetShowNoteByPublicCode
 //
-//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE public_code = $1
+//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE public_code = $1
 func (q *Queries) GetShowNoteByPublicCode(ctx context.Context, publicCode *string) (*ShowNote, error) {
 	row := q.db.QueryRow(ctx, getShowNoteByPublicCode, publicCode)
 	var i ShowNote
@@ -265,6 +268,7 @@ func (q *Queries) GetShowNoteByPublicCode(ctx context.Context, publicCode *strin
 		&i.UpdatedAt,
 		&i.WorkspaceMigratedAt,
 		&i.WorkspaceMigrationError,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -371,7 +375,7 @@ func (q *Queries) ListHostsForShowNote(ctx context.Context, showNoteID pgtype.UU
 const listShowNotesForUser = `-- name: ListShowNotesForUser :many
 
 SELECT DISTINCT sn.id, sn.owner_id, sn.title, sn.description, sn.is_live,
-       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at
+       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at, sn.tenant_id
 FROM show_notes sn
 LEFT JOIN show_note_hosts h ON h.show_note_id = sn.id
 WHERE sn.owner_id = $1 OR h.user_id = $1
@@ -388,6 +392,7 @@ type ListShowNotesForUserRow struct {
 	PublicCode    *string            `db:"public_code" json:"PublicCode"`
 	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	TenantID      pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 }
 
 // ============================================================================
@@ -396,7 +401,7 @@ type ListShowNotesForUserRow struct {
 // Show notes the user owns or is a host/viewer on, newest-updated first.
 //
 //	SELECT DISTINCT sn.id, sn.owner_id, sn.title, sn.description, sn.is_live,
-//	       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at
+//	       sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at, sn.tenant_id
 //	FROM show_notes sn
 //	LEFT JOIN show_note_hosts h ON h.show_note_id = sn.id
 //	WHERE sn.owner_id = $1 OR h.user_id = $1
@@ -420,6 +425,7 @@ func (q *Queries) ListShowNotesForUser(ctx context.Context, userID pgtype.UUID) 
 			&i.PublicCode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -457,8 +463,11 @@ func (q *Queries) NextBlockPosition(ctx context.Context, arg *NextBlockPositionP
 }
 
 const noteReferencesVideo = `-- name: NoteReferencesVideo :one
-SELECT COUNT(*) > 0 FROM show_note_blocks
-WHERE show_note_id = $1 AND video_id = $2
+SELECT COUNT(*) > 0
+FROM show_note_blocks b
+JOIN show_notes sn ON sn.id = b.show_note_id
+JOIN videos v ON v.id = b.video_id AND v.tenant_id = sn.tenant_id
+WHERE b.show_note_id = $1 AND b.video_id = $2
 `
 
 type NoteReferencesVideoParams struct {
@@ -469,8 +478,11 @@ type NoteReferencesVideoParams struct {
 // Authorizes viewer-scoped content streaming: true if the video is referenced by
 // a block in this show note.
 //
-//	SELECT COUNT(*) > 0 FROM show_note_blocks
-//	WHERE show_note_id = $1 AND video_id = $2
+//	SELECT COUNT(*) > 0
+//	FROM show_note_blocks b
+//	JOIN show_notes sn ON sn.id = b.show_note_id
+//	JOIN videos v ON v.id = b.video_id AND v.tenant_id = sn.tenant_id
+//	WHERE b.show_note_id = $1 AND b.video_id = $2
 func (q *Queries) NoteReferencesVideo(ctx context.Context, arg *NoteReferencesVideoParams) (bool, error) {
 	row := q.db.QueryRow(ctx, noteReferencesVideo, arg.ShowNoteID, arg.VideoID)
 	var column_1 bool
@@ -628,7 +640,7 @@ SET title           = COALESCE($1, title),
     public_code     = COALESCE($5, public_code),
     updated_at      = NOW()
 WHERE id = $6
-RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 `
 
 type UpdateShowNoteParams struct {
@@ -650,7 +662,7 @@ type UpdateShowNoteParams struct {
 //	    public_code     = COALESCE($5, public_code),
 //	    updated_at      = NOW()
 //	WHERE id = $6
-//	RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+//	RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 func (q *Queries) UpdateShowNote(ctx context.Context, arg *UpdateShowNoteParams) (*ShowNote, error) {
 	row := q.db.QueryRow(ctx, updateShowNote,
 		arg.Title,
@@ -674,6 +686,7 @@ func (q *Queries) UpdateShowNote(ctx context.Context, arg *UpdateShowNoteParams)
 		&i.UpdatedAt,
 		&i.WorkspaceMigratedAt,
 		&i.WorkspaceMigrationError,
+		&i.TenantID,
 	)
 	return &i, err
 }

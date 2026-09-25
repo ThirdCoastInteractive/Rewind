@@ -130,7 +130,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"flex-1 min-h-0 flex gap-2 overflow-hidden\"><!-- LEFT SIDEBAR: scrollable tool panels --><div class=\"w-full md:w-1/3 lg:w-1/4 xl:w-1/5 shrink-0 min-h-0 flex flex-col gap-0 overflow-y-auto overflow-x-hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"flex-1 min-h-0 flex flex-col md:flex-row gap-2 overflow-y-auto overflow-x-hidden md:overflow-hidden\"><!-- LEFT SIDEBAR: scrollable tool panels --><div class=\"order-2 md:order-1 w-full md:w-80 lg:w-96 xl:w-96 shrink-0 min-w-0 min-h-0 flex flex-col gap-0 overflow-y-auto overflow-x-auto\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -282,7 +282,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><!-- RIGHT: video + tools + timelines - pure flex, no overflow hiding --><div class=\"flex-1 min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden\"><!-- Video player: only flex-1 child, shrinks when tools appear --><div class=\"flex-1 min-h-0 flex flex-col\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><!-- RIGHT: video + tools + timelines - pure flex, no overflow hiding --><div class=\"order-1 md:order-2 flex-none md:flex-1 w-full md:w-auto min-w-0 min-h-0 flex flex-col gap-1 overflow-hidden\"><!-- Video player: only flex-1 child, shrinks when tools appear --><div class=\"flex-1 min-h-0 flex flex-col\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -290,7 +290,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"shrink-0 flex justify-center\"><div class=\"inline-flex items-center gap-2 px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"shrink-0 flex justify-center min-w-0 w-full overflow-hidden\"><div class=\"max-w-full flex flex-wrap items-center justify-center gap-2 px-2 sm:px-4 py-1 border-2 border-t-0 border-white/10 bg-neutral-900\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -314,7 +314,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"w-px h-6 bg-white/20\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"hidden sm:block w-px h-6 bg-white/20\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -322,7 +322,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"w-px h-6 bg-white/20\"></div><div class=\"text-sm text-white/80 font-mono tabular-nums text-right\" data-cut-transport-time>00:00:00.000 / 00:00:00.000</div></div></div></div><!-- Audio tools: meters + loudness actions for quiet dialogue --><div id=\"audio-tools-container\" class=\"hidden shrink-0 flex flex-col gap-1 border-2 border-white/10 bg-neutral-900 p-1\" data-audio-tools><div class=\"h-24 flex gap-1\"><canvas class=\"w-10 border border-white/10 bg-neutral-950\" data-audio-meter title=\"Levels\" width=\"56\" height=\"120\"></canvas><canvas class=\"flex-1 min-w-0 border border-white/10 bg-neutral-950\" data-audio-spectrum title=\"Spectrum\" width=\"400\" height=\"120\"></canvas><canvas class=\"w-32 border border-white/10 bg-neutral-950\" data-audio-scope title=\"Scope\" width=\"192\" height=\"120\"></canvas></div><div class=\"flex items-center gap-2 flex-wrap px-1 py-1 border-t border-white/10\"><span class=\"text-[10px] font-mono text-white/50 tabular-nums min-w-16\" data-audio-lufs title=\"Approximate loudness from the meter\">-- LUFS</span> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Two-pass loudnorm to -14 LUFS on export. Use this for quiet podcasts.\" data-on:click=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"hidden sm:block w-px h-6 bg-white/20\"></div><div class=\"basis-full sm:basis-auto text-xs sm:text-sm text-white/80 font-mono tabular-nums text-center sm:text-right whitespace-nowrap\" data-cut-transport-time>00:00:00.000 / 00:00:00.000</div></div></div></div><!-- Audio tools: meters + loudness actions for quiet dialogue --><div id=\"audio-tools-container\" class=\"hidden shrink-0 flex flex-col gap-1 border-2 border-white/10 bg-neutral-900 p-1\" data-audio-tools><div class=\"h-24 flex gap-1\"><canvas class=\"w-10 border border-white/10 bg-neutral-950\" data-audio-meter title=\"Levels\" width=\"56\" height=\"120\"></canvas><canvas class=\"flex-1 min-w-0 border border-white/10 bg-neutral-950\" data-audio-spectrum title=\"Spectrum\" width=\"400\" height=\"120\"></canvas><canvas class=\"w-32 border border-white/10 bg-neutral-950\" data-audio-scope title=\"Scope\" width=\"192\" height=\"120\"></canvas></div><div class=\"flex items-center gap-2 flex-wrap px-1 py-1 border-t border-white/10\"><span class=\"text-[10px] font-mono text-white/50 tabular-nums min-w-16\" data-audio-lufs title=\"Approximate loudness from the meter\">-- LUFS</span> <button type=\"button\" class=\"btn-ghost btn-sm\" title=\"Two-pass loudnorm to -14 LUFS on export. Use this for quiet podcasts.\" data-on:click=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -374,7 +374,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">Compress</button> <span class=\"text-[10px] font-mono text-white/30\">Adds to COLOR / FILTERS · applied on export</span></div></div><!-- Overview timeline: fixed height --><div class=\"shrink-0 h-10\"><div class=\"section-label\">OVERVIEW</div><div class=\"relative h-6 border-2 border-white/10 bg-neutral-950 overflow-hidden\" data-cut-overview><div class=\"absolute inset-0\" data-cut-overview-layer></div></div></div><!-- Work area: fixed height, NOT flex-1 --><div class=\"shrink-0 h-32\"><div class=\"section-label\">WORK AREA</div><div class=\"relative border-2 border-white/10 bg-neutral-950 overflow-hidden\" style=\"height: calc(100% - 1.25rem);\" data-cut-work><div class=\"absolute inset-0\" data-cut-work-layer></div></div></div><!-- Button bar --><div class=\"shrink-0 flex items-center gap-1 flex-wrap\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">Compress</button> <span class=\"text-[10px] font-mono text-white/30\">Adds to COLOR / FILTERS · applied on export</span></div></div><!-- Overview timeline: fixed height --><div class=\"shrink-0 h-20\"><div class=\"section-label\">OVERVIEW</div><div class=\"relative h-16 border-2 border-white/10 bg-neutral-950 overflow-hidden\" data-cut-overview><div class=\"absolute inset-0\" data-cut-overview-layer></div></div></div><!-- Work area: fixed height, NOT flex-1 --><div class=\"shrink-0 h-32\"><div class=\"section-label\">WORK AREA</div><div class=\"relative border-2 border-white/10 bg-neutral-950 overflow-hidden\" style=\"height: calc(100% - 1.25rem);\" data-cut-work><div class=\"absolute inset-0\" data-cut-work-layer></div></div></div><!-- Button bar --><div class=\"shrink-0 min-w-0 flex items-center gap-1 flex-wrap\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -402,7 +402,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"grow\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"hidden sm:block grow\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -418,7 +418,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"w-px h-6 bg-white/10\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"hidden sm:block w-px h-6 bg-white/10\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -434,7 +434,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"w-px h-6 bg-white/10\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"hidden sm:block w-px h-6 bg-white/10\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -470,7 +470,7 @@ func VideoCutContent(video VideoDetail, clips []*db.Clip, keybindings map[string
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div class=\"text-xs text-white/40 font-mono tabular-nums\" data-cut-range></div></div></div></div><div class=\"hidden\"><!-- Signal → JS bridges (replaces setInterval polling) --><div data-on-signal-patch=\"window.cutEditor?.clipBank?.handleSignalPatch()\"></div><div data-effect=\"window.cutEditor?.applyFilterStack($_filterStack)\"></div><div data-effect=\"window.cutEditor?.onClipColorChange($clipColor)\"></div><div data-effect=\"window.cutEditor?.onAutosaveCheck($_clipDirty, $_localAutoSave, $_selectedClipId)\"></div><input type=\"hidden\" data-bind=\"_createClipStart\" data-cut-create-start> <input type=\"hidden\" data-bind=\"_createClipEnd\" data-cut-create-end> <button type=\"button\" data-cut-create-submit data-on:click=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div class=\"w-full sm:w-auto min-w-0 overflow-x-auto text-center sm:text-right text-xs text-white/40 font-mono tabular-nums whitespace-nowrap\" data-cut-range></div></div></div></div><div class=\"hidden\"><!-- Signal → JS bridges (replaces setInterval polling) --><div data-on-signal-patch=\"window.cutEditor?.clipBank?.handleSignalPatch()\"></div><div data-effect=\"window.cutEditor?.applyFilterStack($_filterStack)\"></div><div data-effect=\"window.cutEditor?.onClipColorChange($clipColor)\"></div><div data-effect=\"window.cutEditor?.onAutosaveCheck($_clipDirty, $_localAutoSave, $_selectedClipId)\"></div><input type=\"hidden\" data-bind=\"_createClipStart\" data-cut-create-start> <input type=\"hidden\" data-bind=\"_createClipEnd\" data-cut-create-end> <button type=\"button\" data-cut-create-submit data-on:click=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	webauth "thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
+	"thirdcoast.systems/rewind/pkg/plugin/builtin"
 )
 
 // HandleRegister serves POST /register, creating a new user account and logging them in.
@@ -35,7 +38,10 @@ func HandleRegister(sm *webauth.SessionManager, dbc *db.DatabaseConnection, sc *
 
 		role := "user"
 		if userCount == 0 {
-			role = "admin"
+			// RewindLive sets Guards and seeds staff. OSS (Guards nil / LocalAuthz) keeps first-admin.
+			if builtin.OSSGuards() {
+				role = "admin"
+			}
 		} else {
 			settings := sc.Get()
 			if settings != nil && !settings.RegistrationEnabled {
@@ -73,6 +79,13 @@ func HandleRegister(sm *webauth.SessionManager, dbc *db.DatabaseConnection, sc *
 		if err != nil {
 			slog.Error("failed to create user", "error", err)
 			return templates.Register("Password does not meet requirements (minimum 8 characters) or an error occurred").Render(c.Request().Context(), c.Response())
+		}
+
+		if a := plugin.Auth(); a != nil {
+			if err := a.Register(c.Response().Writer, c.Request()); err != nil && !errors.Is(err, plugin.ErrNotSupported) {
+				slog.Error("plugin register", "error", err, "user_id", user.ID)
+				return templates.Register("An error occurred. Please try again.").Render(c.Request().Context(), c.Response())
+			}
 		}
 
 		// Determine access level from role

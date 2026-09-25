@@ -2,8 +2,8 @@
  * Shared helpers for rewind E2E tests.
  *
  * The test suite assumes the full Docker Compose stack is running locally.
- * It also assumes at least one video is present in the database so we can
- * navigate to a cut page.
+ * Mutating cut-page tests must pass an explicit E2E_VIDEO_ID fixture rather
+ * than discovering an arbitrary archive video.
  */
 import { type Page, expect } from "@playwright/test";
 

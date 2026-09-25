@@ -91,6 +91,22 @@ func TestGeneratedDataStatusCopy(t *testing.T) {
 			not:           []string{`"error":"llama runner`, "context_windows runtime:"},
 		},
 		{
+			name:          "existing windows are not described as a local-model block",
+			jobs:          []*db.MlJob{{Kind: "context_windows", Status: "retry_wait", Attempts: 4, LastError: "workers-ai"}},
+			hasTranscript: true,
+			windows:       5,
+			want:          []string{"Transcript available · 5 context windows"},
+			not:           []string{"blocked on the local model", "Context generation failed"},
+		},
+		{
+			name:          "workers chapters failure is not a local model block",
+			jobs:          []*db.MlJob{{Kind: "context_windows", Status: "retry_wait", Attempts: 3, LastError: `chapters: 502 {"error":"bad chapters"}`}},
+			hasTranscript: true,
+			windows:       0,
+			want:          []string{"Transcript available. Context generation failed · 0 context windows", "chapters: 502"},
+			not:           []string{"blocked on the local model"},
+		},
+		{
 			name:          "succeeded",
 			jobs:          []*db.MlJob{{Kind: "context_windows", Status: "succeeded", Attempts: 1}},
 			hasTranscript: true,

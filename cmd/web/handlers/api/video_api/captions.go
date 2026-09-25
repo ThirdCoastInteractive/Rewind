@@ -2,7 +2,6 @@
 package video_api
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +12,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/captions"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleCaptions serves the video captions.
@@ -24,6 +24,9 @@ func HandleCaptions(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 
 		videoUUID, err := common.RequireUUIDParam(c, "id")
 		if err != nil {
+			return err
+		}
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
 		videoID := videoUUID.String()
@@ -41,28 +44,23 @@ func HandleCaptions(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 			c.Response().Header().Set("Cache-Control", "private, no-store")
 			return c.Blob(200, "text/vtt; charset=utf-8", []byte(body.String()))
 		}
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-		if err != nil {
-			return err
-		}
-
-		// Prefer English, then und, then any captions.*.vtt.
-		candidates := []string{
-			filepath.Join(dir, videoID+".captions.en.vtt"),
-			filepath.Join(dir, videoID+".captions.und.vtt"),
-		}
-		for _, p := range candidates {
-			if _, err := os.Stat(p); err == nil {
-				return fs.ServeDiskFileWithCache(c, p, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+		cache := "private, max-age=86400, stale-while-revalidate=3600"
+		for _, name := range []string{videoID + ".captions.en.vtt", videoID + ".captions.und.vtt"} {
+			if err := fs.ServeKey(c, plugin.VideoKey(videoID, name), "text/vtt", cache, fileserver.ETagStrongSHA256); err == nil {
+				return nil
 			}
 		}
-		glob := filepath.Join(dir, videoID+".captions.*.vtt")
-		matches, _ := filepath.Glob(glob)
-		for _, p := range matches {
-			if strings.HasSuffix(strings.ToLower(p), ".src.vtt") {
-				continue
+		if b := plugin.Blobs(); b != nil {
+			names, _ := b.List(c.Request().Context(), videoID+"/")
+			for _, key := range names {
+				base := strings.ToLower(filepath.Base(key))
+				if !strings.HasPrefix(base, strings.ToLower(videoID)+".captions.") || !strings.HasSuffix(base, ".vtt") || strings.HasSuffix(base, ".src.vtt") {
+					continue
+				}
+				if err := fs.ServeKey(c, key, "text/vtt", cache, fileserver.ETagStrongSHA256); err == nil {
+					return nil
+				}
 			}
-			return fs.ServeDiskFileWithCache(c, p, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
 		}
 
 		// Some transcript engines persist timed cues directly without writing a
@@ -76,9 +74,12 @@ func HandleCaptions(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 				if lang == "" {
 					lang = "und"
 				}
-				dest := filepath.Join(dir, videoID+".captions."+lang+".vtt")
-				if writeErr := captions.WriteVTTFile(dest, cues); writeErr == nil {
-					return fs.ServeDiskFileWithCache(c, dest, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+				name := videoID + ".captions." + lang + ".vtt"
+				if dir, dirErr := fileserver.GetVideoDirForID(c.Request().Context(), videoID); dirErr == nil {
+					dest := filepath.Join(dir, name)
+					if writeErr := captions.WriteVTTFile(dest, cues); writeErr == nil {
+						return fs.ServeKey(c, plugin.VideoKey(videoID, name), "text/vtt", cache, fileserver.ETagStrongSHA256)
+					}
 				}
 				// A read-only mount should not make subtitles disappear. Serve the
 				// generated VTT directly even when persisting the repair failed.

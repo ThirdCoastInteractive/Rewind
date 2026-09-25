@@ -22,10 +22,10 @@ import (
 const assetCatchupLockID int64 = 76001
 
 const (
-	ingestWorkerSlots    = 32
-	ingestIdlePoll       = 30 * time.Second
-	assetCatchupBusyPoll = 30 * time.Second
-	assetCatchupIdlePoll = 8 * time.Minute
+	ingestWorkerSlots      = 32
+	ingestIdlePoll         = 30 * time.Second
+	assetCatchupBusyPoll   = 30 * time.Second
+	assetCatchupIdlePoll   = 8 * time.Minute
 	linkHarvestPoll        = 30 * time.Second
 	creatorlinkPoll        = 20 * time.Second
 	commenterIdentityPoll  = 1 * time.Minute
@@ -147,6 +147,7 @@ func runAssetCatchupLoop(ctx context.Context, dbc *db.DatabaseConnection) {
 		if ctx.Err() != nil {
 			return
 		}
+		runRemoteMasterCatchup(ctx, dbc)
 		n := runAssetCatchupUnit(ctx, dbc)
 		if n == 0 {
 			interval = assetCatchupIdlePoll

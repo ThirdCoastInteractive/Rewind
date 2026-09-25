@@ -105,6 +105,12 @@ func generatedDataSummary(jobs []*db.MlJob, health []*db.MlRuntimeHealth, hasTra
 		return "Transcript available. Context generation is running · " + win
 	}
 	if mlKindBlocked(contextJob, cHealth) {
+		if windows > 0 {
+			return "Transcript available · " + win
+		}
+		if contextJob != nil && (strings.Contains(contextJob.LastError, "chapters") || strings.Contains(contextJob.LastError, "workers-ai")) {
+			return "Transcript available. Context generation failed · " + win
+		}
 		return "Transcript available. Context windows are blocked on the local model · " + win
 	}
 	if contextJob != nil && contextJob.Status == "queued" {

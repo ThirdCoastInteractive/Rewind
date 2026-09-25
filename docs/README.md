@@ -5,6 +5,7 @@ User guides for running Rewind on your own hardware.
 ## Start here
 
 - [Getting started](getting-started.md) — install, first account, first archive
+- [Architecture](architecture.md) — compose services, roles, jobs, plugins, and request flow
 - [Configuration](configuration.md) — `.env`, Whisper, GPU, storage, workers
 
 ## Using the archive

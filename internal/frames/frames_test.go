@@ -106,7 +106,12 @@ func TestDetailVFRRotatedOffsetAndSequential(t *testing.T) {
 		}
 	}
 	run("-f", "lavfi", "-i", "testsrc2=size=240x120:rate=10:duration=8", "-vf", "select='if(lt(t,4),1,not(mod(n,3)))',setpts=PTS+5/TB", "-vsync", "0", "-c:v", "mpeg4", "-g", "20", source)
-	run("-i", source, "-c", "copy", "-copyts", "-metadata:s:v:0", "rotate=90", path)
+	// FFmpeg 6.1 and later ignore the legacy rotate tag and take the display
+	// matrix from -display_rotation. Older builds only know the tag.
+	rotate := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-display_rotation:v:0", "90", "-i", source, "-c", "copy", "-copyts", path)
+	if rotate.Run() != nil {
+		run("-i", source, "-c", "copy", "-copyts", "-metadata:s:v:0", "rotate=90", path)
+	}
 	a := Asset{ID: "00000000-0000-0000-0000-000000000001", File: path, Duration: 8}
 	s := New()
 	frames, err := s.Get(context.Background(), a, []float64{0, 3.15, 5.15}, "detail", 960)

@@ -13,10 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test release guardrails
-        run: make test-tools
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Start disposable integration database
+        run: docker compose -f docker-compose.integration.yml up -d --wait postgres
+      - name: Run release guardrails and regression tests
+        run: make release-gates
       - name: Check public release commit
         run: bash scripts/check-release.sh --commit HEAD
+      - name: Stop disposable integration database
+        if: always()
+        run: docker compose -f docker-compose.integration.yml down
 
   build:
     needs: preflight

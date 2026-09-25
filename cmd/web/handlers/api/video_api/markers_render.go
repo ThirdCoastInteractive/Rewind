@@ -15,6 +15,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/sponsorblock"
 	"thirdcoast.systems/rewind/internal/videoid"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleMarkersRender returns an SSE-patched, server-rendered marker list.
@@ -34,9 +35,9 @@ func HandleMarkersRender(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 		}
 		videoID := c.Param("id")
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
-		if err != nil || videoRow == nil {
-			return nil
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
+		if err != nil {
+			return err
 		}
 
 		markers, err := dbc.Queries(c.Request().Context()).ListMarkersByVideo(c.Request().Context(), videoUUID)

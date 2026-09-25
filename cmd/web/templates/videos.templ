@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/format"
@@ -159,12 +160,24 @@ templ RecentVideoCard(video *db.Video) {
 }
 
 templ Videos(videos []*db.ListVideosPaginatedRow, creators []*db.ListCreatorsRow, query string, creatorID string, uploader string, username string) {
-	@Layout("My Videos", username) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ pageTitle := "My Videos" }}
+	if liveProduct {
+		{{ pageTitle = "Recordings" }}
+	}
+	@Layout(pageTitle, username) {
 		@VideosContent(videos, creators, query, creatorID, uploader)
 	}
 }
 
 templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCreatorsRow, query string, creatorID string, uploader string) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ searchPlaceholder := "Search or use intitle:, inurl:, incontext:, intranscript:" }}
+	{{ searchAriaLabel := "Search archived videos" }}
+	if liveProduct {
+		{{ searchPlaceholder = "Search recordings or use intitle:, inurl:, incontext:, intranscript:" }}
+		{{ searchAriaLabel = "Search recordings" }}
+	}
 	@Container("") {
 		<style>
 			html { overflow-y: scroll; }
@@ -182,6 +195,15 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 				animation: page-in 0.25s ease-out both;
 			}
 		</style>
+		if liveProduct {
+			<script>
+				window.rewindLive = true;
+			</script>
+		} else {
+			<script>
+				window.rewindLive = false;
+			</script>
+		}
 		<script>
 			// Parse comma-separated tags into array
 			window.parseTags = function(str) {
@@ -217,10 +239,14 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 			window.beginBulkDelete = function(ids, diskToo) {
 				const list = Array.isArray(ids) ? ids.slice() : [];
 				if (!list.length) return false;
-				const disk = !!diskToo;
-				const msg = 'Delete ' + list.length + ' video(s) from the database'
-					+ (disk ? ' AND remove files from disk' : '')
-					+ '? This cannot be undone.';
+				const live = !!window.rewindLive;
+				const disk = !live && !!diskToo;
+				const noun = live ? 'recording' : 'video';
+				const msg = live
+					? 'Delete ' + list.length + ' ' + noun + (list.length === 1 ? '' : 's') + '? This cannot be undone.'
+					: 'Delete ' + list.length + ' video(s) from the database'
+						+ (disk ? ' AND remove files from disk' : '')
+						+ '? This cannot be undone.';
 				if (!confirm(msg)) return false;
 				window.markVideosDeleting(list);
 				return true;
@@ -252,8 +278,13 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 			data-init="@get('/api/videos/index')"
 		>
 			<div class="mb-6">
-				<h1 class="page-heading tracking-tight mb-1">Archived Videos</h1>
-				<p class="text-sm font-mono text-white/60">Successfully downloaded videos</p>
+				if liveProduct {
+					<h1 class="page-heading tracking-tight mb-1">RECORDINGS</h1>
+					<p class="text-sm font-mono text-white/60">Live recordings ready to clip, stitch, and export in the browser.</p>
+				} else {
+					<h1 class="page-heading tracking-tight mb-1">Archived Videos</h1>
+					<p class="text-sm font-mono text-white/60">Successfully downloaded videos</p>
+				}
 			</div>
 			<!-- User tag filter (loaded via SSE) -->
 			<div data-tag-filter-bar data-init="@get('/api/tags')"></div>
@@ -284,10 +315,12 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 					class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80"
 					data-on:click="@post('/api/videos/bulk-tag')"
 				>Apply Tag</button>
-				<label class="flex items-center gap-1.5 text-xs font-mono text-white/60 cursor-pointer select-none">
-					<input type="checkbox" class="w-3.5 h-3.5 accent-white" data-bind="bulkDeleteDisk"/>
-					Disk too
-				</label>
+				if !liveProduct {
+					<label class="flex items-center gap-1.5 text-xs font-mono text-white/60 cursor-pointer select-none">
+						<input type="checkbox" class="w-3.5 h-3.5 accent-white" data-bind="bulkDeleteDisk"/>
+						Disk too
+					</label>
+				}
 				<button
 					type="button"
 					class="px-3 py-1 text-xs font-mono uppercase tracking-wider border-2 border-red-500/60 text-red-400 hover:bg-red-500/20"
@@ -332,8 +365,8 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 				<div class="flex flex-wrap items-center gap-3 mb-3">
 					<input
 						type="text"
-						placeholder="Search or use intitle:, inurl:, incontext:, intranscript:"
-						aria-label="Search archived videos"
+						placeholder={ searchPlaceholder }
+						aria-label={ searchAriaLabel }
 						aria-describedby="video-search-help"
 						class="flex-1 min-w-48 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none placeholder:text-white/40"
 						data-bind="q"
@@ -356,8 +389,13 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 					>
 						<option value="relevance">Relevance</option>
 						<optgroup label="Date">
-							<option value="newest">Archived: Newest</option>
-							<option value="oldest">Archived: Oldest</option>
+							if liveProduct {
+								<option value="newest">Added: Newest</option>
+								<option value="oldest">Added: Oldest</option>
+							} else {
+								<option value="newest">Archived: Newest</option>
+								<option value="oldest">Archived: Oldest</option>
+							}
 							<option value="published-newest">Published: Newest</option>
 							<option value="published-oldest">Published: Oldest</option>
 						</optgroup>
@@ -504,46 +542,50 @@ templ VideosContent(videos []*db.ListVideosPaginatedRow, creators []*db.ListCrea
 }
 
 templ CatalogCandidates(videos []*db.ListCatalogCandidatesRow) {
-	<section id="catalog-candidates" class="mt-8">
-		if len(videos) > 0 {
-			<div class="flex items-baseline justify-between gap-3 mb-3">
-				<div>
-					<h2 class="sub-heading">Catalog candidates</h2>
-					<p class="font-mono text-xs text-white/40">Transcript or metadata matches that are not downloaded.</p>
-				</div>
-				<span class="font-mono text-xs text-white/40">{ fmt.Sprintf("%d matches", videos[0].TotalCount) }</span>
-			</div>
-			<div class="border-2 border-white/10 divide-y-2 divide-white/10">
-				for _, video := range videos {
-					<div class="p-3 flex items-center justify-between gap-4" data-catalog-video-id={ video.ID.String() }>
-						<div class="min-w-0">
-							<div class="flex items-center gap-2 flex-wrap">
-								<span class="badge">Not downloaded</span>
-								if video.TranscriptMatch {
-									<span class="badge">Transcript</span>
-								}
-								if video.CommentMatch {
-									<span class="badge">Comment</span>
-								}
-								if video.ContextWindowMatch {
-									<span class="badge">Context Window</span>
-								}
-							</div>
-							<p class="font-mono text-sm text-white mt-1 truncate">{ video.Title }</p>
-							<p class="font-mono text-xs text-white/40 truncate">{ video.Uploader }</p>
-						</div>
-						<form method="POST" action="/archive" class="shrink-0">
-							<input type="hidden" name="url" value={ video.Src }/>
-							<button type="submit" class="btn-primary btn-sm">Archive</button>
-						</form>
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	if !liveProduct {
+		<section id="catalog-candidates" class="mt-8">
+			if len(videos) > 0 {
+				<div class="flex items-baseline justify-between gap-3 mb-3">
+					<div>
+						<h2 class="sub-heading">Catalog candidates</h2>
+						<p class="font-mono text-xs text-white/40">Transcript or metadata matches that are not downloaded.</p>
 					</div>
-				}
-			</div>
-		}
-	</section>
+					<span class="font-mono text-xs text-white/40">{ fmt.Sprintf("%d matches", videos[0].TotalCount) }</span>
+				</div>
+				<div class="border-2 border-white/10 divide-y-2 divide-white/10">
+					for _, video := range videos {
+						<div class="p-3 flex items-center justify-between gap-4" data-catalog-video-id={ video.ID.String() }>
+							<div class="min-w-0">
+								<div class="flex items-center gap-2 flex-wrap">
+									<span class="badge">Not downloaded</span>
+									if video.TranscriptMatch {
+										<span class="badge">Transcript</span>
+									}
+									if video.CommentMatch {
+										<span class="badge">Comment</span>
+									}
+									if video.ContextWindowMatch {
+										<span class="badge">Context Window</span>
+									}
+								</div>
+								<p class="font-mono text-sm text-white mt-1 truncate">{ video.Title }</p>
+								<p class="font-mono text-xs text-white/40 truncate">{ video.Uploader }</p>
+							</div>
+							<form method="POST" action="/archive" class="shrink-0">
+								<input type="hidden" name="url" value={ video.Src }/>
+								<button type="submit" class="btn-primary btn-sm">Archive</button>
+							</form>
+						</div>
+					}
+				</div>
+			}
+		</section>
+	}
 }
 
 templ VideosGrid(videos []*db.ListVideosPaginatedRow) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	<div id="videos-grid">
 		if len(videos) > 0 {
 			@ResponsiveGrid("videos") {
@@ -552,7 +594,16 @@ templ VideosGrid(videos []*db.ListVideosPaginatedRow) {
 				}
 			}
 		} else {
-			@EmptyState("video", "No videos match your filters", "Try adjusting your search or filters.")
+			if liveProduct {
+				<div class="empty-state">
+					<i class="fa-sharp fa-solid fa-video empty-state-icon" aria-hidden="true"></i>
+					<h3 class="empty-state-title">No recordings found</h3>
+					<p class="empty-state-description">Try adjusting your search or filters. New live recordings appear here after processing finishes.</p>
+					<a href="/live" class="btn btn-primary btn-sm">Go to Studio</a>
+				</div>
+			} else {
+				@EmptyState("video", "No videos match your filters", "Try adjusting your search or filters.")
+			}
 		}
 	</div>
 }

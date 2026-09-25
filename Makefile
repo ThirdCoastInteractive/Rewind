@@ -12,7 +12,7 @@ PYTHON ?= python
 RUNTIME_FFMPEG_DEBIAN ?= rewind-runtime-ffmpeg-debian:local
 RUNTIME_FFMPEG_ALPINE ?= rewind-runtime-ffmpeg-alpine:local
 
-.PHONY: help up up-fast up-web up-workers up-ml build-cache runtime-bases runtime-bases-force down logs status clean generate sqlc templ assets build test lint lint-template-go-files lint-uuid-parse lint-release e2e release show-notes-migrate show-notes-preflight
+.PHONY: help up up-fast up-web up-workers up-ml build-cache runtime-bases runtime-bases-force down logs status clean generate sqlc templ assets build test test-js lint lint-template-go-files lint-uuid-parse lint-release release-audit release-gates e2e release show-notes-migrate show-notes-preflight
 
 help:
 	@echo "Usage: make [target]"
@@ -34,6 +34,8 @@ help:
 	@echo "  build              Build all Go binaries"
 	@echo "  test               Run Go tests"
 	@echo "  test-tools         Test release guardrails in disposable repositories"
+	@echo "  test-js            Run all JavaScript unit tests"
+	@echo "  release-gates      Run release guardrails and regression tests"
 	@echo "  e2e                Run Playwright E2E tests"
 	@echo "  show-notes-migrate  Backfill collaborative Markdown documents"
 	@echo "  show-notes-preflight Verify every note is safe for workspace cutover"
@@ -169,10 +171,16 @@ test-generation-retry:
 test-tools:
 	bash scripts/test-release.sh
 
+.PHONY: test-js
+test-js:
+	node scripts/test-js.mjs
+
 .PHONY: release-audit
-release-audit:
-	go test -tags=releaseaudit ./internal/integration ./internal/agent ./cmd/web/handlers/api/shownote_api -run 'TestV003|TestFollowupRetains|TestOfflineScene' -count=1
-	node --test static/js/lib/save-queue.test.js static/js/lib/page-scope.test.js static/js/lib/sponsorblock.test.js
+release-audit: test-js
+	go test -p 1 -tags=releaseaudit ./internal/integration ./internal/agent ./cmd/web/handlers/api/shownote_api -run 'TestV003|TestV010|TestFollowupRetains|TestOfflineScene' -count=1
+
+.PHONY: release-gates
+release-gates: test test-stitch-client test-tools lint release-audit integration-test
 
 .PHONY: vision-build vision-test vision-install postgres-vector-build integration-up integration-down integration-test
 VISION_MODEL ?= ViT-B-32__openai
@@ -207,6 +215,7 @@ integration-down:
 integration-test:
 	go test -tags=integration ./internal/integration -count=1 -v
 	go test -tags=integration ./internal/mcp -count=1 -v
+	NETWORK_QUERY_TEST_DSN='postgres://rewind_test:disposable-test-only@127.0.0.1:15439/rewind_test?sslmode=disable' go test ./cmd/web/handlers/content -run TestCommenterNetworkSparseCandidatesSynthetic -count=1 -v
 
 .PHONY: agent-model-test
 agent-model-test:
@@ -247,15 +256,22 @@ lint-release:
 	bash scripts/check-release.sh
 
 lint-template-go-files:
-	@echo "Checking for hand-written .go files in templates..."
-	@FOUND=$$(find cmd/web/templates -name '*.go' ! -name '*_templ.go' 2>/dev/null); \
+	@echo "Checking template source and generated output..."
+	@FOUND=$$(find cmd/web/templates -type f -name '*.go' ! -name '*_templ.go' ! -name '*_test.go' 2>/dev/null | grep -Ev '^(cmd/web/templates/(helpers|investigate_graph|model_picker|network_commenters|network_wiki|video_processing|watch_context)\.go|cmd/web/templates/components/ssr_types\.go)$$' || true); \
 	if [ -n "$$FOUND" ]; then \
-		echo "FAIL: Non-generated .go files found in templates package:"; \
+		echo "FAIL: unexpected hand-written production Go files found in templates package:"; \
 		echo "$$FOUND"; \
-		echo "Move these to pkg/ or cmd/web/viewtypes/"; \
+		echo "Add intentional view support code to the explicit allowlist or move it out of templates."; \
 		exit 1; \
 	fi
-	@echo "OK: templates/ contains only generated files."
+	@FOUND=$$(find cmd/web/templates -name '*.templ' -print 2>/dev/null | while IFS= read -r source; do generated="$${source%.templ}_templ.go"; if [ ! -f "$$generated" ]; then echo "$$source -> $$generated"; fi; done); \
+	if [ -n "$$FOUND" ]; then \
+		echo "FAIL: Generated template output is missing:"; \
+		echo "$$FOUND"; \
+		echo "Run make templ to regenerate template output."; \
+		exit 1; \
+	fi
+	@echo "OK: every .templ file has generated _templ.go output."
 
 lint-uuid-parse:
 	@echo "Checking for inline UUID parsing (use common.RequireUUIDParam)..."

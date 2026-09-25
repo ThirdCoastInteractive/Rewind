@@ -92,14 +92,14 @@ func (q *Queries) GetHomeStats(ctx context.Context) (*GetHomeStatsRow, error) {
 }
 
 const getVideoByID = `-- name: GetVideoByID :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 FROM videos
 WHERE id = $1
 `
 
 // GetVideoByID returns a video by ID
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 //	FROM videos
 //	WHERE id = $1
 func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, error) {
@@ -146,6 +146,7 @@ func (q *Queries) GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, err
 		&i.SubtitleLastError,
 		&i.TranscriptVersion,
 		&i.CommentCount,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -680,7 +681,7 @@ func (q *Queries) ListRecentDownloadJobs(ctx context.Context) ([]*DownloadJob, e
 }
 
 const listRecentVideos = `-- name: ListRecentVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 FROM videos
 WHERE media <> 'metadata'
 ORDER BY created_at DESC
@@ -689,7 +690,7 @@ LIMIT 15
 
 // ListRecentVideos returns recent videos (by archive date)
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 //	FROM videos
 //	WHERE media <> 'metadata'
 //	ORDER BY created_at DESC
@@ -744,6 +745,7 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 			&i.SubtitleLastError,
 			&i.TranscriptVersion,
 			&i.CommentCount,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -756,7 +758,7 @@ func (q *Queries) ListRecentVideos(ctx context.Context) ([]*Video, error) {
 }
 
 const listRecentlyPublishedVideos = `-- name: ListRecentlyPublishedVideos :many
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 FROM videos
 WHERE media <> 'metadata'
   AND upload_date IS NOT NULL
@@ -766,7 +768,7 @@ LIMIT 15
 
 // ListRecentlyPublishedVideos returns videos sorted by original publish date
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 //	FROM videos
 //	WHERE media <> 'metadata'
 //	  AND upload_date IS NOT NULL
@@ -822,6 +824,7 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 			&i.SubtitleLastError,
 			&i.TranscriptVersion,
 			&i.CommentCount,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -836,8 +839,8 @@ func (q *Queries) ListRecentlyPublishedVideos(ctx context.Context) ([]*Video, er
 const listVideosPaginated = `-- name: ListVideosPaginated :many
 WITH params AS (
     SELECT
-        NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
-        NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+        NULLIF(btrim(COALESCE($21::text, '')), '') AS tsq,
+        NULLIF(btrim(COALESCE($22::text, '')), '') AS raw
 ),
 field_clauses AS (
     SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
@@ -1114,29 +1117,31 @@ WHERE
     -- Has markers filter
     AND ($16::boolean IS NULL OR $16 = FALSE
          OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
+    -- Tenant filter: NULL narg is OSS (all videos); RewindLive sets Actor.TenantID.
+    AND ($17::uuid IS NULL OR v.tenant_id = $17)
 ORDER BY
-    CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
+    CASE WHEN $18 = 'relevance' THEN r.rank END DESC NULLS LAST,
     -- Date sorts (archived)
-    CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
-    CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+    CASE WHEN $18 = 'newest' THEN v.created_at END DESC NULLS LAST,
+    CASE WHEN $18 = 'oldest' THEN v.created_at END ASC NULLS LAST,
     -- Date sorts (published)
-    CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-    CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+    CASE WHEN $18 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+    CASE WHEN $18 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
     -- Title sorts
-    CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
-    CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+    CASE WHEN $18 = 'alpha' THEN v.title END ASC NULLS LAST,
+    CASE WHEN $18 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
     -- Duration sorts
-    CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-    CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+    CASE WHEN $18 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+    CASE WHEN $18 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
     -- Activity sorts
-    CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-    CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $18 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $18 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $18 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+    CASE WHEN $18 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
     -- Default fallback
     v.created_at DESC
-LIMIT $19
-OFFSET $18
+LIMIT $20
+OFFSET $19
 `
 
 type ListVideosPaginatedParams struct {
@@ -1156,6 +1161,7 @@ type ListVideosPaginatedParams struct {
 	DateTo           pgtype.Date   `db:"date_to" json:"DateTo"`
 	HasClips         *bool         `db:"has_clips" json:"HasClips"`
 	HasMarkers       *bool         `db:"has_markers" json:"HasMarkers"`
+	TenantID         pgtype.UUID   `db:"tenant_id" json:"TenantID"`
 	SortOrder        interface{}   `db:"sort_order" json:"SortOrder"`
 	PageOffset       int32         `db:"page_offset" json:"PageOffset"`
 	PageLimit        int32         `db:"page_limit" json:"PageLimit"`
@@ -1202,8 +1208,8 @@ type ListVideosPaginatedRow struct {
 //
 //	WITH params AS (
 //	    SELECT
-//	        NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
-//	        NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+//	        NULLIF(btrim(COALESCE($21::text, '')), '') AS tsq,
+//	        NULLIF(btrim(COALESCE($22::text, '')), '') AS raw
 //	),
 //	field_clauses AS (
 //	    SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
@@ -1480,29 +1486,31 @@ type ListVideosPaginatedRow struct {
 //	    -- Has markers filter
 //	    AND ($16::boolean IS NULL OR $16 = FALSE
 //	         OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
+//	    -- Tenant filter: NULL narg is OSS (all videos); RewindLive sets Actor.TenantID.
+//	    AND ($17::uuid IS NULL OR v.tenant_id = $17)
 //	ORDER BY
-//	    CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'relevance' THEN r.rank END DESC NULLS LAST,
 //	    -- Date sorts (archived)
-//	    CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
-//	    CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+//	    CASE WHEN $18 = 'newest' THEN v.created_at END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'oldest' THEN v.created_at END ASC NULLS LAST,
 //	    -- Date sorts (published)
-//	    CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-//	    CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+//	    CASE WHEN $18 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
 //	    -- Title sorts
-//	    CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
-//	    CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'alpha' THEN v.title END ASC NULLS LAST,
+//	    CASE WHEN $18 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
 //	    -- Duration sorts
-//	    CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-//	    CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+//	    CASE WHEN $18 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
 //	    -- Activity sorts
-//	    CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-//	    CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+//	    CASE WHEN $18 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
 //	    -- Default fallback
 //	    v.created_at DESC
-//	LIMIT $19
-//	OFFSET $18
+//	LIMIT $20
+//	OFFSET $19
 func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPaginatedParams) ([]*ListVideosPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listVideosPaginated,
 		arg.Sources,
@@ -1521,6 +1529,7 @@ func (q *Queries) ListVideosPaginated(ctx context.Context, arg *ListVideosPagina
 		arg.DateTo,
 		arg.HasClips,
 		arg.HasMarkers,
+		arg.TenantID,
 		arg.SortOrder,
 		arg.PageOffset,
 		arg.PageLimit,

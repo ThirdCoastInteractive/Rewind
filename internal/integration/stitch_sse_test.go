@@ -60,6 +60,7 @@ func TestStitchHTTPEventsAuthoritativeProjectSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreignResp.Body.Close()
+	// Projects are owner-only, so another user cannot open the event stream.
 	if foreignResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("foreign stream status=%d", foreignResp.StatusCode)
 	}

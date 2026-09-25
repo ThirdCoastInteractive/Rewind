@@ -58,7 +58,9 @@ import (
 	rewindmcp "thirdcoast.systems/rewind/internal/mcp"
 	"thirdcoast.systems/rewind/internal/runtimecfg"
 	workspace "thirdcoast.systems/rewind/internal/shownote"
+	"thirdcoast.systems/rewind/internal/turn"
 	"thirdcoast.systems/rewind/pkg/encryption"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // Webserver is the main HTTP server that wires together routing, middleware, and all handler groups.
@@ -77,6 +79,7 @@ type Webserver struct {
 	showNoteCollab      *ygowebsocket.Server
 	collaborationAccess collaborationAccess
 	allowedExtensionIDs map[string]struct{}
+	turnProvider        *turn.Provider
 }
 
 // Shutdown drains persisted collaboration updates before closing HTTP peers.
@@ -85,14 +88,19 @@ func (s *Webserver) Shutdown(ctx context.Context) error {
 }
 
 // NewWebserver initializes the Echo server, registers all routes and middleware, and returns a ready-to-start Webserver.
-func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionManager *encryption.Manager, sessionManager *auth.SessionManager) (*Webserver, error) {
+func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionManager *encryption.Manager, sessionManager *auth.SessionManager, providers ...*turn.Provider) (*Webserver, error) {
 	if err := runtimecfg.Start(ctx, dbc, "web"); err != nil {
 		return nil, err
 	}
 	e := echo.New()
+	if plugin.LiveIngest() != nil {
+		e.Pre(redirectPublicAliases)
+		slog.Info("built-in assistant disabled; connect an external assistant from Settings")
+	} else {
+		agent_api.Register(e, sessionManager, dbc)
+		agent.Start(ctx, dbc)
+	}
 	runtime_api.Register(e, sessionManager, dbc)
-	agent_api.Register(e, sessionManager, dbc)
-	agent.Start(ctx, dbc)
 	events.Default.Start(ctx, dbc)
 	go compilation.Run(ctx, dbc)
 	vision_api.Register(e, sessionManager, dbc)
@@ -163,6 +171,9 @@ func NewWebserver(ctx context.Context, dbc *db.DatabaseConnection, encryptionMan
 		showNoteHub:         shownote.NewHub(),
 		showNoteCollab:      collab,
 		allowedExtensionIDs: parseCommaSeparatedSet(os.Getenv("EXTENSION_ALLOWED_CLIENT_IDS")),
+	}
+	if len(providers) > 0 {
+		webserver.turnProvider = providers[0]
 	}
 	shownote.StartRoomEventNotifications(ctx, dbc, webserver.showNoteHub)
 
@@ -335,6 +346,17 @@ func (s *Webserver) setupMiddleware() error {
 			ctx := context.WithValue(c.Request().Context(), ctxkeys.AccessLevel, string(accessLevel))
 			ctx = context.WithValue(ctx, ctxkeys.RegistrationEnabled, regEnabled)
 			ctx = context.WithValue(ctx, ctxkeys.StaticVersion, s.staticCache.DistVersion())
+			ctx = context.WithValue(ctx, ctxkeys.LiveProduct, plugin.LiveIngest() != nil)
+			if authn := plugin.Auth(); authn != nil {
+				if actor, err := authn.Current(c.Request()); err == nil && actor != nil {
+					ctx = plugin.WithTenantScope(ctx, actor.TenantID, plugin.LiveIngest() != nil)
+				} else {
+					ctx = plugin.WithTenantScope(ctx, "", plugin.LiveIngest() != nil)
+				}
+			} else {
+				ctx = plugin.WithTenantScope(ctx, "", plugin.LiveIngest() != nil)
+			}
+			appearanceTheme, appearanceMode := "", ""
 			if accessLevel != auth.AccessUnauthenticated {
 				userID, _, _ := s.sessionManager.GetSession(c.Request())
 				var uid pgtype.UUID
@@ -343,10 +365,17 @@ func (s *Webserver) setupMiddleware() error {
 						var prefs map[string]any
 						if json.Unmarshal(raw, &prefs) == nil {
 							ctx = context.WithValue(ctx, ctxkeys.InterfacePreferences, prefs)
+							if value, ok := prefs["theme"].(string); ok {
+								appearanceTheme = value
+							}
+							if value, ok := prefs["color_mode"].(string); ok {
+								appearanceMode = value
+							}
 						}
 					}
 				}
 			}
+			ctx = plugin.WithAppearance(ctx, appearanceTheme, appearanceMode)
 			c.SetRequest(c.Request().WithContext(ctx))
 
 			return next(c)
@@ -431,7 +460,7 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.GET("/tags", tag_api.HandleListTags(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/bulk-tag", tag_api.HandleBulkTag(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/bulk-delete", video_api.HandleBulkDelete(s.sessionManager, s.dbc))
-	apiGroup.GET("/videos/:id/transcript/render", video_api.HandleTranscriptRender(s.sessionManager))
+	apiGroup.GET("/videos/:id/transcript/render", video_api.HandleTranscriptRender(s.sessionManager, s.dbc))
 	apiGroup.GET("/videos/:id/context-windows", video_api.HandleContextWindowsList(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/context-windows", video_api.HandleContextWindowCreate(s.sessionManager, s.dbc))
 	apiGroup.POST("/videos/:id/generation-retry", video_api.HandleGenerationRetry(s.sessionManager, s.dbc))
@@ -514,6 +543,7 @@ func (s *Webserver) registerRoutes() error {
 	apiGroup.PUT("/show-notes/:id/reviews/:threadId/status", shownote_api.HandleReviewStatus(s.sessionManager, s.dbc, s.showNoteCollab))
 	apiGroup.POST("/show-notes/:id/references/:referenceId/materialize", shownote_api.HandleMaterializeReference(s.sessionManager, s.dbc, s.showNoteCollab))
 	apiGroup.GET("/show-notes/:id/signal", shownote_api.HandleSignalProxy(s.sessionManager, s.dbc)) // WebRTC signaling -> SFU
+	apiGroup.GET("/show-notes/:id/ice", shownote_api.HandleICEConfig(s.sessionManager, s.dbc, s.turnProvider))
 	apiGroup.POST("/show-notes/:id/hosts", s.collaborationAccess.changingHosts(shownote_api.HandleAddHost(s.sessionManager, s.dbc)))
 	apiGroup.DELETE("/show-notes/:id/hosts/:userId", s.collaborationAccess.changingHosts(shownote_api.HandleRemoveHost(s.sessionManager, s.dbc)))
 	apiGroup.PUT("/show-notes/:id", shownote_api.HandleUpdateShowNote(s.sessionManager, s.dbc))

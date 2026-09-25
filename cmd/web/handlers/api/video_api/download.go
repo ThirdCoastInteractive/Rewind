@@ -12,6 +12,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleDownload serves the video file for download.
@@ -26,22 +27,32 @@ func HandleDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 			return err
 		}
 
-		videoData, err := dbc.Queries(c.Request().Context()).GetVideoWithDownloadJob(c.Request().Context(), videoUUID)
+		videoData, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
 		if err != nil {
-			return c.String(404, "video not found")
+			return err
 		}
 
 		videoID := videoUUID.String()
-		dir, _ := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-		videoPath := ""
-		for _, ext := range VideoExtensions {
-			p := filepath.Join(dir, videoID+".video"+ext)
-			if _, err := os.Stat(p); err == nil {
-				videoPath = p
+		b := plugin.Blobs()
+		if b == nil {
+			return c.String(404, "video file not available")
+		}
+		var key string
+		for _, k := range plugin.MasterKeys(videoID) {
+			if p, ok := b.LocalPath(k); ok {
+				if _, err := os.Stat(p); err == nil {
+					key = k
+					break
+				}
+				continue
+			}
+			if r, _, err := b.Open(c.Request().Context(), k); err == nil {
+				_ = r.Close()
+				key = k
 				break
 			}
 		}
-		if strings.TrimSpace(videoPath) == "" {
+		if key == "" {
 			return c.String(404, "video file not available")
 		}
 
@@ -56,7 +67,10 @@ func HandleDownload(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fil
 		if strings.TrimSpace(safeTitle) == "" {
 			safeTitle = "video"
 		}
-		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s%s\"", safeTitle, filepath.Ext(videoPath)))
-		return fs.ServeDiskFileWithCache(c, videoPath, "application/octet-stream", "private, no-cache", fileserver.ETagWeakStat)
+		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s%s\"", safeTitle, filepath.Ext(key)))
+		if err := fs.ServeKey(c, key, "application/octet-stream", "private, no-cache", fileserver.ETagWeakStat); err != nil {
+			return c.String(404, "video file not available")
+		}
+		return nil
 	}
 }

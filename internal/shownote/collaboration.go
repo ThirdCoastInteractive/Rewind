@@ -1,8 +1,8 @@
 package shownote
 
 import (
+	"bytes"
 	"context"
- "bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +15,7 @@ import (
 	"github.com/reearth/ygo/crdt"
 
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // PostgresPersistence stores Yjs updates, snapshots, Markdown projections, and
@@ -36,6 +37,10 @@ func (p *PostgresPersistence) LoadDoc(room string) ([]byte, error) {
 
 func (p *PostgresPersistence) loadDoc(ctx context.Context, room string) ([]byte, error) {
 	noteID, err := parseRoomID(room)
+	if err != nil {
+		return nil, err
+	}
+	ctx, err = collaborationTenantContext(ctx, p.dbc, noteID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +82,10 @@ func (p *PostgresPersistence) StoreUpdateContext(ctx context.Context, room strin
 	if err != nil {
 		return err
 	}
+	ctx, err = collaborationTenantContext(ctx, p.dbc, noteID)
+	if err != nil {
+		return err
+	}
 	lockValue, _ := p.locks.LoadOrStore(room, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
@@ -102,12 +111,14 @@ func (p *PostgresPersistence) StoreUpdateContext(ctx context.Context, room strin
 	if err != nil {
 		return err
 	}
-	before := crdt.EncodeStateAsUpdateV1(doc,nil)
+	before := crdt.EncodeStateAsUpdateV1(doc, nil)
 	if err := crdt.ApplyUpdateV1(doc, update, nil); err != nil {
 		return fmt.Errorf("apply incoming show-note update: %w", err)
 	}
 
-	if bytes.Equal(before,crdt.EncodeStateAsUpdateV1(doc,nil)){return nil}
+	if bytes.Equal(before, crdt.EncodeStateAsUpdateV1(doc, nil)) {
+		return nil
+	}
 	revision := document.Revision + 1
 	markdown := doc.GetText("markdown").ToString()
 	if err := txq.AppendShowNoteDocumentUpdate(ctx, &db.AppendShowNoteDocumentUpdateParams{
@@ -146,6 +157,10 @@ func (p *PostgresPersistence) Compact(ctx context.Context, room string) error {
 	if err != nil {
 		return err
 	}
+	ctx, err = collaborationTenantContext(ctx, p.dbc, noteID)
+	if err != nil {
+		return err
+	}
 	lockValue, _ := p.locks.LoadOrStore(room, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
@@ -181,6 +196,29 @@ func (p *PostgresPersistence) Compact(ctx context.Context, room string) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// collaborationTenantContext derives Live workspace scope from the note room
+// for websocket/background callbacks that cannot carry the browser context.
+// It never falls back to OSS rows in a Live process.
+func collaborationTenantContext(ctx context.Context, dbc *db.DatabaseConnection, noteID pgtype.UUID) (context.Context, error) {
+	if plugin.LiveIngest() == nil {
+		return ctx, nil
+	}
+	if _, scoped := plugin.TenantScope(ctx); !scoped {
+		note, err := dbc.Queries(ctx).GetShowNote(ctx, noteID)
+		if err != nil {
+			return ctx, err
+		}
+		if !note.TenantID.Valid || note.TenantID == (pgtype.UUID{}) {
+			return ctx, ErrTenantRequired
+		}
+		ctx = plugin.WithTenantScope(ctx, note.TenantID.String(), true)
+	}
+	if _, err := RequireTenant(ctx, dbc, noteID); err != nil {
+		return ctx, err
+	}
+	return ctx, nil
 }
 
 // EncodeInitialDocument creates the initial Y.Text named markdown and returns

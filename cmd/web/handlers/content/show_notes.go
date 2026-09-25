@@ -11,7 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/internal/scene"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
-	workspace "thirdcoast.systems/rewind/internal/shownote"
+	"thirdcoast.systems/rewind/internal/shownote"
 )
 
 // HandleShowNotesLibrary renders the show-note library (notes the user owns or hosts).
@@ -38,13 +38,16 @@ func HandleShowNoteCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 			return c.Redirect(302, "/login")
 		}
 		ctx := c.Request().Context()
+		tenantID, err := shownote.TenantForContext(ctx)
+		if err != nil {
+			return c.String(403, "workspace required")
+		}
 		title := strings.TrimSpace(c.FormValue("title"))
 		if title == "" {
 			title = "Untitled"
 		}
 		note, err := dbc.Queries(ctx).CreateShowNote(ctx, &db.CreateShowNoteParams{
-			OwnerID: userUUID,
-			Title:   title,
+			OwnerID: userUUID, Title: title, TenantID: tenantID,
 		})
 		if err != nil {
 			return c.String(500, "failed to create show note")
@@ -85,7 +88,7 @@ func handleShowNoteWorkspacePage(sm *auth.SessionManager, dbc *db.DatabaseConnec
 		}
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
-		note, err := q.GetShowNote(ctx, noteUUID)
+		note, err := shownote.RequireTenant(ctx, dbc, noteUUID)
 		if err != nil {
 			return c.Redirect(302, "/show-notes")
 		}
@@ -104,7 +107,7 @@ func handleShowNoteWorkspacePage(sm *auth.SessionManager, dbc *db.DatabaseConnec
 				return echo.NewHTTPError(404, "unknown workspace panel")
 			}
 		}
-		if err := workspace.EnsureWorkspaceDocument(ctx, dbc, noteUUID); err != nil {
+		if err := shownote.EnsureWorkspaceDocument(ctx, dbc, noteUUID); err != nil {
 			return echo.NewHTTPError(500, "workspace migration failed").SetInternal(err)
 		}
 		code := ""

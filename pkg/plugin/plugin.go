@@ -112,6 +112,7 @@ const (
 	KindContext    = "context_windows"
 	KindSpeechTone = "speech_tone"
 	KindRefine     = "refine_boundaries"
+	KindDiarize    = "diarize"
 )
 
 // ML is the only enqueue path for transcription, embedding, and classification.
@@ -161,6 +162,13 @@ var (
 	mu      sync.RWMutex
 	current Set
 )
+
+// Reset clears the process plugin set. Tests only.
+func Reset() {
+	mu.Lock()
+	defer mu.Unlock()
+	current = Set{}
+}
 
 // Use merges non-nil fields into the process plugin set.
 func Use(s Set) {

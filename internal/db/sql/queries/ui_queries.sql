@@ -304,6 +304,8 @@ WHERE
     -- Has markers filter
     AND (sqlc.narg('has_markers')::boolean IS NULL OR sqlc.narg('has_markers') = FALSE
          OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
+    -- Tenant filter: NULL narg is OSS (all videos); RewindLive sets Actor.TenantID.
+    AND (sqlc.narg('tenant_id')::uuid IS NULL OR v.tenant_id = sqlc.narg('tenant_id'))
 ORDER BY
     CASE WHEN sqlc.arg(sort_order) = 'relevance' THEN r.rank END DESC NULLS LAST,
     -- Date sorts (archived)

@@ -20,8 +20,6 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 RUN --mount=type=cache,id=rewind-go-mod,target=/go/pkg/mod go mod download
 COPY cmd/ml ./cmd/ml
-# plugin builtins still import the cookie session manager.
-COPY cmd/web/auth ./cmd/web/auth
 COPY internal ./internal
 COPY pkg ./pkg
 RUN --mount=type=cache,id=rewind-go-mod,target=/go/pkg/mod --mount=type=cache,id=rewind-go-build,target=/root/.cache/go-build \
@@ -77,12 +75,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -m -s /bin/bash appuser
 WORKDIR /app
-RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /runtime && \
+RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /models/diarize /runtime && \
     chown -R appuser:appuser /downloads /models /runtime
 COPY --from=whisper-cpu-builder /whisper-cli /usr/local/bin/whisper-cli
 COPY services/vision/ /opt/vision/
 COPY services/textcls/ /opt/textcls/
 COPY services/alignment/ /opt/alignment/
+COPY services/diarize/ /opt/diarize/
 COPY --link --from=go-builder /app/ml ./
 USER appuser
 ENV WHISPER_CMD=whisper-cli
@@ -96,13 +95,18 @@ ENV VISION_URL=http://127.0.0.1:3003
 ENV VISION_MODEL_DIR=/models/vision
 ENV VISION_APP_DIR=/opt/vision
 ENV TEXTCLS_APP_DIR=/opt/textcls
-VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/runtime", "/downloads"]
+ENV DIARIZE_APP_DIR=/opt/diarize
+ENV DIARIZE_URL=http://127.0.0.1:3005
+ENV DIARIZE_MODEL_DIR=/models/diarize
+VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/models/diarize", "/runtime", "/downloads"]
 CMD ["./ml"]
 
 # ==============================================================================
 # TARGET: NVIDIA CUDA
 # ==============================================================================
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS runtime-cuda
+# ONNX Runtime's CUDA wheel requires cuDNN 9; the plain CUDA runtime image
+# provides CUDA libraries but does not include libcudnn.so.9.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime-cuda
 LABEL org.opencontainers.image.source="https://github.com/ThirdCoastInteractive/Rewind"
 LABEL org.opencontainers.image.description="Rewind ML worker (whisper.cpp CUDA; Ollama/vision downloaded at start)"
 LABEL org.opencontainers.image.licenses="MIT"
@@ -112,13 +116,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -m -s /bin/bash appuser
 WORKDIR /app
-RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /runtime && \
+RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /models/diarize /runtime && \
     chown -R appuser:appuser /downloads /models /runtime
 COPY --from=whisper-cuda-builder /whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-cuda-builder /whisper-libs/ /usr/local/lib/
 RUN ldconfig
 COPY services/vision/ /opt/vision/
 COPY services/textcls/ /opt/textcls/
+COPY services/alignment/ /opt/alignment/
+COPY services/diarize/ /opt/diarize/
 COPY --link --from=go-builder /app/ml ./
 USER appuser
 ENV WHISPER_CMD=whisper-cli
@@ -132,9 +138,12 @@ ENV VISION_URL=http://127.0.0.1:3003
 ENV VISION_MODEL_DIR=/models/vision
 ENV VISION_APP_DIR=/opt/vision
 ENV TEXTCLS_APP_DIR=/opt/textcls
+ENV DIARIZE_APP_DIR=/opt/diarize
+ENV DIARIZE_URL=http://127.0.0.1:3005
+ENV DIARIZE_MODEL_DIR=/models/diarize
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
-VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/runtime", "/downloads"]
+VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/models/diarize", "/runtime", "/downloads"]
 CMD ["./ml"]
 
 # ==============================================================================
@@ -150,11 +159,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -m -s /bin/bash appuser
 WORKDIR /app
-RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /runtime && \
+RUN mkdir -p /downloads /models/whisper /models/ollama /models/vision /models/diarize /runtime && \
     chown -R appuser:appuser /downloads /models /runtime
 COPY --from=whisper-rocm-builder /whisper-cli /usr/local/bin/whisper-cli
 COPY services/vision/ /opt/vision/
 COPY services/textcls/ /opt/textcls/
+COPY services/alignment/ /opt/alignment/
+COPY services/diarize/ /opt/diarize/
 COPY --link --from=go-builder /app/ml ./
 USER appuser
 ENV WHISPER_CMD=whisper-cli
@@ -169,7 +180,10 @@ ENV VISION_URL=http://127.0.0.1:3003
 ENV VISION_MODEL_DIR=/models/vision
 ENV VISION_APP_DIR=/opt/vision
 ENV TEXTCLS_APP_DIR=/opt/textcls
-VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/runtime", "/downloads"]
+ENV DIARIZE_APP_DIR=/opt/diarize
+ENV DIARIZE_URL=http://127.0.0.1:3005
+ENV DIARIZE_MODEL_DIR=/models/diarize
+VOLUME ["/models/whisper", "/models/ollama", "/models/vision", "/models/diarize", "/runtime", "/downloads"]
 CMD ["./ml"]
 
 FROM runtime-cpu

@@ -173,8 +173,9 @@ WHERE $1::text <> ''
   AND ($3::text IS NULL OR v.uploader = $3)
   AND ($4::uuid IS NULL OR ch.creator_id = $4)
   AND ($5::uuid IS NULL OR ch.id = $5)
+  AND ($6::uuid IS NULL OR v.tenant_id = $6)
 ORDER BY rank DESC,vt.video_id,vt.lang
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type SearchTranscriptsParams struct {
@@ -183,6 +184,7 @@ type SearchTranscriptsParams struct {
 	Uploader   *string     `db:"uploader" json:"Uploader"`
 	CreatorID  pgtype.UUID `db:"creator_id" json:"CreatorID"`
 	ChannelID  pgtype.UUID `db:"channel_id" json:"ChannelID"`
+	TenantID   pgtype.UUID `db:"tenant_id" json:"TenantID"`
 	PageOffset int32       `db:"page_offset" json:"PageOffset"`
 	PageLimit  int32       `db:"page_limit" json:"PageLimit"`
 }
@@ -213,8 +215,9 @@ type SearchTranscriptsRow struct {
 //	  AND ($3::text IS NULL OR v.uploader = $3)
 //	  AND ($4::uuid IS NULL OR ch.creator_id = $4)
 //	  AND ($5::uuid IS NULL OR ch.id = $5)
+//	  AND ($6::uuid IS NULL OR v.tenant_id = $6)
 //	ORDER BY rank DESC,vt.video_id,vt.lang
-//	LIMIT $7 OFFSET $6
+//	LIMIT $8 OFFSET $7
 func (q *Queries) SearchTranscripts(ctx context.Context, arg *SearchTranscriptsParams) ([]*SearchTranscriptsRow, error) {
 	rows, err := q.db.Query(ctx, searchTranscripts,
 		arg.Tsquery,
@@ -222,6 +225,7 @@ func (q *Queries) SearchTranscripts(ctx context.Context, arg *SearchTranscriptsP
 		arg.Uploader,
 		arg.CreatorID,
 		arg.ChannelID,
+		arg.TenantID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

@@ -81,7 +81,11 @@ func searchTranscriptPage(dbc *db.DatabaseConnection, compact bool) func(context
 		if err != nil {
 			return nil, nil, err
 		}
-		rows, err := dbc.Queries(ctx).SearchTranscripts(ctx, &db.SearchTranscriptsParams{VideoID: videoIDFilter, Tsquery: tsquery, CreatorID: creatorID, ChannelID: channelID, PageLimit: 200, PageOffset: args.Offset})
+		tenantID, _, err := workspaceTenant(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		rows, err := dbc.Queries(ctx).SearchTranscripts(ctx, &db.SearchTranscriptsParams{VideoID: videoIDFilter, Tsquery: tsquery, CreatorID: creatorID, ChannelID: channelID, TenantID: tenantID, PageLimit: 200, PageOffset: args.Offset})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -363,6 +367,9 @@ func getContextWindows(dbc *db.DatabaseConnection) func(context.Context, *mcpsdk
 		if err != nil {
 			return nil, nil, err
 		}
+		if err = requireWorkspaceVideo(ctx, dbc.Queries(ctx), id); err != nil {
+			return nil, nil, err
+		}
 		var start, end *float64
 		if args.Start != nil {
 			s := float64(*args.Start)
@@ -599,6 +606,9 @@ func saveCompilationPlan(dbc *db.DatabaseConnection) func(context.Context, *mcps
 			return nil, nil, err
 		}
 		defer tx.Rollback(ctx)
+		if err = requireWorkspaceSegments(ctx, q, args.Segments); err != nil {
+			return nil, nil, err
+		}
 		plan, err := q.CreateCompilationPlan(ctx, &db.CreateCompilationPlanParams{CreatedBy: tokenFrom(ctx).UserID, CreatorID: creatorID, SourceQuery: args.Query, Title: strings.TrimSpace(args.Title)})
 		if err != nil {
 			return nil, nil, err
@@ -641,6 +651,9 @@ func editCompilationPlan(dbc *db.DatabaseConnection, appendSegments bool) func(c
 		}
 		if current.CreatedBy != tokenFrom(ctx).UserID {
 			return nil, nil, fmt.Errorf("plan access denied")
+		}
+		if err = requireWorkspaceSegments(ctx, q, args.Segments); err != nil {
+			return nil, nil, err
 		}
 		if current.Revision != args.Revision {
 			return nil, nil, fmt.Errorf("revision conflict: current revision is %d", current.Revision)

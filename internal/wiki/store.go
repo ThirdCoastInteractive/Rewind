@@ -9,24 +9,103 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // ErrRevisionConflict is returned when ExpectedRevision does not match the tip.
 var ErrRevisionConflict = errors.New("wiki revision conflict")
 
+// ErrTenantRequired rejects Live writes that lack an authenticated workspace.
+var ErrTenantRequired = errors.New("wiki tenant is required")
+
 // Store persists wiki pages against Postgres.
 type Store struct {
-	db *db.DatabaseConnection
+	db     *db.DatabaseConnection
+	tenant pgtype.UUID
 }
 
 // New returns a Store bound to dbc.
 func New(dbc *db.DatabaseConnection) *Store {
-	return &Store{db: dbc}
+	return &Store{db: dbc, tenant: db.OSSTenant()}
+}
+
+// NewForTenant returns a wiki store scoped to one workspace tenant.
+func NewForTenant(dbc *db.DatabaseConnection, tenant pgtype.UUID) *Store {
+	return &Store{db: dbc, tenant: tenant}
+}
+
+func (s *Store) scopedTenant(ctx context.Context) pgtype.UUID {
+	if _, scoped := plugin.TenantScope(ctx); scoped {
+		return TenantFromContext(ctx)
+	}
+	return s.tenant
+}
+
+// tenantFor enforces workspace scope for every Live operation. OSS keeps its
+// historical zero UUID when the Live plugin is not installed.
+func (s *Store) tenantFor(ctx context.Context) (pgtype.UUID, error) {
+	if plugin.LiveIngest() == nil {
+		return s.scopedTenant(ctx), nil
+	}
+	raw, scoped := plugin.TenantScope(ctx)
+	if !scoped {
+		return pgtype.UUID{}, ErrTenantRequired
+	}
+	tenant := db.ParseTenant(raw)
+	if isZeroTenant(tenant) {
+		return pgtype.UUID{}, ErrTenantRequired
+	}
+	return tenant, nil
+}
+
+// NewForContext scopes a store to the request tenant. Live requests without a
+// valid tenant receive an unmatchable UUID instead of falling back to OSS rows.
+func NewForContext(dbc *db.DatabaseConnection, ctx context.Context) *Store {
+	return NewForTenant(dbc, TenantFromContext(ctx))
+}
+
+// TenantFromContext returns the database tenant for a request or background
+// operation, failing closed for Live contexts without a tenant.
+func TenantFromContext(ctx context.Context) pgtype.UUID {
+	tenant, scoped := plugin.TenantScope(ctx)
+	if !scoped {
+		return db.OSSTenant()
+	}
+	if tenant == "" {
+		return deadTenant()
+	}
+	parsed := db.ParseTenant(tenant)
+	if !parsed.Valid || isZeroTenant(parsed) {
+		return deadTenant()
+	}
+	return parsed
+}
+
+func isZeroTenant(u pgtype.UUID) bool {
+	if !u.Valid {
+		return true
+	}
+	for _, b := range u.Bytes {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func deadTenant() pgtype.UUID {
+	var u pgtype.UUID
+	_ = u.Scan("ffffffff-ffff-ffff-ffff-ffffffffffff")
+	return u
 }
 
 // Put creates or updates a page inside a transaction. Missing page + ExpectedRevision=0
 // inserts revision 1. Existing pages require ExpectedRevision == current tip.
 func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return Page{}, err
+	}
 	if !ValidTree(in.Tree) {
 		return Page{}, fmt.Errorf("unknown tree %q", in.Tree)
 	}
@@ -50,7 +129,7 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 	}
 	defer tx.Rollback(ctx)
 
-	existing, err := q.GetWikiPage(ctx, &db.GetWikiPageParams{Tree: in.Tree, Slug: slug})
+	existing, err := q.GetWikiPage(ctx, &db.GetWikiPageParams{TenantID: tenant, Tree: in.Tree, Slug: slug})
 	missing := errors.Is(err, pgx.ErrNoRows)
 	if err != nil && !missing {
 		return Page{}, err
@@ -65,6 +144,7 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 			return Page{}, fmt.Errorf("%w: page does not exist", ErrRevisionConflict)
 		}
 		page, err = q.InsertWikiPage(ctx, &db.InsertWikiPageParams{
+			TenantID:  tenant,
 			Tree:      in.Tree,
 			Slug:      slug,
 			Title:     in.Title,
@@ -85,6 +165,7 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 		}
 		prevBody = existing.Body
 		page, err = q.UpdateWikiPage(ctx, &db.UpdateWikiPageParams{
+			TenantID:         tenant,
 			Title:            in.Title,
 			Body:             in.Body,
 			CreatorID:        in.CreatorID,
@@ -103,6 +184,7 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 	}
 
 	_, err = q.InsertWikiRevision(ctx, &db.InsertWikiRevisionParams{
+		TenantID:      tenant,
 		Tree:          page.Tree,
 		Slug:          page.Slug,
 		Revision:      page.Revision,
@@ -122,11 +204,12 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 		return Page{}, err
 	}
 
-	if err := q.DeleteWikiLinksForPage(ctx, &db.DeleteWikiLinksForPageParams{Tree: page.Tree, Slug: page.Slug}); err != nil {
+	if err := q.DeleteWikiLinksForPage(ctx, &db.DeleteWikiLinksForPageParams{TenantID: tenant, Tree: page.Tree, Slug: page.Slug}); err != nil {
 		return Page{}, err
 	}
 	for _, link := range ParseLinks(page.Body, page.Tree) {
 		if err := q.InsertWikiLink(ctx, &db.InsertWikiLinkParams{
+			TenantID: tenant,
 			FromTree: page.Tree,
 			FromSlug: page.Slug,
 			ToTree:   link.Tree,
@@ -144,8 +227,12 @@ func (s *Store) Put(ctx context.Context, in PutInput) (Page, error) {
 
 // Get loads a page tip with outgoing links and backlinks.
 func (s *Store) Get(ctx context.Context, tree, slug string) (Page, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return Page{}, err
+	}
 	slug = Slug(slug)
-	row, err := s.db.Queries(ctx).GetWikiPage(ctx, &db.GetWikiPageParams{Tree: tree, Slug: slug})
+	row, err := s.db.Queries(ctx).GetWikiPage(ctx, &db.GetWikiPageParams{TenantID: tenant, Tree: tree, Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Page{}, ErrNotFound
@@ -186,6 +273,10 @@ func (s *Store) ListByTree(ctx context.Context, tree string) ([]Page, error) {
 
 // Search runs websearch_to_tsquery against wiki_search. Empty tree means all trees.
 func (s *Store) Search(ctx context.Context, query, tree string, limit int32) ([]SearchHit, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return nil, err
+	}
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -194,6 +285,7 @@ func (s *Store) Search(ctx context.Context, query, tree string, limit int32) ([]
 		limit = 40
 	}
 	rows, err := s.db.Queries(ctx).SearchWikiPages(ctx, &db.SearchWikiPagesParams{
+		TenantID:  tenant,
 		Query:     query,
 		Tree:      tree,
 		PageLimit: limit,
@@ -217,7 +309,11 @@ func (s *Store) Search(ctx context.Context, query, tree string, limit int32) ([]
 
 // Pages lists pages, optionally filtered by tree (empty = all).
 func (s *Store) Pages(ctx context.Context, tree string) ([]Page, error) {
-	rows, err := s.db.Queries(ctx).ListWikiPages(ctx, tree)
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Queries(ctx).ListWikiPages(ctx, &db.ListWikiPagesParams{TenantID: tenant, Tree: tree})
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +322,11 @@ func (s *Store) Pages(ctx context.Context, tree string) ([]Page, error) {
 
 // PagesForCreator lists pages tagged with a creator.
 func (s *Store) PagesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]Page, error) {
-	rows, err := s.db.Queries(ctx).ListWikiPagesForCreator(ctx, creatorID)
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Queries(ctx).ListWikiPagesForCreator(ctx, &db.ListWikiPagesForCreatorParams{TenantID: tenant, CreatorID: creatorID})
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +335,11 @@ func (s *Store) PagesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]P
 
 // PagesForChannel lists pages tagged with a channel.
 func (s *Store) PagesForChannel(ctx context.Context, channelID pgtype.UUID) ([]Page, error) {
-	rows, err := s.db.Queries(ctx).ListWikiPagesForChannel(ctx, channelID)
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Queries(ctx).ListWikiPagesForChannel(ctx, &db.ListWikiPagesForChannelParams{TenantID: tenant, ChannelID: channelID})
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +348,12 @@ func (s *Store) PagesForChannel(ctx context.Context, channelID pgtype.UUID) ([]P
 
 // History returns revisions newest-first.
 func (s *Store) History(ctx context.Context, tree, slug string) ([]Revision, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return nil, err
+	}
 	slug = Slug(slug)
-	rows, err := s.db.Queries(ctx).ListWikiRevisions(ctx, &db.ListWikiRevisionsParams{Tree: tree, Slug: slug})
+	rows, err := s.db.Queries(ctx).ListWikiRevisions(ctx, &db.ListWikiRevisionsParams{TenantID: tenant, Tree: tree, Slug: slug})
 	if err != nil {
 		return nil, err
 	}
@@ -259,10 +367,14 @@ func (s *Store) History(ctx context.Context, tree, slug string) ([]Revision, err
 // Diff returns the unified diff between two revision bodies.
 // fromRev/toRev of 0 mean the previous tip and tip (last two), respectively.
 func (s *Store) Diff(ctx context.Context, tree, slug string, fromRev, toRev int32) (string, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return "", err
+	}
 	slug = Slug(slug)
 	q := s.db.Queries(ctx)
 	if fromRev == 0 || toRev == 0 {
-		rows, err := q.ListWikiRevisions(ctx, &db.ListWikiRevisionsParams{Tree: tree, Slug: slug})
+		rows, err := q.ListWikiRevisions(ctx, &db.ListWikiRevisionsParams{TenantID: tenant, Tree: tree, Slug: slug})
 		if err != nil {
 			return "", err
 		}
@@ -283,13 +395,13 @@ func (s *Store) Diff(ctx context.Context, tree, slug string, fromRev, toRev int3
 
 	var oldBody string
 	if fromRev > 0 {
-		from, err := q.GetWikiRevision(ctx, &db.GetWikiRevisionParams{Tree: tree, Slug: slug, Revision: fromRev})
+		from, err := q.GetWikiRevision(ctx, &db.GetWikiRevisionParams{TenantID: tenant, Tree: tree, Slug: slug, Revision: fromRev})
 		if err != nil {
 			return "", err
 		}
 		oldBody = from.Body
 	}
-	to, err := q.GetWikiRevision(ctx, &db.GetWikiRevisionParams{Tree: tree, Slug: slug, Revision: toRev})
+	to, err := q.GetWikiRevision(ctx, &db.GetWikiRevisionParams{TenantID: tenant, Tree: tree, Slug: slug, Revision: toRev})
 	if err != nil {
 		return "", err
 	}
@@ -297,8 +409,12 @@ func (s *Store) Diff(ctx context.Context, tree, slug string, fromRev, toRev int3
 }
 
 func (s *Store) decorate(ctx context.Context, p Page) (Page, error) {
+	tenant, err := s.tenantFor(ctx)
+	if err != nil {
+		return p, err
+	}
 	q := s.db.Queries(ctx)
-	links, err := q.ListWikiLinksFromPage(ctx, &db.ListWikiLinksFromPageParams{Tree: p.Tree, Slug: p.Slug})
+	links, err := q.ListWikiLinksFromPage(ctx, &db.ListWikiLinksFromPageParams{TenantID: tenant, Tree: p.Tree, Slug: p.Slug})
 	if err != nil {
 		return p, err
 	}
@@ -306,7 +422,7 @@ func (s *Store) decorate(ctx context.Context, p Page) (Page, error) {
 	for _, l := range links {
 		p.Links = append(p.Links, Link{Tree: l.ToTree, Slug: l.ToSlug, Target: l.ToTree + "/" + l.ToSlug, Label: l.ToSlug})
 	}
-	backs, err := q.ListWikiBacklinks(ctx, &db.ListWikiBacklinksParams{Tree: p.Tree, Slug: p.Slug})
+	backs, err := q.ListWikiBacklinks(ctx, &db.ListWikiBacklinksParams{TenantID: tenant, Tree: p.Tree, Slug: p.Slug})
 	if err != nil {
 		return p, err
 	}

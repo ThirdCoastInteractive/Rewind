@@ -1,4 +1,5 @@
 import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
+import { createSignalingQueue } from './lib/webrtc-signaling-queue.js';
 // webrtc-room.js — joins a producer-v2 live session over the SFU.
 //
 // Initializes controls from a #webrtc-room element carrying data-room (show-note
@@ -31,8 +32,6 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
   const stateLabel = document.querySelector('[data-call-state]');
   if (!room) return;
 
-  const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
   let pc = null;
   let ws = null;
   let localStream = null;
@@ -45,6 +44,19 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
   let publisherTimer = null;
   let joined = false;
   let joining = false;
+
+  async function loadICEConfig(signalRole) {
+    const response = await fetch(`/api/show-notes/${encodeURIComponent(room)}/ice?role=${encodeURIComponent(signalRole)}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`ICE service unavailable (${response.status})`);
+    const config = await response.json();
+    if (!Array.isArray(config.iceServers) || config.iceServers.length === 0) {
+      throw new Error('ICE service returned no servers');
+    }
+    return config;
+  }
 
   function readPublisher() {
     try { return JSON.parse(localStorage.getItem(publisherKey) || 'null'); } catch (_) { return null; }
@@ -225,6 +237,7 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
   }
 
   async function startConnection() {
+    const config = await loadICEConfig(role === 'host' && publishes ? 'host' : 'viewer');
     pc = new RTCPeerConnection(config);
 
     pc.ontrack = (ev) => {
@@ -268,32 +281,26 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
     const signalRole = role === 'host' && publishes ? 'host' : 'viewer';
     ws = new WebSocket(`${proto}://${location.host}/api/show-notes/${room}/signal?role=${signalRole}`);
 
-    ws.onmessage = async (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (msg.event === 'offer') {
-        try {
-          await pc.setRemoteDescription(JSON.parse(msg.data));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          send({ event: 'answer', data: JSON.stringify(answer) });
-        } catch (e) {
-          console.warn('webrtc-room: negotiation error', e);
-        }
-      } else if (msg.event === 'candidate') {
+    const signalQueue = createSignalingQueue({
+      onOffer: async (msg) => {
+        await pc.setRemoteDescription(JSON.parse(msg.data));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        send({ event: 'answer', data: JSON.stringify(answer) });
+      },
+      onCandidate: async (msg) => {
         try {
           await pc.addIceCandidate(JSON.parse(msg.data));
         } catch (_) {}
-      } else if (msg.event === 'meta') {
+      },
+      onMeta: async (msg) => {
         try {
           applyIdentities(JSON.parse(msg.data));
         } catch (_) {}
-      }
-    };
+      },
+      onError: (error) => console.warn('webrtc-room: signaling queue error', error),
+    });
+    ws.onmessage = (ev) => { signalQueue.push(ev.data); };
 
     ws.onclose = () => {
       if (pc) {
@@ -392,6 +399,13 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
   async function startScreenShare() {
     if (!publishes) return false;
     if (screenStream) return true;
+    let config;
+    try {
+      config = await loadICEConfig('host');
+    } catch (error) {
+      console.warn('screen-share: ICE configuration failed', error);
+      return false;
+    }
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -419,29 +433,21 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     screenWs = new WebSocket(`${proto}://${location.host}/api/show-notes/${room}/signal?role=host&kind=screen`);
-    screenWs.onmessage = async (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (msg.event === 'offer') {
-        try {
-          await screenPc.setRemoteDescription(JSON.parse(msg.data));
-          const ans = await screenPc.createAnswer();
-          await screenPc.setLocalDescription(ans);
-          screenWs.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
-        } catch (e) {
-          console.warn('screen-share: negotiation error', e);
-        }
-      } else if (msg.event === 'candidate') {
+    const screenSignalQueue = createSignalingQueue({
+      onOffer: async (msg) => {
+        await screenPc.setRemoteDescription(JSON.parse(msg.data));
+        const ans = await screenPc.createAnswer();
+        await screenPc.setLocalDescription(ans);
+        screenWs.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
+      },
+      onCandidate: async (msg) => {
         try {
           await screenPc.addIceCandidate(JSON.parse(msg.data));
         } catch (_) {}
-      }
-      // 'meta' is ignored on the publish-only screen connection.
-    };
+      },
+      onError: (error) => console.warn('screen-share: signaling queue error', error),
+    });
+    screenWs.onmessage = (ev) => { screenSignalQueue.push(ev.data); };
     screenWs.onclose = () => {
       if (screenPc) {
         screenPc.close();
@@ -498,4 +504,3 @@ import { listen as pageListen, onPageCleanup } from './lib/page-scope.js';
   updateCallUI();
   if (root.dataset.autoConnect === 'true') joinCall();
 })();
-

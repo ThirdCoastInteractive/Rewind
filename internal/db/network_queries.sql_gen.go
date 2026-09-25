@@ -48,12 +48,16 @@ func (q *Queries) GetNetworkXChannel(ctx context.Context, handle string) (*Chann
 
 const listCommenterNetworkEdges = `-- name: ListCommenterNetworkEdges :many
 WITH sparse AS (
-  SELECT c.id
-  FROM commenters c
-  WHERE c.channel_id IS NOT NULL
-     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+  UNION
+  SELECT w.commenter_id FROM commenter_watchlist w
+  UNION
+  SELECT f.commenter_id FROM osint_flags f
+  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+  UNION
+  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+  UNION
+  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 ), edge_rows AS (
   SELECT e.id::text AS id,
          e.from_channel_id,
@@ -100,12 +104,16 @@ type ListCommenterNetworkEdgesRow struct {
 // Pre-aggregated commenter edges (strongest-N).
 //
 //	WITH sparse AS (
-//	  SELECT c.id
-//	  FROM commenters c
-//	  WHERE c.channel_id IS NOT NULL
-//	     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-//	     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-//	     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+//	  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+//	  UNION
+//	  SELECT w.commenter_id FROM commenter_watchlist w
+//	  UNION
+//	  SELECT f.commenter_id FROM osint_flags f
+//	  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+//	  UNION
+//	  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+//	  UNION
+//	  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 //	), edge_rows AS (
 //	  SELECT e.id::text AS id,
 //	         e.from_channel_id,
@@ -167,12 +175,16 @@ func (q *Queries) ListCommenterNetworkEdges(ctx context.Context) ([]*ListComment
 
 const listCommenterNetworkNodes = `-- name: ListCommenterNetworkNodes :many
 WITH sparse AS (
-  SELECT c.id
-  FROM commenters c
-  WHERE c.channel_id IS NOT NULL
-     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+  UNION
+  SELECT w.commenter_id FROM commenter_watchlist w
+  UNION
+  SELECT f.commenter_id FROM osint_flags f
+  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+  UNION
+  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+  UNION
+  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 )
 SELECT c.id,
        c.source,
@@ -209,12 +221,16 @@ type ListCommenterNetworkNodesRow struct {
 // Sparse commenter nodes for /network (watchlisted, open flag, user link, or channel_id).
 //
 //	WITH sparse AS (
-//	  SELECT c.id
-//	  FROM commenters c
-//	  WHERE c.channel_id IS NOT NULL
-//	     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-//	     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-//	     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+//	  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+//	  UNION
+//	  SELECT w.commenter_id FROM commenter_watchlist w
+//	  UNION
+//	  SELECT f.commenter_id FROM osint_flags f
+//	  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+//	  UNION
+//	  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+//	  UNION
+//	  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 //	)
 //	SELECT c.id,
 //	       c.source,

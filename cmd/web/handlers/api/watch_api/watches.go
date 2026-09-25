@@ -15,6 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/channelid"
@@ -54,6 +55,9 @@ func isSingleYouTubeVideoURL(raw string) bool {
 // HandleCreate serves POST /api/watches, registering a new watched channel.
 func HandleCreate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if live, _ := c.Request().Context().Value(ctxkeys.LiveProduct).(bool); live {
+			return c.NoContent(404)
+		}
 		userUUID, _, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return err

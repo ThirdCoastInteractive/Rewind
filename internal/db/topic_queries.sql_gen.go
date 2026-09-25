@@ -12,14 +12,15 @@ import (
 )
 
 const bindWindowTopic = `-- name: BindWindowTopic :exec
-INSERT INTO context_window_topics (window_id, topic_slug, raw, match_kind)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (window_id, topic_slug) DO UPDATE SET
+INSERT INTO context_window_topics (tenant_id, window_id, topic_slug, raw, match_kind)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, window_id, topic_slug) DO UPDATE SET
     raw = EXCLUDED.raw,
     match_kind = EXCLUDED.match_kind
 `
 
 type BindWindowTopicParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
 	WindowID  pgtype.UUID `db:"window_id" json:"WindowID"`
 	TopicSlug string      `db:"topic_slug" json:"TopicSlug"`
 	Raw       string      `db:"raw" json:"Raw"`
@@ -28,13 +29,14 @@ type BindWindowTopicParams struct {
 
 // BindWindowTopic
 //
-//	INSERT INTO context_window_topics (window_id, topic_slug, raw, match_kind)
-//	VALUES ($1, $2, $3, $4)
-//	ON CONFLICT (window_id, topic_slug) DO UPDATE SET
+//	INSERT INTO context_window_topics (tenant_id, window_id, topic_slug, raw, match_kind)
+//	VALUES ($1, $2, $3, $4, $5)
+//	ON CONFLICT (tenant_id, window_id, topic_slug) DO UPDATE SET
 //	    raw = EXCLUDED.raw,
 //	    match_kind = EXCLUDED.match_kind
 func (q *Queries) BindWindowTopic(ctx context.Context, arg *BindWindowTopicParams) error {
 	_, err := q.db.Exec(ctx, bindWindowTopic,
+		arg.TenantID,
 		arg.WindowID,
 		arg.TopicSlug,
 		arg.Raw,
@@ -47,25 +49,30 @@ const countTopicChannels = `-- name: CountTopicChannels :one
 SELECT count(DISTINCT v.channel_row_id)::bigint
 FROM context_window_topics cwt
 JOIN context_windows cw ON cw.id = cwt.window_id
-JOIN videos v ON v.id = cw.video_id
-WHERE cwt.topic_slug = $1
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
   AND NOT cw.stale
   AND cw.kind = 'window'
   AND v.channel_row_id IS NOT NULL
 `
+
+type CountTopicChannelsParams struct {
+	Slug     string      `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+}
 
 // CountTopicChannels
 //
 //	SELECT count(DISTINCT v.channel_row_id)::bigint
 //	FROM context_window_topics cwt
 //	JOIN context_windows cw ON cw.id = cwt.window_id
-//	JOIN videos v ON v.id = cw.video_id
-//	WHERE cwt.topic_slug = $1
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+//	WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
 //	  AND NOT cw.stale
 //	  AND cw.kind = 'window'
 //	  AND v.channel_row_id IS NOT NULL
-func (q *Queries) CountTopicChannels(ctx context.Context, slug string) (int64, error) {
-	row := q.db.QueryRow(ctx, countTopicChannels, slug)
+func (q *Queries) CountTopicChannels(ctx context.Context, arg *CountTopicChannelsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTopicChannels, arg.Slug, arg.TenantID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -75,49 +82,67 @@ const countTopicWindows = `-- name: CountTopicWindows :one
 SELECT count(*)::bigint
 FROM context_window_topics cwt
 JOIN context_windows cw ON cw.id = cwt.window_id
-WHERE cwt.topic_slug = $1 AND NOT cw.stale AND cw.kind = 'window'
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2 AND NOT cw.stale AND cw.kind = 'window'
 `
+
+type CountTopicWindowsParams struct {
+	Slug     string      `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+}
 
 // CountTopicWindows
 //
 //	SELECT count(*)::bigint
 //	FROM context_window_topics cwt
 //	JOIN context_windows cw ON cw.id = cwt.window_id
-//	WHERE cwt.topic_slug = $1 AND NOT cw.stale AND cw.kind = 'window'
-func (q *Queries) CountTopicWindows(ctx context.Context, slug string) (int64, error) {
-	row := q.db.QueryRow(ctx, countTopicWindows, slug)
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+//	WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2 AND NOT cw.stale AND cw.kind = 'window'
+func (q *Queries) CountTopicWindows(ctx context.Context, arg *CountTopicWindowsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTopicWindows, arg.Slug, arg.TenantID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
 const deleteWindowTopics = `-- name: DeleteWindowTopics :exec
-DELETE FROM context_window_topics WHERE window_id = $1
+DELETE FROM context_window_topics WHERE tenant_id = $1 AND window_id = $2
 `
+
+type DeleteWindowTopicsParams struct {
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	WindowID pgtype.UUID `db:"window_id" json:"WindowID"`
+}
 
 // DeleteWindowTopics
 //
-//	DELETE FROM context_window_topics WHERE window_id = $1
-func (q *Queries) DeleteWindowTopics(ctx context.Context, windowID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteWindowTopics, windowID)
+//	DELETE FROM context_window_topics WHERE tenant_id = $1 AND window_id = $2
+func (q *Queries) DeleteWindowTopics(ctx context.Context, arg *DeleteWindowTopicsParams) error {
+	_, err := q.db.Exec(ctx, deleteWindowTopics, arg.TenantID, arg.WindowID)
 	return err
 }
 
 const getTopic = `-- name: GetTopic :one
-SELECT slug, title, origin, created_at FROM topics WHERE slug = $1
+SELECT slug, title, origin, created_at, tenant_id FROM topics WHERE tenant_id = $1 AND slug = $2
 `
+
+type GetTopicParams struct {
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Slug     string      `db:"slug" json:"Slug"`
+}
 
 // GetTopic
 //
-//	SELECT slug, title, origin, created_at FROM topics WHERE slug = $1
-func (q *Queries) GetTopic(ctx context.Context, slug string) (*Topic, error) {
-	row := q.db.QueryRow(ctx, getTopic, slug)
+//	SELECT slug, title, origin, created_at, tenant_id FROM topics WHERE tenant_id = $1 AND slug = $2
+func (q *Queries) GetTopic(ctx context.Context, arg *GetTopicParams) (*Topic, error) {
+	row := q.db.QueryRow(ctx, getTopic, arg.TenantID, arg.Slug)
 	var i Topic
 	err := row.Scan(
 		&i.Slug,
 		&i.Title,
 		&i.Origin,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -125,9 +150,14 @@ func (q *Queries) GetTopic(ctx context.Context, slug string) (*Topic, error) {
 const getTopicByAlias = `-- name: GetTopicByAlias :one
 SELECT t.slug, t.title, t.origin
 FROM topic_aliases a
-JOIN topics t ON t.slug = a.topic_slug
-WHERE a.alias_norm = $1
+JOIN topics t ON t.tenant_id = a.tenant_id AND t.slug = a.topic_slug
+WHERE a.tenant_id = $1 AND a.alias_norm = $2
 `
+
+type GetTopicByAliasParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	AliasNorm string      `db:"alias_norm" json:"AliasNorm"`
+}
 
 type GetTopicByAliasRow struct {
 	Slug   string `db:"slug" json:"Slug"`
@@ -139,35 +169,37 @@ type GetTopicByAliasRow struct {
 //
 //	SELECT t.slug, t.title, t.origin
 //	FROM topic_aliases a
-//	JOIN topics t ON t.slug = a.topic_slug
-//	WHERE a.alias_norm = $1
-func (q *Queries) GetTopicByAlias(ctx context.Context, aliasNorm string) (*GetTopicByAliasRow, error) {
-	row := q.db.QueryRow(ctx, getTopicByAlias, aliasNorm)
+//	JOIN topics t ON t.tenant_id = a.tenant_id AND t.slug = a.topic_slug
+//	WHERE a.tenant_id = $1 AND a.alias_norm = $2
+func (q *Queries) GetTopicByAlias(ctx context.Context, arg *GetTopicByAliasParams) (*GetTopicByAliasRow, error) {
+	row := q.db.QueryRow(ctx, getTopicByAlias, arg.TenantID, arg.AliasNorm)
 	var i GetTopicByAliasRow
 	err := row.Scan(&i.Slug, &i.Title, &i.Origin)
 	return &i, err
 }
 
 const insertTopicAlias = `-- name: InsertTopicAlias :exec
-INSERT INTO topic_aliases (alias_norm, topic_slug, raw, source)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (alias_norm) DO NOTHING
+INSERT INTO topic_aliases (tenant_id, alias_norm, topic_slug, raw, source)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, alias_norm) DO NOTHING
 `
 
 type InsertTopicAliasParams struct {
-	AliasNorm string `db:"alias_norm" json:"AliasNorm"`
-	TopicSlug string `db:"topic_slug" json:"TopicSlug"`
-	Raw       string `db:"raw" json:"Raw"`
-	Source    string `db:"source" json:"Source"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	AliasNorm string      `db:"alias_norm" json:"AliasNorm"`
+	TopicSlug string      `db:"topic_slug" json:"TopicSlug"`
+	Raw       string      `db:"raw" json:"Raw"`
+	Source    string      `db:"source" json:"Source"`
 }
 
 // InsertTopicAlias
 //
-//	INSERT INTO topic_aliases (alias_norm, topic_slug, raw, source)
-//	VALUES ($1, $2, $3, $4)
-//	ON CONFLICT (alias_norm) DO NOTHING
+//	INSERT INTO topic_aliases (tenant_id, alias_norm, topic_slug, raw, source)
+//	VALUES ($1, $2, $3, $4, $5)
+//	ON CONFLICT (tenant_id, alias_norm) DO NOTHING
 func (q *Queries) InsertTopicAlias(ctx context.Context, arg *InsertTopicAliasParams) error {
 	_, err := q.db.Exec(ctx, insertTopicAlias,
+		arg.TenantID,
 		arg.AliasNorm,
 		arg.TopicSlug,
 		arg.Raw,
@@ -180,13 +212,20 @@ const listRelatedTopics = `-- name: ListRelatedTopics :many
 SELECT t.slug, t.title, count(*)::bigint AS n
 FROM context_window_topics a
 JOIN context_window_topics b ON a.window_id = b.window_id AND a.topic_slug <> b.topic_slug
-JOIN topics t ON t.slug = b.topic_slug
+  AND b.tenant_id = a.tenant_id
+JOIN topics t ON t.tenant_id = b.tenant_id AND t.slug = b.topic_slug
 JOIN context_windows cw ON cw.id = a.window_id AND NOT cw.stale AND cw.kind = 'window'
-WHERE a.topic_slug = $1
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = a.tenant_id
+WHERE a.tenant_id = $1 AND a.topic_slug = $2
 GROUP BY t.slug, t.title
 ORDER BY n DESC, t.title
 LIMIT 12
 `
+
+type ListRelatedTopicsParams struct {
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Slug     string      `db:"slug" json:"Slug"`
+}
 
 type ListRelatedTopicsRow struct {
 	Slug  string `db:"slug" json:"Slug"`
@@ -199,14 +238,16 @@ type ListRelatedTopicsRow struct {
 //	SELECT t.slug, t.title, count(*)::bigint AS n
 //	FROM context_window_topics a
 //	JOIN context_window_topics b ON a.window_id = b.window_id AND a.topic_slug <> b.topic_slug
-//	JOIN topics t ON t.slug = b.topic_slug
+//	  AND b.tenant_id = a.tenant_id
+//	JOIN topics t ON t.tenant_id = b.tenant_id AND t.slug = b.topic_slug
 //	JOIN context_windows cw ON cw.id = a.window_id AND NOT cw.stale AND cw.kind = 'window'
-//	WHERE a.topic_slug = $1
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = a.tenant_id
+//	WHERE a.tenant_id = $1 AND a.topic_slug = $2
 //	GROUP BY t.slug, t.title
 //	ORDER BY n DESC, t.title
 //	LIMIT 12
-func (q *Queries) ListRelatedTopics(ctx context.Context, slug string) ([]*ListRelatedTopicsRow, error) {
-	rows, err := q.db.Query(ctx, listRelatedTopics, slug)
+func (q *Queries) ListRelatedTopics(ctx context.Context, arg *ListRelatedTopicsParams) ([]*ListRelatedTopicsRow, error) {
+	rows, err := q.db.Query(ctx, listRelatedTopics, arg.TenantID, arg.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -230,11 +271,11 @@ SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title,
        v.title AS video_title, v.uploader, t.slug AS topic_slug, t.title AS topic_title
 FROM context_windows mine
 JOIN context_window_topics mt ON mt.window_id = mine.id
-JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.window_id <> mine.id
+JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.tenant_id = mt.tenant_id AND ot.window_id <> mine.id
 JOIN context_windows cw ON cw.id = ot.window_id AND NOT cw.stale AND cw.kind = 'window'
-JOIN videos v ON v.id = cw.video_id
-JOIN videos mv ON mv.id = mine.video_id
-JOIN topics t ON t.slug = ot.topic_slug
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = ot.tenant_id
+JOIN videos mv ON mv.id = mine.video_id AND mv.tenant_id = mt.tenant_id
+JOIN topics t ON t.tenant_id = ot.tenant_id AND t.slug = ot.topic_slug
 WHERE mine.video_id = $1
   AND NOT mine.stale
   AND v.id <> mine.video_id
@@ -266,11 +307,11 @@ type ListTopicNeighborsForVideoRow struct {
 //	       v.title AS video_title, v.uploader, t.slug AS topic_slug, t.title AS topic_title
 //	FROM context_windows mine
 //	JOIN context_window_topics mt ON mt.window_id = mine.id
-//	JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.window_id <> mine.id
+//	JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.tenant_id = mt.tenant_id AND ot.window_id <> mine.id
 //	JOIN context_windows cw ON cw.id = ot.window_id AND NOT cw.stale AND cw.kind = 'window'
-//	JOIN videos v ON v.id = cw.video_id
-//	JOIN videos mv ON mv.id = mine.video_id
-//	JOIN topics t ON t.slug = ot.topic_slug
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = ot.tenant_id
+//	JOIN videos mv ON mv.id = mine.video_id AND mv.tenant_id = mt.tenant_id
+//	JOIN topics t ON t.tenant_id = ot.tenant_id AND t.slug = ot.topic_slug
 //	WHERE mine.video_id = $1
 //	  AND NOT mine.stale
 //	  AND v.id <> mine.video_id
@@ -307,24 +348,52 @@ func (q *Queries) ListTopicNeighborsForVideo(ctx context.Context, arg *ListTopic
 	return items, nil
 }
 
+const listTopicTenants = `-- name: ListTopicTenants :many
+SELECT DISTINCT tenant_id FROM videos ORDER BY tenant_id
+`
+
+// ListTopicTenants
+//
+//	SELECT DISTINCT tenant_id FROM videos ORDER BY tenant_id
+func (q *Queries) ListTopicTenants(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listTopicTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var tenant_id pgtype.UUID
+		if err := rows.Scan(&tenant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tenant_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTopicWindows = `-- name: ListTopicWindows :many
 SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
        v.title AS video_title, v.uploader, v.channel_row_id,
        cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 FROM context_window_topics cwt
 JOIN context_windows cw ON cw.id = cwt.window_id
-JOIN videos v ON v.id = cw.video_id
-JOIN topics t ON t.slug = cwt.topic_slug
-WHERE cwt.topic_slug = $1
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
   AND NOT cw.stale
   AND cw.kind = 'window'
 ORDER BY cw.updated_at DESC, cw.id
-LIMIT $2
+LIMIT $3
 `
 
 type ListTopicWindowsParams struct {
-	Slug      string `db:"slug" json:"Slug"`
-	PageLimit int32  `db:"page_limit" json:"PageLimit"`
+	Slug      string      `db:"slug" json:"Slug"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
 }
 
 type ListTopicWindowsRow struct {
@@ -350,15 +419,15 @@ type ListTopicWindowsRow struct {
 //	       cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 //	FROM context_window_topics cwt
 //	JOIN context_windows cw ON cw.id = cwt.window_id
-//	JOIN videos v ON v.id = cw.video_id
-//	JOIN topics t ON t.slug = cwt.topic_slug
-//	WHERE cwt.topic_slug = $1
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+//	JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+//	WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
 //	  AND NOT cw.stale
 //	  AND cw.kind = 'window'
 //	ORDER BY cw.updated_at DESC, cw.id
-//	LIMIT $2
+//	LIMIT $3
 func (q *Queries) ListTopicWindows(ctx context.Context, arg *ListTopicWindowsParams) ([]*ListTopicWindowsRow, error) {
-	rows, err := q.db.Query(ctx, listTopicWindows, arg.Slug, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listTopicWindows, arg.Slug, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -392,10 +461,15 @@ func (q *Queries) ListTopicWindows(ctx context.Context, arg *ListTopicWindowsPar
 }
 
 const listTopics = `-- name: ListTopics :many
-SELECT slug, title, origin FROM topics
+SELECT slug, title, origin FROM topics WHERE tenant_id = $1
 ORDER BY title, slug
-LIMIT $1
+LIMIT $2
 `
+
+type ListTopicsParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
+}
 
 type ListTopicsRow struct {
 	Slug   string `db:"slug" json:"Slug"`
@@ -405,11 +479,11 @@ type ListTopicsRow struct {
 
 // ListTopics
 //
-//	SELECT slug, title, origin FROM topics
+//	SELECT slug, title, origin FROM topics WHERE tenant_id = $1
 //	ORDER BY title, slug
-//	LIMIT $1
-func (q *Queries) ListTopics(ctx context.Context, pageLimit int32) ([]*ListTopicsRow, error) {
-	rows, err := q.db.Query(ctx, listTopics, pageLimit)
+//	LIMIT $2
+func (q *Queries) ListTopics(ctx context.Context, arg *ListTopicsParams) ([]*ListTopicsRow, error) {
+	rows, err := q.db.Query(ctx, listTopics, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -431,16 +505,16 @@ func (q *Queries) ListTopics(ctx context.Context, pageLimit int32) ([]*ListTopic
 const listTopicsNeedingStub = `-- name: ListTopicsNeedingStub :many
 SELECT t.slug, t.title
 FROM topics t
-WHERE t.origin <> 'wiki'
+WHERE t.tenant_id = $1 AND t.origin <> 'wiki'
   AND NOT EXISTS (
-    SELECT 1 FROM wiki_pages w WHERE w.tree = 'topic' AND w.slug = t.slug
+    SELECT 1 FROM wiki_pages w WHERE w.tenant_id = t.tenant_id AND w.tree = 'topic' AND w.slug = t.slug
   )
   AND (
     SELECT count(DISTINCT v.channel_row_id)
     FROM context_window_topics cwt
     JOIN context_windows cw ON cw.id = cwt.window_id
-    JOIN videos v ON v.id = cw.video_id
-    WHERE cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
+    JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+    WHERE cwt.tenant_id = t.tenant_id AND cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
   ) >= 3
 ORDER BY t.slug
 `
@@ -454,20 +528,20 @@ type ListTopicsNeedingStubRow struct {
 //
 //	SELECT t.slug, t.title
 //	FROM topics t
-//	WHERE t.origin <> 'wiki'
+//	WHERE t.tenant_id = $1 AND t.origin <> 'wiki'
 //	  AND NOT EXISTS (
-//	    SELECT 1 FROM wiki_pages w WHERE w.tree = 'topic' AND w.slug = t.slug
+//	    SELECT 1 FROM wiki_pages w WHERE w.tenant_id = t.tenant_id AND w.tree = 'topic' AND w.slug = t.slug
 //	  )
 //	  AND (
 //	    SELECT count(DISTINCT v.channel_row_id)
 //	    FROM context_window_topics cwt
 //	    JOIN context_windows cw ON cw.id = cwt.window_id
-//	    JOIN videos v ON v.id = cw.video_id
-//	    WHERE cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
+//	    JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+//	    WHERE cwt.tenant_id = t.tenant_id AND cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
 //	  ) >= 3
 //	ORDER BY t.slug
-func (q *Queries) ListTopicsNeedingStub(ctx context.Context) ([]*ListTopicsNeedingStubRow, error) {
-	rows, err := q.db.Query(ctx, listTopicsNeedingStub)
+func (q *Queries) ListTopicsNeedingStub(ctx context.Context, tenantID pgtype.UUID) ([]*ListTopicsNeedingStubRow, error) {
+	rows, err := q.db.Query(ctx, listTopicsNeedingStub, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -489,9 +563,10 @@ func (q *Queries) ListTopicsNeedingStub(ctx context.Context) ([]*ListTopicsNeedi
 const listWindowTopicBinds = `-- name: ListWindowTopicBinds :many
 SELECT cwt.window_id, t.slug, t.title, cwt.match_kind
 FROM context_window_topics cwt
-JOIN topics t ON t.slug = cwt.topic_slug
+JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
 JOIN context_windows cw ON cw.id = cwt.window_id AND NOT cw.stale
-WHERE cwt.window_id = ANY($1::uuid[])
+JOIN videos v ON v.id = cw.video_id
+WHERE cwt.window_id = ANY($1::uuid[]) AND cwt.tenant_id = v.tenant_id
 ORDER BY t.title, cwt.window_id
 `
 
@@ -506,9 +581,10 @@ type ListWindowTopicBindsRow struct {
 //
 //	SELECT cwt.window_id, t.slug, t.title, cwt.match_kind
 //	FROM context_window_topics cwt
-//	JOIN topics t ON t.slug = cwt.topic_slug
+//	JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
 //	JOIN context_windows cw ON cw.id = cwt.window_id AND NOT cw.stale
-//	WHERE cwt.window_id = ANY($1::uuid[])
+//	JOIN videos v ON v.id = cw.video_id
+//	WHERE cwt.window_id = ANY($1::uuid[]) AND cwt.tenant_id = v.tenant_id
 //	ORDER BY t.title, cwt.window_id
 func (q *Queries) ListWindowTopicBinds(ctx context.Context, windowIds []pgtype.UUID) ([]*ListWindowTopicBindsRow, error) {
 	rows, err := q.db.Query(ctx, listWindowTopicBinds, windowIds)
@@ -536,15 +612,23 @@ func (q *Queries) ListWindowTopicBinds(ctx context.Context, windowIds []pgtype.U
 }
 
 const listWindowsForTopicBind = `-- name: ListWindowsForTopicBind :many
-SELECT id, title, topics, entities, kind
+SELECT context_windows.id, context_windows.video_id, context_windows.title, context_windows.topics, context_windows.entities, context_windows.kind
 FROM context_windows
+JOIN videos ON videos.id = context_windows.video_id
 WHERE NOT stale AND kind = 'window' AND topic_resolved_at IS NULL
-ORDER BY updated_at DESC, id
-LIMIT $1
+  AND videos.tenant_id = $1
+ORDER BY context_windows.updated_at DESC, context_windows.id
+LIMIT $2
 `
+
+type ListWindowsForTopicBindParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
+}
 
 type ListWindowsForTopicBindRow struct {
 	ID       pgtype.UUID `db:"id" json:"ID"`
+	VideoID  pgtype.UUID `db:"video_id" json:"VideoID"`
 	Title    string      `db:"title" json:"Title"`
 	Topics   []string    `db:"topics" json:"Topics"`
 	Entities []string    `db:"entities" json:"Entities"`
@@ -553,13 +637,15 @@ type ListWindowsForTopicBindRow struct {
 
 // ListWindowsForTopicBind
 //
-//	SELECT id, title, topics, entities, kind
+//	SELECT context_windows.id, context_windows.video_id, context_windows.title, context_windows.topics, context_windows.entities, context_windows.kind
 //	FROM context_windows
+//	JOIN videos ON videos.id = context_windows.video_id
 //	WHERE NOT stale AND kind = 'window' AND topic_resolved_at IS NULL
-//	ORDER BY updated_at DESC, id
-//	LIMIT $1
-func (q *Queries) ListWindowsForTopicBind(ctx context.Context, pageLimit int32) ([]*ListWindowsForTopicBindRow, error) {
-	rows, err := q.db.Query(ctx, listWindowsForTopicBind, pageLimit)
+//	  AND videos.tenant_id = $1
+//	ORDER BY context_windows.updated_at DESC, context_windows.id
+//	LIMIT $2
+func (q *Queries) ListWindowsForTopicBind(ctx context.Context, arg *ListWindowsForTopicBindParams) ([]*ListWindowsForTopicBindRow, error) {
+	rows, err := q.db.Query(ctx, listWindowsForTopicBind, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -569,6 +655,7 @@ func (q *Queries) ListWindowsForTopicBind(ctx context.Context, pageLimit int32) 
 		var i ListWindowsForTopicBindRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.VideoID,
 			&i.Title,
 			&i.Topics,
 			&i.Entities,
@@ -602,25 +689,26 @@ SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
        cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 FROM context_window_topics cwt
 JOIN context_windows cw ON cw.id = cwt.window_id
-JOIN videos v ON v.id = cw.video_id
-JOIN topics t ON t.slug = cwt.topic_slug
-WHERE NOT cw.stale AND cw.kind = 'window'
+JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+WHERE cwt.tenant_id = $1 AND cwt.tenant_id = v.tenant_id AND NOT cw.stale AND cw.kind = 'window'
   AND (
-    t.slug = $1
-    OR t.title ILIKE '%' || $1 || '%'
+    t.slug = $2
+    OR t.title ILIKE '%' || $2 || '%'
     OR EXISTS (
       SELECT 1 FROM topic_aliases a
-      WHERE a.topic_slug = t.slug AND (a.alias_norm = $2 OR a.raw ILIKE '%' || $1 || '%')
+      WHERE a.tenant_id = cwt.tenant_id AND a.topic_slug = t.slug AND (a.alias_norm = $3 OR a.raw ILIKE '%' || $2 || '%')
     )
   )
 ORDER BY cw.updated_at DESC, cw.id
-LIMIT $3
+LIMIT $4
 `
 
 type SearchTopicWindowsParams struct {
-	Query     string `db:"query" json:"Query"`
-	AliasNorm string `db:"alias_norm" json:"AliasNorm"`
-	PageLimit int32  `db:"page_limit" json:"PageLimit"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Query     string      `db:"query" json:"Query"`
+	AliasNorm string      `db:"alias_norm" json:"AliasNorm"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
 }
 
 type SearchTopicWindowsRow struct {
@@ -646,21 +734,26 @@ type SearchTopicWindowsRow struct {
 //	       cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 //	FROM context_window_topics cwt
 //	JOIN context_windows cw ON cw.id = cwt.window_id
-//	JOIN videos v ON v.id = cw.video_id
-//	JOIN topics t ON t.slug = cwt.topic_slug
-//	WHERE NOT cw.stale AND cw.kind = 'window'
+//	JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+//	JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+//	WHERE cwt.tenant_id = $1 AND cwt.tenant_id = v.tenant_id AND NOT cw.stale AND cw.kind = 'window'
 //	  AND (
-//	    t.slug = $1
-//	    OR t.title ILIKE '%' || $1 || '%'
+//	    t.slug = $2
+//	    OR t.title ILIKE '%' || $2 || '%'
 //	    OR EXISTS (
 //	      SELECT 1 FROM topic_aliases a
-//	      WHERE a.topic_slug = t.slug AND (a.alias_norm = $2 OR a.raw ILIKE '%' || $1 || '%')
+//	      WHERE a.tenant_id = cwt.tenant_id AND a.topic_slug = t.slug AND (a.alias_norm = $3 OR a.raw ILIKE '%' || $2 || '%')
 //	    )
 //	  )
 //	ORDER BY cw.updated_at DESC, cw.id
-//	LIMIT $3
+//	LIMIT $4
 func (q *Queries) SearchTopicWindows(ctx context.Context, arg *SearchTopicWindowsParams) ([]*SearchTopicWindowsRow, error) {
-	rows, err := q.db.Query(ctx, searchTopicWindows, arg.Query, arg.AliasNorm, arg.PageLimit)
+	rows, err := q.db.Query(ctx, searchTopicWindows,
+		arg.TenantID,
+		arg.Query,
+		arg.AliasNorm,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -694,44 +787,51 @@ func (q *Queries) SearchTopicWindows(ctx context.Context, arg *SearchTopicWindow
 }
 
 const upsertTopic = `-- name: UpsertTopic :one
-INSERT INTO topics (slug, title, origin)
-VALUES ($1, $2, $3)
-ON CONFLICT (slug) DO UPDATE SET
+INSERT INTO topics (tenant_id, slug, title, origin)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, slug) DO UPDATE SET
     title = CASE WHEN topics.origin = 'wiki' THEN topics.title ELSE EXCLUDED.title END,
     origin = CASE
         WHEN topics.origin = 'wiki' THEN topics.origin
         WHEN EXCLUDED.origin = 'wiki' THEN EXCLUDED.origin
         ELSE topics.origin
     END
-RETURNING slug, title, origin, created_at
+RETURNING slug, title, origin, created_at, tenant_id
 `
 
 type UpsertTopicParams struct {
-	Slug   string `db:"slug" json:"Slug"`
-	Title  string `db:"title" json:"Title"`
-	Origin string `db:"origin" json:"Origin"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Slug     string      `db:"slug" json:"Slug"`
+	Title    string      `db:"title" json:"Title"`
+	Origin   string      `db:"origin" json:"Origin"`
 }
 
 // UpsertTopic
 //
-//	INSERT INTO topics (slug, title, origin)
-//	VALUES ($1, $2, $3)
-//	ON CONFLICT (slug) DO UPDATE SET
+//	INSERT INTO topics (tenant_id, slug, title, origin)
+//	VALUES ($1, $2, $3, $4)
+//	ON CONFLICT (tenant_id, slug) DO UPDATE SET
 //	    title = CASE WHEN topics.origin = 'wiki' THEN topics.title ELSE EXCLUDED.title END,
 //	    origin = CASE
 //	        WHEN topics.origin = 'wiki' THEN topics.origin
 //	        WHEN EXCLUDED.origin = 'wiki' THEN EXCLUDED.origin
 //	        ELSE topics.origin
 //	    END
-//	RETURNING slug, title, origin, created_at
+//	RETURNING slug, title, origin, created_at, tenant_id
 func (q *Queries) UpsertTopic(ctx context.Context, arg *UpsertTopicParams) (*Topic, error) {
-	row := q.db.QueryRow(ctx, upsertTopic, arg.Slug, arg.Title, arg.Origin)
+	row := q.db.QueryRow(ctx, upsertTopic,
+		arg.TenantID,
+		arg.Slug,
+		arg.Title,
+		arg.Origin,
+	)
 	var i Topic
 	err := row.Scan(
 		&i.Slug,
 		&i.Title,
 		&i.Origin,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }

@@ -2,7 +2,6 @@ package video_api
 
 import (
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleStreamFile serves a specific file from the video's streams/ directory.
@@ -26,6 +26,9 @@ func HandleStreamFile(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		if err != nil {
 			return err
 		}
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
+			return err
+		}
 		videoID := videoUUID.String()
 
 		filename := c.Param("filename")
@@ -38,22 +41,6 @@ func HandleStreamFile(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 			return c.String(400, "invalid filename")
 		}
 
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-		if err != nil {
-			return err
-		}
-
-		filePath := filepath.Join(dir, "streams", filename)
-		f, err := os.Open(filePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return c.String(404, "stream file not found")
-			}
-			return c.String(500, "failed to read stream file")
-		}
-		defer f.Close()
-
-		// Detect content type from extension
 		ext := strings.ToLower(filepath.Ext(filename))
 		contentType := "video/mp4"
 		switch ext {
@@ -62,12 +49,20 @@ func HandleStreamFile(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		case ".mkv":
 			contentType = "video/x-matroska"
 		}
-
+		key := plugin.VideoKey(videoID, "streams/"+filename)
+		b := plugin.Blobs()
+		u, r, _, err := fileserver.OpenOrRedirect(c.Request().Context(), b, []string{key})
+		if err != nil {
+			return c.String(404, "stream file not found")
+		}
+		if u != "" {
+			return c.Redirect(http.StatusFound, u)
+		}
+		defer r.Close()
 		c.Response().Header().Set("Content-Type", contentType)
 		c.Response().Header().Set("Cache-Control", "private, no-cache")
 		c.Response().Header().Set("Accept-Ranges", "bytes")
-
-		http.ServeContent(c.Response(), c.Request(), filename, time.Time{}, f)
+		http.ServeContent(c.Response(), c.Request(), filename, time.Time{}, r)
 		return nil
 	}
 }

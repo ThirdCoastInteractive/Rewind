@@ -2,14 +2,12 @@
 package video_api
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 // HandlePreview serves GET /videos/:id/preview.mp4, returning the short hover-preview clip.
 func HandlePreview(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
@@ -22,16 +20,15 @@ func HandlePreview(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *file
 		if err != nil {
 			return err
 		}
-		videoID := videoUUID.String()
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		preview := filepath.Join(dir, videoID+".preview.mp4")
-		if _, err := os.Stat(preview); err != nil {
+		videoID := videoUUID.String()
+		key := plugin.VideoKey(videoID, videoID+".preview.mp4")
+		if err := fs.ServeKey(c, key, "video/mp4", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat); err != nil {
 			return c.String(404, "preview not available")
 		}
-		return fs.ServeDiskFileWithCache(c, preview, "video/mp4", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat)
+		return nil
 	}
 }
 

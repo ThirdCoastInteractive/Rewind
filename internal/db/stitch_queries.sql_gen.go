@@ -382,8 +382,10 @@ func (q *Queries) FinishStitchJobReady(ctx context.Context, arg *FinishStitchJob
 }
 
 const getClipsForStitch = `-- name: GetClipsForStitch :many
-SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
+SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list,
+       v.video_path, v.tenant_id
 FROM clips c
+JOIN videos v ON v.id = c.video_id
 WHERE c.id = ANY($1::uuid[])
 `
 
@@ -396,12 +398,16 @@ type GetClipsForStitchRow struct {
 	Crops       crops.CropArray `db:"crops" json:"Crops"`
 	FilterStack []byte          `db:"filter_stack" json:"FilterStack"`
 	ShotList    crops.ShotList  `db:"shot_list" json:"ShotList"`
+	VideoPath   *string         `db:"video_path" json:"VideoPath"`
+	TenantID    pgtype.UUID     `db:"tenant_id" json:"TenantID"`
 }
 
 // Bulk load clip data for the encoder (timestamps, crops).
 //
-//	SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
+//	SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list,
+//	       v.video_path, v.tenant_id
 //	FROM clips c
+//	JOIN videos v ON v.id = c.video_id
 //	WHERE c.id = ANY($1::uuid[])
 func (q *Queries) GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*GetClipsForStitchRow, error) {
 	rows, err := q.db.Query(ctx, getClipsForStitch, ids)
@@ -421,6 +427,8 @@ func (q *Queries) GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*
 			&i.Crops,
 			&i.FilterStack,
 			&i.ShotList,
+			&i.VideoPath,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

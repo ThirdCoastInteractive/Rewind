@@ -646,7 +646,7 @@ func (q *Queries) DeleteStaleShowNoteReferences(ctx context.Context, arg *Delete
 }
 
 const findVideoForShowNoteSource = `-- name: FindVideoForShowNoteSource :one
-SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count FROM videos
+SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id FROM videos
 WHERE src = $1
   AND media <> 'metadata'
   AND video_path IS NOT NULL
@@ -657,7 +657,7 @@ LIMIT 1
 
 // FindVideoForShowNoteSource
 //
-//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count FROM videos
+//	SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id FROM videos
 //	WHERE src = $1
 //	  AND media <> 'metadata'
 //	  AND video_path IS NOT NULL
@@ -708,6 +708,7 @@ func (q *Queries) FindVideoForShowNoteSource(ctx context.Context, sourceUri stri
 		&i.SubtitleLastError,
 		&i.TranscriptVersion,
 		&i.CommentCount,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -1434,14 +1435,14 @@ func (q *Queries) ListShowNoteRoomMessages(ctx context.Context, arg *ListShowNot
 }
 
 const listShowNotesPendingWorkspaceMigration = `-- name: ListShowNotesPendingWorkspaceMigration :many
-SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes
+SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes
 WHERE workspace_migrated_at IS NULL
 ORDER BY created_at, id
 `
 
 // ListShowNotesPendingWorkspaceMigration
 //
-//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes
+//	SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes
 //	WHERE workspace_migrated_at IS NULL
 //	ORDER BY created_at, id
 func (q *Queries) ListShowNotesPendingWorkspaceMigration(ctx context.Context) ([]*ShowNote, error) {
@@ -1466,6 +1467,7 @@ func (q *Queries) ListShowNotesPendingWorkspaceMigration(ctx context.Context) ([
 			&i.UpdatedAt,
 			&i.WorkspaceMigratedAt,
 			&i.WorkspaceMigrationError,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -1658,10 +1660,15 @@ func (q *Queries) MarkShowNoteWorkspaceMigrationFailed(ctx context.Context, arg 
 const noteWorkspaceReferencesVideo = `-- name: NoteWorkspaceReferencesVideo :one
 SELECT EXISTS (
     SELECT 1 FROM show_note_references r
+    JOIN show_notes sn ON sn.id = r.show_note_id
     LEFT JOIN clips c ON c.id = r.clip_id
     LEFT JOIN markers m ON m.id = r.marker_id
+    LEFT JOIN videos rv ON rv.id = r.video_id
+    LEFT JOIN videos cv ON cv.id = c.video_id
+    LEFT JOIN videos mv ON mv.id = m.video_id
     WHERE r.show_note_id = $1
       AND (r.video_id = $2 OR c.video_id = $2 OR m.video_id = $2)
+      AND (rv.tenant_id = sn.tenant_id OR cv.tenant_id = sn.tenant_id OR mv.tenant_id = sn.tenant_id)
 )
 `
 
@@ -1674,10 +1681,15 @@ type NoteWorkspaceReferencesVideoParams struct {
 //
 //	SELECT EXISTS (
 //	    SELECT 1 FROM show_note_references r
+//	    JOIN show_notes sn ON sn.id = r.show_note_id
 //	    LEFT JOIN clips c ON c.id = r.clip_id
 //	    LEFT JOIN markers m ON m.id = r.marker_id
+//	    LEFT JOIN videos rv ON rv.id = r.video_id
+//	    LEFT JOIN videos cv ON cv.id = c.video_id
+//	    LEFT JOIN videos mv ON mv.id = m.video_id
 //	    WHERE r.show_note_id = $1
 //	      AND (r.video_id = $2 OR c.video_id = $2 OR m.video_id = $2)
+//	      AND (rv.tenant_id = sn.tenant_id OR cv.tenant_id = sn.tenant_id OR mv.tenant_id = sn.tenant_id)
 //	)
 func (q *Queries) NoteWorkspaceReferencesVideo(ctx context.Context, arg *NoteWorkspaceReferencesVideoParams) (bool, error) {
 	row := q.db.QueryRow(ctx, noteWorkspaceReferencesVideo, arg.ShowNoteID, arg.VideoID)

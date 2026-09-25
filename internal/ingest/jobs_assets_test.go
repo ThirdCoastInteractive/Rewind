@@ -27,6 +27,20 @@ func TestShouldEnqueuePostIngestAssets(t *testing.T) {
 	}
 }
 
+func TestScheduleSeek(t *testing.T) {
+	if scheduleSeek("all") != seekAfter {
+		t.Fatal("full generation defers seek")
+	}
+	if scheduleSeek("seek") != seekNow {
+		t.Fatal("explicit seek runs now")
+	}
+	for _, scope := range []string{"thumbnail", "preview", "waveform", "captions", "streams", ""} {
+		if scheduleSeek(scope) != seekSkip {
+			t.Fatalf("scope %q should skip seek", scope)
+		}
+	}
+}
+
 func TestDerivedAssetsIncomplete(t *testing.T) {
 	if !derivedAssetsIncomplete(map[string]any{}) {
 		t.Fatal("missing keys are incomplete")

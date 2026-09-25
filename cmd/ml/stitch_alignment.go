@@ -73,7 +73,10 @@ func runStitchAlignment(ctx context.Context, dbc *db.DatabaseConnection, claim *
 	if e != nil {
 		return alignmentRuntimeResult{State: "error", Error: e.Error()}, e
 	}
-	path := resolveVideoPath(v, downloadsDir)
+	path, cleanup := resolveVideoPath(ctx, v, downloadsDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
 	if path == "" {
 		return alignmentRuntimeResult{State: "unalignable", Error: "source unavailable"}, nil
 	}

@@ -414,7 +414,7 @@ func (q *Queries) GetVisualReference(ctx context.Context, arg *GetVisualReferenc
 }
 
 const listFaceCandidates = `-- name: ListFaceCandidates :many
-SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
+SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
 AND EXISTS(SELECT 1 FROM face_index_selections s WHERE s.enabled AND (s.video_id=v.id OR s.channel_id=v.channel_row_id))
 AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
@@ -422,7 +422,7 @@ ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
 
 // ListFaceCandidates
 //
-//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
+//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
 //	AND EXISTS(SELECT 1 FROM face_index_selections s WHERE s.enabled AND (s.video_id=v.id OR s.channel_id=v.channel_row_id))
 //	AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 //	ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
@@ -476,6 +476,7 @@ func (q *Queries) ListFaceCandidates(ctx context.Context) ([]*Video, error) {
 			&i.SubtitleLastError,
 			&i.TranscriptVersion,
 			&i.CommentCount,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -714,14 +715,14 @@ func (q *Queries) ListVisionVideos(ctx context.Context, query string) ([]*ListVi
 }
 
 const listVisualCandidates = `-- name: ListVisualCandidates :many
-SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
+SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
 WHERE v.media='file' AND v.duration_seconds>0 AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
 `
 
 // ListVisualCandidates
 //
-//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
+//	SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
 //	WHERE v.media='file' AND v.duration_seconds>0 AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 //	ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
 func (q *Queries) ListVisualCandidates(ctx context.Context) ([]*Video, error) {
@@ -774,6 +775,7 @@ func (q *Queries) ListVisualCandidates(ctx context.Context) ([]*Video, error) {
 			&i.SubtitleLastError,
 			&i.TranscriptVersion,
 			&i.CommentCount,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

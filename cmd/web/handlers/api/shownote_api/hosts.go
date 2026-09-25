@@ -10,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleAddHost adds (or updates the role of) a host by username. Owner only.
@@ -37,6 +38,13 @@ func HandleAddHost(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 		// Resolve the username; if unknown, fall through and just re-render the
 		// (unchanged) roster so the input clears without an error.
 		if user, err := q.SelectUserByUserName(ctx, strings.TrimSpace(req.Username)); err == nil {
+			if plugin.LiveIngest() != nil {
+				guards, authn := plugin.Guards(), plugin.Auth()
+				actor, aerr := authn.Current(c.Request())
+				if aerr != nil || actor == nil || !guards.Allow(ctx, actor, "workspace.member", user.ID.String()) {
+					return echo.NewHTTPError(403, "target user is not in this workspace")
+				}
+			}
 			if _, err := q.AddHost(ctx, &db.AddHostParams{ShowNoteID: noteUUID, UserID: user.ID, Role: role}); err != nil {
 				slog.Error("show note: add host failed", "error", err)
 				return echo.NewHTTPError(500, "failed to add host")

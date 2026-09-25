@@ -16,6 +16,7 @@ import (
 	"thirdcoast.systems/rewind/internal/contextwindow"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/topics"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 type contextWindowInput struct {
@@ -40,9 +41,15 @@ func HandleContextWindowsList(sm *auth.SessionManager, dbc *db.DatabaseConnectio
 		if err != nil {
 			return err
 		}
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoID, plugin.ActionVideoRead); err != nil {
+			return err
+		}
 		rows, err := dbc.Queries(c.Request().Context()).ListContextWindowsForVideo(c.Request().Context(), &db.ListContextWindowsForVideoParams{VideoID: videoID, StartTs: optionalFloat(c.QueryParam("start")), EndTs: optionalFloat(c.QueryParam("end"))})
 		if err != nil {
 			return err
+		}
+		if rows == nil {
+			rows = []*db.ListContextWindowsForVideoRow{}
 		}
 		if c.QueryParam("render") == "1" {
 			rows = filterWatchContextWindows(rows, c.QueryParam("q"))
@@ -68,7 +75,7 @@ func HandleContextWindowCreate(sm *auth.SessionManager, dbc *db.DatabaseConnecti
 		if err := c.Bind(&in); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid context window")
 		}
-		video, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoID)
+		video, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoID, plugin.ActionVideoWrite)
 		if err != nil {
 			return err
 		}
@@ -105,11 +112,19 @@ func HandleContextWindowUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnecti
 		if err != nil {
 			return err
 		}
+		ctx := c.Request().Context()
+		window, err := dbc.Queries(ctx).GetContextWindow(ctx, id)
+		if err != nil || window == nil {
+			return echo.NewHTTPError(http.StatusNotFound, "context window not found")
+		}
+		if _, err := common.RequireVideo(c, dbc.Queries(ctx), window.VideoID, plugin.ActionVideoWrite); err != nil {
+			return err
+		}
 		var in contextwindow.Patch
 		if err := c.Bind(&in); err != nil {
 			return echo.NewHTTPError(400, "invalid context window")
 		}
-		row, err := contextwindow.Edit(c.Request().Context(), dbc, id, in)
+		row, err := contextwindow.Edit(ctx, dbc, id, in)
 		if err != nil {
 			return echo.NewHTTPError(400, err.Error())
 		}
@@ -132,7 +147,15 @@ func HandleContextWindowDelete(sm *auth.SessionManager, dbc *db.DatabaseConnecti
 		if err != nil {
 			return err
 		}
-		if err := dbc.Queries(c.Request().Context()).DeleteContextWindow(c.Request().Context(), id); err != nil {
+		ctx := c.Request().Context()
+		window, err := dbc.Queries(ctx).GetContextWindow(ctx, id)
+		if err != nil || window == nil {
+			return echo.NewHTTPError(http.StatusNotFound, "context window not found")
+		}
+		if _, err := common.RequireVideo(c, dbc.Queries(ctx), window.VideoID, plugin.ActionVideoWrite); err != nil {
+			return err
+		}
+		if err := dbc.Queries(ctx).DeleteContextWindow(ctx, id); err != nil {
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)
@@ -158,6 +181,9 @@ func HandleGenerateContextWindows(sm *auth.SessionManager, dbc *db.DatabaseConne
 		}
 		videoID, err := common.RequireUUIDParam(c, "id")
 		if err != nil {
+			return err
+		}
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoID, plugin.ActionVideoWrite); err != nil {
 			return err
 		}
 		if err := contextwindow.Enqueue(c.Request().Context(), dbc, videoID); err != nil {

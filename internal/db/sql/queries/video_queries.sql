@@ -25,7 +25,8 @@ INSERT INTO videos (
     file_size,
     probe_data,
     search,
-    media
+    media,
+    tenant_id
 )
 VALUES (
     sqlc.arg(id),
@@ -61,9 +62,10 @@ VALUES (
         sqlc.arg(tags)::text[],
         sqlc.arg(description)
     ),
-    COALESCE(NULLIF(btrim(sqlc.arg(media)), ''), 'file')
+    COALESCE(NULLIF(btrim(sqlc.arg(media)), ''), 'file'),
+    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 )
-ON CONFLICT (src)
+ON CONFLICT (tenant_id, src)
 DO UPDATE SET
     updated_at = NOW(),
     title = EXCLUDED.title,
@@ -93,11 +95,19 @@ DO UPDATE SET
     search = EXCLUDED.search
 RETURNING *;
 
--- SelectVideoBySrc returns a video by src.
+-- SelectVideoBySrc returns a video by src and tenant.
 -- name: SelectVideoBySrc :one
 SELECT *
 FROM videos
-WHERE src = $1;
+WHERE src = sqlc.arg(src)
+  AND tenant_id = sqlc.arg(tenant_id);
+
+-- GetVideoByIDAndTenant returns a video by id scoped to one tenant.
+-- name: GetVideoByIDAndTenant :one
+SELECT *
+FROM videos
+WHERE id = sqlc.arg(id)
+  AND tenant_id = sqlc.arg(tenant_id);
 
 -- FilterExistingVideoIDs returns, from the given candidate ids, the subset that
 -- already exist as videos. Used to skip re-downloading already-archived videos
@@ -151,6 +161,7 @@ WHERE video_path IS NOT NULL AND btrim(video_path) <> '';
 SELECT id::text, video_path, thumbnail_path, file_hash, duration_seconds, assets_status
 FROM videos
 WHERE video_path IS NOT NULL AND btrim(video_path) <> ''
+AND video_path NOT LIKE 'org/%'
 AND (
     -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
     lower(video_path) NOT LIKE '%.mp4'

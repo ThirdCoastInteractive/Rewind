@@ -3,8 +3,6 @@ package video_api
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -12,6 +10,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 // HandleThumbnail serves GET /videos/:id/thumbnail, returning the video thumbnail image at the requested size.
 func HandleThumbnail(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
@@ -24,29 +23,23 @@ func HandleThumbnail(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fi
 		if err != nil {
 			return err
 		}
-		videoID := videoUUID.String()
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		thumb := resolveThumbnailPath(dir, videoID, c.QueryParam("w"))
-		if _, err := os.Stat(thumb); err == nil {
-			return fs.ServeDiskFileWithCache(c, thumb, "image/jpeg", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+		videoID := videoUUID.String()
+		cache := "private, max-age=86400, stale-while-revalidate=3600"
+		if label := parseThumbnailLabel(c.QueryParam("w")); label != "" {
+			key := plugin.VideoKey(videoID, fmt.Sprintf("%s.thumbnail.%s.jpg", videoID, label))
+			if err := fs.ServeKey(c, key, "image/jpeg", cache, fileserver.ETagStrongSHA256); err == nil {
+				return nil
+			}
 		}
-
+		key := plugin.VideoKey(videoID, videoID+".thumbnail.jpg")
+		if err := fs.ServeKey(c, key, "image/jpeg", cache, fileserver.ETagStrongSHA256); err == nil {
+			return nil
+		}
 		return c.String(404, "thumbnail not available")
 	}
-}
-
-func resolveThumbnailPath(dir, videoID, rawWidth string) string {
-	label := parseThumbnailLabel(rawWidth)
-	if label != "" {
-		labelPath := filepath.Join(dir, fmt.Sprintf("%s.thumbnail.%s.jpg", videoID, label))
-		if _, err := os.Stat(labelPath); err == nil {
-			return labelPath
-		}
-	}
-	return filepath.Join(dir, videoID+".thumbnail.jpg")
 }
 
 func parseThumbnailLabel(raw string) string {

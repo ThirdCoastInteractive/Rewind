@@ -17,6 +17,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/internal/telemetry"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/shownote"
 )
 
 // HandleLiveProducerStream streams the live viewer count to the producer. Auth +
@@ -96,7 +97,23 @@ func HandleLiveSceneStream(sm *auth.SessionManager, dbc *db.DatabaseConnection, 
 		}
 		key := noteUUID.String()
 
-		note, err := dbc.Queries(c.Request().Context()).GetShowNote(c.Request().Context(), noteUUID)
+		ctx := c.Request().Context()
+		q := dbc.Queries(ctx)
+		candidate, err := q.GetShowNote(ctx, noteUUID)
+		if err != nil {
+			return c.String(404, "not found")
+		}
+		publicViewer := candidate.IsLive
+		loadNote := func() (*db.ShowNote, error) {
+			if publicViewer {
+				// The public viewer route is capability-based: the unguessable
+				// note UUID may subscribe while the show is live, without a
+				// workspace session. Authenticated editor requests remain scoped.
+				return dbc.Queries(ctx).GetShowNote(ctx, noteUUID)
+			}
+			return shownote.RequireTenant(ctx, dbc, noteUUID)
+		}
+		note, err := loadNote()
 		if err != nil {
 			return c.String(404, "not found")
 		}
@@ -112,7 +129,7 @@ func HandleLiveSceneStream(sm *auth.SessionManager, dbc *db.DatabaseConnection, 
 			return c.String(http.StatusForbidden, "show is offline")
 		}
 		stillAllowed := func() bool {
-			current, err := dbc.Queries(c.Request().Context()).GetShowNote(c.Request().Context(), noteUUID)
+			current, err := loadNote()
 			return err == nil && mayView(current)
 		}
 

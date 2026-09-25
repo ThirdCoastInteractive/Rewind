@@ -21,6 +21,7 @@ import (
 	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
 	workspace "thirdcoast.systems/rewind/internal/shownote"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleMaterializeReference explicitly resolves, archives, or materializes one reference.
@@ -46,6 +47,9 @@ func HandleMaterializeReference(sm *auth.SessionManager, dbc *db.DatabaseConnect
 		ref, err := q.GetShowNoteReference(ctx, &db.GetShowNoteReferenceParams{ID: referenceID, ShowNoteID: noteID})
 		if err != nil {
 			return echo.NewHTTPError(404, "reference not found")
+		}
+		if externalArchiveBlocked() && ref.Kind == "external" {
+			return echo.NewHTTPError(409, "external references cannot be materialized in Live; use an owned recording")
 		}
 
 		videoID := request.VideoID
@@ -77,6 +81,9 @@ func HandleMaterializeReference(sm *auth.SessionManager, dbc *db.DatabaseConnect
 		case "archive":
 			if ref.Kind != "external" {
 				return echo.NewHTTPError(409, "only external references can be archived")
+			}
+			if externalArchiveBlocked() {
+				return echo.NewHTTPError(409, "external source archival is unavailable in Live; use an owned recording")
 			}
 			enqueued, err := archival.EnqueueURL(ctx, q, ref.SourceUri, userID)
 			if err != nil {
@@ -286,6 +293,10 @@ func confirmAcceptedAgentReferences(
 	errors := make([]string, 0)
 	for _, occurrence := range occurrences {
 		ref := projection[occurrence]
+		if externalArchiveBlocked() {
+			errors = append(errors, "external source archival is unavailable in Live")
+			continue
+		}
 		video, err := q.FindVideoForShowNoteSource(ctx, ref.SourceUri)
 		if err == nil {
 			if _, err := materializeResolvedReference(ctx, q, collab, noteID, userID, ref, video.ID, "use_match", idempotency); err != nil {
@@ -329,6 +340,11 @@ func confirmAcceptedAgentReferences(
 	}
 	return errors
 }
+
+// externalArchiveBlocked prevents external URL references from entering the
+// downloader path when the Live product plugin is installed. Existing owned
+// recordings continue through the local materialization path.
+func externalArchiveBlocked() bool { return plugin.LiveIngest() != nil }
 
 func emitReferenceEvent(ctx context.Context, q *db.Queries, noteID, userID pgtype.UUID, eventType string, value any) error {
 	payload, err := json.Marshal(value)

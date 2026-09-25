@@ -1,5 +1,6 @@
 .env
 node_modules/
+.worktrees/
 .npmrc
 bin/*
 *.exe
@@ -7,6 +8,10 @@ bin/*
 
 # Test artifacts with binary data
 pkg/ffmpeg/testdata/*
+
+# Python test caches
+**/__pycache__/
+**/*.pyc
 
 .github/docs
 .github/copilot-instructions.md

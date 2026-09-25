@@ -131,8 +131,12 @@ func TestCreateTeaserRetryOwnershipAndSourceBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Projects are owner-only: another user's read is a missing project.
 	if _, err := stitch.NewStore(dbc).Get(foreign, other, projectID); !errors.Is(err, stitch.ErrNotFound) {
 		t.Fatalf("foreign project read error=%v, want ErrNotFound", err)
+	}
+	if _, err := stitch.NewStore(dbc).Commit(foreign, other, projectID, firstOut.Revision, "foreign-write", stitch.Actor{Kind: "user", ID: other.String()}, "foreign", []stitch.Operation{{Type: "set_title", Title: "foreign"}}); !errors.Is(err, stitch.ErrNotFound) {
+		t.Fatalf("foreign project write error=%v, want ErrNotFound", err)
 	}
 
 	var wg sync.WaitGroup

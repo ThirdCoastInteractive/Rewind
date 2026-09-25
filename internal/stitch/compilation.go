@@ -63,10 +63,15 @@ func QueueCompilationRender(ctx context.Context, tx pgx.Tx, owner, project pgtyp
 	// The database document is authoritative. The caller's legacy or stale
 	// payload must never become the render snapshot.
 	var canonical Document
+	var err error
 	if err := json.Unmarshal(persisted, &canonical); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid persisted document: %w", err)
 	}
 	if err := Validate(canonical); err != nil {
+		return pgtype.UUID{}, err
+	}
+	canonical, err = validateSources(ctx, tx, owner, canonical)
+	if err != nil {
 		return pgtype.UUID{}, err
 	}
 	options := RenderOptions{Format: "mp4", Quality: "high", Scope: "all", CaptionMode: "none"}

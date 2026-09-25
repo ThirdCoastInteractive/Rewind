@@ -2,14 +2,12 @@
 package video_api
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleWaveformPeaks serves the waveform peaks data.
@@ -22,14 +20,13 @@ func HandleWaveformPeaks(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs
 		if err != nil {
 			return err
 		}
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoUUID.String())
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		path := filepath.Join(dir, "waveform", "peaks.i16")
-		if _, err := os.Stat(path); err != nil {
+		key := plugin.VideoKey(videoUUID.String(), "waveform/peaks.i16")
+		if err := fs.ServeKey(c, key, "application/octet-stream", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat); err != nil {
 			return c.String(404, "waveform not available")
 		}
-		return fs.ServeDiskFileWithCache(c, path, "application/octet-stream", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat)
+		return nil
 	}
 }

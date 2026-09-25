@@ -722,6 +722,7 @@ type ContextWindowTopic struct {
 	TopicSlug string      `db:"topic_slug" json:"TopicSlug"`
 	Raw       string      `db:"raw" json:"Raw"`
 	MatchKind string      `db:"match_kind" json:"MatchKind"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 type Cookie struct {
@@ -1058,6 +1059,7 @@ type ShowNote struct {
 	UpdatedAt               pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
 	WorkspaceMigratedAt     pgtype.Timestamptz `db:"workspace_migrated_at" json:"WorkspaceMigratedAt"`
 	WorkspaceMigrationError string             `db:"workspace_migration_error" json:"WorkspaceMigrationError"`
+	TenantID                pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 }
 
 type ShowNoteAgentLease struct {
@@ -1212,6 +1214,15 @@ type ShowNoteRoomMessage struct {
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
 }
 
+type SpeakerTurn struct {
+	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
+	Model       string             `db:"model" json:"Model"`
+	Fingerprint string             `db:"fingerprint" json:"Fingerprint"`
+	Turns       []byte             `db:"turns" json:"Turns"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+}
+
 type SpeechScore struct {
 	ID          pgtype.UUID        `db:"id" json:"ID"`
 	VideoID     pgtype.UUID        `db:"video_id" json:"VideoID"`
@@ -1358,13 +1369,15 @@ type Topic struct {
 	Title     string             `db:"title" json:"Title"`
 	Origin    string             `db:"origin" json:"Origin"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	TenantID  pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 }
 
 type TopicAlias struct {
-	AliasNorm string `db:"alias_norm" json:"AliasNorm"`
-	TopicSlug string `db:"topic_slug" json:"TopicSlug"`
-	Raw       string `db:"raw" json:"Raw"`
-	Source    string `db:"source" json:"Source"`
+	AliasNorm string      `db:"alias_norm" json:"AliasNorm"`
+	TopicSlug string      `db:"topic_slug" json:"TopicSlug"`
+	Raw       string      `db:"raw" json:"Raw"`
+	Source    string      `db:"source" json:"Source"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 type TranscriptRepairBackup struct {
@@ -1441,6 +1454,7 @@ type Video struct {
 	SubtitleLastError   string               `db:"subtitle_last_error" json:"SubtitleLastError"`
 	TranscriptVersion   int64                `db:"transcript_version" json:"TranscriptVersion"`
 	CommentCount        int64                `db:"comment_count" json:"CommentCount"`
+	TenantID            pgtype.UUID          `db:"tenant_id" json:"TenantID"`
 }
 
 type VideoComment struct {
@@ -1565,10 +1579,11 @@ type WatchedChannelVideo struct {
 }
 
 type WikiLink struct {
-	FromTree string `db:"from_tree" json:"FromTree"`
-	FromSlug string `db:"from_slug" json:"FromSlug"`
-	ToTree   string `db:"to_tree" json:"ToTree"`
-	ToSlug   string `db:"to_slug" json:"ToSlug"`
+	FromTree string      `db:"from_tree" json:"FromTree"`
+	FromSlug string      `db:"from_slug" json:"FromSlug"`
+	ToTree   string      `db:"to_tree" json:"ToTree"`
+	ToSlug   string      `db:"to_slug" json:"ToSlug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 type WikiPage struct {
@@ -1581,6 +1596,7 @@ type WikiPage struct {
 	ChannelID pgtype.UUID        `db:"channel_id" json:"ChannelID"`
 	UpdatedBy string             `db:"updated_by" json:"UpdatedBy"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	TenantID  pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 }
 
 type WikiRevision struct {
@@ -1600,12 +1616,14 @@ type WikiRevision struct {
 	ClientVersion string             `db:"client_version" json:"ClientVersion"`
 	TokenName     string             `db:"token_name" json:"TokenName"`
 	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"CreatedAt"`
+	TenantID      pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 }
 
 type WikiSearch struct {
-	Tree   string `db:"tree" json:"Tree"`
-	Slug   string `db:"slug" json:"Slug"`
-	Search string `db:"search" json:"Search"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
+	Search   string      `db:"search" json:"Search"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 type YtdlpLog struct {

@@ -8,6 +8,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleMarkersUpdate creates a new marker for a video.
@@ -23,9 +24,8 @@ func HandleMarkersUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 			return err
 		}
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
-		if err != nil || videoRow == nil {
-			return c.String(404, "video not found")
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoWrite); err != nil {
+			return err
 		}
 
 		var req struct {

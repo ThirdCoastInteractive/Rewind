@@ -2,15 +2,17 @@
 package video_api
 
 import (
-	"os"
-	"path/filepath"
+	"errors"
+	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
+
 // HandleSeekManifest serves GET /videos/:id/seek/seek.json, returning the seek sprite sheet manifest.
 func HandleSeekManifest(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -21,15 +23,20 @@ func HandleSeekManifest(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs 
 		if err != nil {
 			return err
 		}
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoUUID.String())
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		path := filepath.Join(dir, "seek", "seek.json")
-		if _, err := os.Stat(path); err != nil {
-			return c.String(404, "seek thumbnails not available")
+		key := plugin.VideoKey(videoUUID.String(), "seek/seek.json")
+		if err := fs.ServeKey(c, key, "application/json", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256); err != nil {
+			if errors.Is(err, echo.ErrNotFound) {
+				return c.JSON(http.StatusOK, map[string]any{
+					"format": "rewind-seek-v1",
+					"levels": []any{},
+				})
+			}
+			return err
 		}
-		return fs.ServeDiskFileWithCache(c, path, "application/json", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+		return nil
 	}
 }
 

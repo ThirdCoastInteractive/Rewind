@@ -15,14 +15,14 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/filename"
 )
+
 // HandleDownloadExport serves GET /clip-exports/:id/download, streaming an encoded clip export file.
 func HandleDownloadExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		_, _, err := sm.GetSession(c.Request())
+		user, _, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.String(401, "unauthorized")
 		}
-
 		exportIDUUID, err := common.RequireUUIDParam(c, "id")
 		if err != nil {
 			return err
@@ -37,6 +37,13 @@ func HandleDownloadExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) e
 				return c.String(404, "export not found")
 			}
 			return c.String(500, "failed to load export")
+		}
+		clip, clipErr := q.GetClip(ctx, exportData.ClipID)
+		if clipErr != nil {
+			return c.String(404, "export not found")
+		}
+		if err := requireClipRead(c, sm, q, clip, user); err != nil {
+			return err
 		}
 		if exportData.Status != "ready" {
 			return c.String(409, "export not ready")

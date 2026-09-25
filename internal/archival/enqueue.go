@@ -102,7 +102,7 @@ func EnqueueURLOpts(ctx context.Context, q *db.Queries, rawURL string, archivedB
 	}
 
 	refresh := false
-	if existing, err := q.SelectVideoBySrc(ctx, rawURL); err == nil && existing != nil {
+	if existing, err := q.SelectVideoBySrc(ctx, &db.SelectVideoBySrcParams{Src: rawURL, TenantID: db.OSSTenant()}); err == nil && existing != nil {
 		// A metadata catalog row is only a placeholder. Archiving it must run a
 		// full media download so ingest upgrades the same deterministic record.
 		refresh = existing.Media != "metadata"

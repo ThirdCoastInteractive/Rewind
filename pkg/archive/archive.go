@@ -5,11 +5,13 @@ package archive
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/videoinfo"
 )
 
@@ -21,32 +23,105 @@ type Master struct {
 	BlobKey  string
 	FileSize int64
 	ActorID  string
+	// ID is videos.id when it is a valid UUID. Empty keeps uuid.New().
+	ID string
 }
 
 var (
-	mu sync.RWMutex
-	pg *db.DatabaseConnection
+	mu        sync.RWMutex
+	pg        *db.DatabaseConnection
+	afterBind func()
 )
+
+// AfterBind registers fn to run once Bind has stored the database.
+// Rewind Live starts the Workers AI loops from here. fn runs without the
+// archive lock held.
+func AfterBind(fn func()) {
+	mu.Lock()
+	defer mu.Unlock()
+	afterBind = fn
+}
 
 // Bind is called from rewindapp after the database is open.
 func Bind(dbc *db.DatabaseConnection) {
 	mu.Lock()
-	defer mu.Unlock()
 	pg = dbc
+	fn := afterBind
+	mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // ImportMaster inserts a videos row for a Blob-backed master.
 func ImportMaster(ctx context.Context, in Master) (string, error) {
-	mu.RLock()
-	dbc := pg
-	mu.RUnlock()
-	if dbc == nil {
-		return "", fmt.Errorf("archive: database not bound")
+	dbc, err := boundDB()
+	if err != nil {
+		return "", err
 	}
-	id := uuid.New()
-	var idpg, actor pgtype.UUID
-	copy(idpg.Bytes[:], id[:])
+	id, err := importMasterWith(ctx, dbc.Queries(ctx), in)
+	if err != nil {
+		return "", err
+	}
+	if err := plugin.Transcribe(ctx, id); err != nil {
+		slog.Warn("archive: transcribe enqueue failed", "video_id", id, "error", err)
+	}
+	u, err := uuid.Parse(id)
+	if err != nil {
+		slog.Warn("archive: asset regeneration enqueue skipped", "video_id", id, "error", err)
+		return id, nil
+	}
+	var idpg pgtype.UUID
+	copy(idpg.Bytes[:], u[:])
 	idpg.Valid = true
+	if _, err := dbc.Queries(ctx).EnqueueAssetRegenerationJob(ctx, &db.EnqueueAssetRegenerationJobParams{VideoID: idpg}); err != nil {
+		slog.Warn("archive: asset regeneration enqueue failed", "video_id", id, "error", err)
+	}
+	return id, nil
+}
+
+type masterInserter interface {
+	InsertVideo(context.Context, *db.InsertVideoParams) (*db.Video, error)
+	SetVideoTenantID(context.Context, pgtype.UUID, pgtype.UUID) error
+}
+
+func boundDB() (*db.DatabaseConnection, error) {
+	mu.RLock()
+	defer mu.RUnlock()
+	if pg == nil {
+		return nil, fmt.Errorf("archive: database not bound")
+	}
+	return pg, nil
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	var out pgtype.UUID
+	copy(out.Bytes[:], id[:])
+	out.Valid = true
+	return out
+}
+
+func parsePGUUID(id string) (pgtype.UUID, error) {
+	u, err := uuid.Parse(id)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("archive: id: %w", err)
+	}
+	return pgUUID(u), nil
+}
+
+func importMasterWith(ctx context.Context, q masterInserter, in Master) (string, error) {
+	var id uuid.UUID
+	if in.ID == "" {
+		id = uuid.New()
+	} else {
+		parsed, err := uuid.Parse(in.ID)
+		if err != nil {
+			return "", fmt.Errorf("archive: master id: %w", err)
+		}
+		id = parsed
+	}
+	idpg := pgUUID(id)
+	var actor pgtype.UUID
 	if in.ActorID != "" {
 		if u, err := uuid.Parse(in.ActorID); err == nil {
 			copy(actor.Bytes[:], u[:])
@@ -66,7 +141,7 @@ func ImportMaster(ctx context.Context, in Master) (string, error) {
 	if src == "" {
 		src = "stream://" + id.String()
 	}
-	row, err := dbc.Queries(ctx).InsertVideo(ctx, &db.InsertVideoParams{
+	row, err := q.InsertVideo(ctx, &db.InsertVideoParams{
 		ID:         idpg,
 		Src:        src,
 		ArchivedBy: actor,
@@ -78,14 +153,14 @@ func ImportMaster(ctx context.Context, in Master) (string, error) {
 		VideoPath:  &path,
 		FileSize:   &size,
 		Media:      "file",
+		TenantID:   db.ParseTenant(in.TenantID),
 	})
 	if err != nil {
 		return "", err
 	}
-	if in.TenantID != "" {
-		if _, err := dbc.Exec(ctx, `UPDATE videos SET tenant_id = $1 WHERE id = $2`, in.TenantID, id); err != nil {
-			return "", fmt.Errorf("set tenant_id: %w", err)
-		}
+	// Stamp tenant on the persisted row (ON CONFLICT returns that id, not the pre-insert UUID).
+	if err := q.SetVideoTenantID(ctx, row.ID, db.ParseTenant(in.TenantID)); err != nil {
+		return "", err
 	}
 	return row.ID.String(), nil
 }

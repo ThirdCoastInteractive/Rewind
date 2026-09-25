@@ -40,11 +40,12 @@ SOURCES = {
         "go.mod",
         "go.sum",
         "cmd/ml",
-        "cmd/web/auth",
         "internal",
         "pkg",
         "services/vision",
+        "services/textcls",
         "services/alignment",
+        "services/diarize",
     ],
 }
 
@@ -55,6 +56,7 @@ HOST_DIRS = [
     "bin/models/whisper",
     "bin/models/ollama",
     "bin/models/vision",
+    "bin/models/diarize",
     "bin/spool",
     "bin/exports",
 ]

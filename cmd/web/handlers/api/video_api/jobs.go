@@ -14,6 +14,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleJobs returns all download + ingest jobs for a video via SSE.
@@ -32,12 +33,9 @@ func HandleJobs(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handle
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
 
-		video, err := q.GetVideoByID(ctx, videoUUID)
+		video, err := common.RequireVideo(c, q, videoUUID, plugin.ActionVideoRead)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return c.String(404, "video not found")
-			}
-			return c.String(500, "failed to fetch video")
+			return err
 		}
 
 		jobs, err := q.ListDownloadJobsByVideoID(ctx, &db.ListDownloadJobsByVideoIDParams{
@@ -96,5 +94,3 @@ func HandleJobs(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handle
 		)
 	}
 }
-
-// HandleRegenerateAssets triggers regeneration of all video assets.

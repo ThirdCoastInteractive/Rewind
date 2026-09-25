@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 )
@@ -84,6 +85,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
 		templ_7745c5c3_Var4 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -96,59 +98,42 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"settings-workspace\"><header class=\"settings-heading\"><p class=\"rw-eyebrow\">YOUR ACCOUNT</p><h1>Settings</h1><p>Cookies, tokens, appearance, and shortcuts for this user.</p></header><div class=\"settings-layout\"><nav class=\"settings-nav\" aria-label=\"Settings sections\"><a href=\"#settings-connections\">Connections</a><a href=\"#settings-fonts\">Fonts</a><a href=\"#settings-interface\">Interface</a></nav><div class=\"settings-main\"><section id=\"settings-connections\" class=\"settings-section\"><header class=\"rw-section-heading\"><div><h2>Connections</h2><p>Download credentials and access for external agents.</p></div></header>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"settings-workspace\"><header class=\"settings-heading\"><p class=\"rw-eyebrow\">YOUR ACCOUNT</p><h1>Settings</h1>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"flex justify-between items-start mb-2 p-4 pb-0\">")
+			if liveProduct {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p>Appearance, fonts, and a key for your assistant.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var6 = []any{"sub-heading"}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p>Cookies, tokens, appearance, and shortcuts for this user.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<h2 class=\"")
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</header><div class=\"settings-layout\"><nav class=\"settings-nav\" aria-label=\"Settings sections\"><a href=\"#settings-connections\">Connections</a><a href=\"#settings-fonts\">Fonts</a><a href=\"#settings-interface\">Interface</a></nav><div class=\"settings-main\"><section id=\"settings-connections\" class=\"settings-section\"><header class=\"rw-section-heading\"><div><h2>Connections</h2>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if liveProduct {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p>A key so your own assistant can work in this workspace.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 1, Col: 0}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p>Download credentials and access for external agents.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\">COOKIES</h2>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				if cookiesValue != "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<a href=\"/settings/cookies/view\" class=\"inline-flex items-center gap-2 text-xs text-white hover:text-white/80 transition font-mono uppercase tracking-wider\" data-transition=\"slide\"><i class=\"fa-sharp fa-solid fa-eye\" aria-hidden=\"true\"></i> View Cookies</a>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></header>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if !liveProduct {
+				templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -160,41 +145,43 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-white/60 text-xs mb-3 font-mono\">Paste cookies.txt content to enable downloading age-restricted, members-only, and private content from any yt-dlp supported site. You can append cookies from multiple sites - they will be merged automatically.</p><div class=\"bg-black border-2 border-white/20 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-2 uppercase tracking-wider\">How to export cookies:</p><ol class=\"text-xs text-white/80 space-y-1 list-decimal list-inside font-mono\"><li>Install a browser extension like \"Get cookies.txt LOCALLY\" (Chrome/Edge) or \"cookies.txt\" (Firefox)</li><li>Log in to the site you want to download from (YouTube, Vimeo, etc.)</li><li>Click the extension icon and export cookies in <strong>Netscape format</strong></li><li>Copy the entire content and paste it below (you can paste multiple times to add cookies from different sites)</li></ol><p class=\"text-xs text-white/60 mt-2 font-mono\">⚠️ Cookies must be in Netscape format (tab-separated values)</p></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"flex justify-between items-start mb-2 p-4 pb-0\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					if message != "" {
-						if strings.Contains(message, "success") {
-							templ_7745c5c3_Err = Alert("success", message).Render(ctx, templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err != nil {
-								return templ_7745c5c3_Err
-							}
-						} else {
-							templ_7745c5c3_Err = Alert("error", message).Render(ctx, templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err != nil {
-								return templ_7745c5c3_Err
-							}
+					var templ_7745c5c3_Var6 = []any{"sub-heading"}
+					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<h2 class=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var7 string
+					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 1, Col: 0}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\">COOKIES</h2>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					if cookiesValue != "" {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<a href=\"/settings/cookies/view\" class=\"inline-flex items-center gap-2 text-xs text-white hover:text-white/80 transition font-mono uppercase tracking-wider\" data-transition=\"slide\"><i class=\"fa-sharp fa-solid fa-eye\" aria-hidden=\"true\"></i> View Cookies</a>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " <form method=\"POST\" action=\"/settings/cookies\"><div class=\"mb-3\"><label for=\"cookies_content\" class=\"form-label mb-1\">COOKIES (NETSCAPE FORMAT - TAB SEPARATED)</label> <textarea id=\"cookies_content\" name=\"cookies_content\" rows=\"12\" class=\"w-full bg-black border-2 border-white/20 px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-white transition\" placeholder=\"# Netscape HTTP Cookie File&#10;# This is a generated file! Do not edit.&#10;.youtube.com\tTRUE\t/\tTRUE\t1735689600\tCONSENT\tYES+1&#10;.youtube.com\tTRUE\t/\tFALSE\t1735689600\tVISITOR_INFO1_LIVE\tabc123def456\" value=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var9 string
-					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(cookiesValue)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 74, Col: 31}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"></textarea><p class=\"mt-2 text-xs text-white/40 font-mono\">⚠️ Must be Netscape format with <strong>TAB characters</strong> (not spaces) between fields. Use Ctrl+F to search for tabs if unsure.</p><p class=\"mt-1 text-xs text-white/40 font-mono\">Export from browser: \"Get cookies.txt LOCALLY\" (Chrome/Edge) or \"cookies.txt\" (Firefox) extension</p></div><div class=\"flex gap-2\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var8 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -206,37 +193,84 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "SAVE COOKIES")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<p class=\"text-white/60 text-xs mb-3 font-mono\">Paste cookies.txt content to enable downloading age-restricted, members-only, and private content from any yt-dlp supported site. You can append cookies from multiple sites - they will be merged automatically.</p><div class=\"bg-black border-2 border-white/20 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-2 uppercase tracking-wider\">How to export cookies:</p><ol class=\"text-xs text-white/80 space-y-1 list-decimal list-inside font-mono\"><li>Install a browser extension like \"Get cookies.txt LOCALLY\" (Chrome/Edge) or \"cookies.txt\" (Firefox)</li><li>Log in to the site you want to download from (YouTube, Vimeo, etc.)</li><li>Click the extension icon and export cookies in <strong>Netscape format</strong></li><li>Copy the entire content and paste it below (you can paste multiple times to add cookies from different sites)</li></ol><p class=\"text-xs text-white/60 mt-2 font-mono\">⚠️ Cookies must be in Netscape format (tab-separated values)</p></div>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						if message != "" {
+							if strings.Contains(message, "success") {
+								templ_7745c5c3_Err = Alert("success", message).Render(ctx, templ_7745c5c3_Buffer)
+								if templ_7745c5c3_Err != nil {
+									return templ_7745c5c3_Err
+								}
+							} else {
+								templ_7745c5c3_Err = Alert("error", message).Render(ctx, templ_7745c5c3_Buffer)
+								if templ_7745c5c3_Err != nil {
+									return templ_7745c5c3_Err
+								}
+							}
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " <form method=\"POST\" action=\"/settings/cookies\"><div class=\"mb-3\"><label for=\"cookies_content\" class=\"form-label mb-1\">COOKIES (NETSCAPE FORMAT - TAB SEPARATED)</label> <textarea id=\"cookies_content\" name=\"cookies_content\" rows=\"12\" class=\"w-full bg-black border-2 border-white/20 px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-white transition\" placeholder=\"# Netscape HTTP Cookie File&#10;# This is a generated file! Do not edit.&#10;.youtube.com\tTRUE\t/\tTRUE\t1735689600\tCONSENT\tYES+1&#10;.youtube.com\tTRUE\t/\tFALSE\t1735689600\tVISITOR_INFO1_LIVE\tabc123def456\" value=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var9 string
+						templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(cookiesValue)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 89, Col: 31}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"></textarea><p class=\"mt-2 text-xs text-white/40 font-mono\">⚠️ Must be Netscape format with <strong>TAB characters</strong> (not spaces) between fields. Use Ctrl+F to search for tabs if unsure.</p><p class=\"mt-1 text-xs text-white/40 font-mono\">Export from browser: \"Get cookies.txt LOCALLY\" (Chrome/Edge) or \"cookies.txt\" (Firefox) extension</p></div><div class=\"flex gap-2\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+							templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+							templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+							if !templ_7745c5c3_IsBuffer {
+								defer func() {
+									templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+									if templ_7745c5c3_Err == nil {
+										templ_7745c5c3_Err = templ_7745c5c3_BufErr
+									}
+								}()
+							}
+							ctx = templ.InitializeContext(ctx)
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "SAVE COOKIES")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							return nil
+						})
+						templ_7745c5c3_Err = components.FormButton("primary", "sm", "", true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						if cookiesValue != "" {
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<button type=\"submit\" formaction=\"/settings/cookies/delete\" class=\"btn-ghost btn-sm\">CLEAR</button>")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></form>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = components.FormButton("primary", "sm", "", true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					if cookiesValue != "" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button type=\"submit\" formaction=\"/settings/cookies/delete\" class=\"btn-ghost btn-sm\">CLEAR</button>")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></form>")
+					templ_7745c5c3_Err = components.CardBody(true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = components.CardBody(true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.Card(false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				return nil
-			})
-			templ_7745c5c3_Err = components.Card(false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -250,11 +284,18 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = components.CardHeader("MCP", "Connect your own agent (Claude Desktop, Cursor, ChatGPT) to search, analyze channels, follow, and download. Tokens are shown once.").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
+				if liveProduct {
+					templ_7745c5c3_Err = components.CardHeader("MCP", "Connect your own assistant to this workspace. The token is shown once.").Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = components.CardHeader("MCP", "Connect your own agent (Claude Desktop, Cursor, ChatGPT) to search, analyze channels, follow, and download. Tokens are shown once.").Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -270,30 +311,40 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<p class=\"text-white/60 text-xs mb-3 font-mono\">Endpoint: <code class=\"text-white\">POST /mcp</code> with <code class=\"text-white\">Authorization: Bearer rw_…</code></p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p class=\"text-white/60 text-xs mb-3 font-mono\">Endpoint: <code class=\"text-white\">POST /mcp</code> with <code class=\"text-white\">Authorization: Bearer rw_…</code></p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					if liveProduct {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<p class=\"text-xs mb-3\"><a class=\"underline\" href=\"/docs/agents\" title=\"Create a key, send it as a bearer token, and give the assistant the instruction file.\">How to connect an assistant</a></p>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if mcpToken != "" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"bg-black border-2 border-white/40 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-1 uppercase tracking-wider\">Copy this token now — it will not be shown again</p><code class=\"text-xs text-white font-mono break-all\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"bg-black border-2 border-white/40 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-1 uppercase tracking-wider\">Copy this token now — it will not be shown again</p><code class=\"text-xs text-white font-mono break-all\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var13 string
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(mcpToken)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 109, Col: 73}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 134, Col: 73}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</code></div>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</code></div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " <form method=\"POST\" action=\"/settings/tokens\" class=\"flex flex-wrap gap-2 items-end\"><div class=\"flex-1 min-w-40\"><label class=\"form-label mb-1\" for=\"token_name\">Label</label> <input id=\"token_name\" name=\"name\" type=\"text\" placeholder=\"Claude Desktop\" class=\"w-full bg-black border-2 border-white/20 px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-white\"></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " <form method=\"POST\" action=\"/settings/tokens\" class=\"flex flex-wrap gap-2 items-end\"><div class=\"flex-1 min-w-40\"><label class=\"form-label mb-1\" for=\"token_name\">Label</label> <input id=\"token_name\" name=\"name\" type=\"text\" placeholder=\"Claude Desktop\" class=\"w-full bg-black border-2 border-white/20 px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-white\"></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -309,7 +360,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "CREATE TOKEN")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "CREATE TOKEN")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -319,18 +370,18 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</form>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</form>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if len(tokens) > 0 {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"mt-4 border-2 border-white/10 divide-y-2 divide-white/10\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"mt-4 border-2 border-white/10 divide-y-2 divide-white/10\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						for _, tok := range tokens {
 							if tok != nil {
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"p-2 flex items-center justify-between gap-3\"><div class=\"min-w-0\"><div class=\"flex items-center gap-2 flex-wrap\">")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"p-2 flex items-center justify-between gap-3\"><div class=\"min-w-0\"><div class=\"flex items-center gap-2 flex-wrap\">")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
@@ -339,7 +390,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span class=\"")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<span class=\"")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
@@ -352,7 +403,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\">")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\">")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
@@ -360,95 +411,95 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 									var templ_7745c5c3_Var17 string
 									templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(tok.Name)
 									if templ_7745c5c3_Err != nil {
-										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 136, Col: 27}
+										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 161, Col: 27}
 									}
 									_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								} else {
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "untitled")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "untitled")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span> ")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span> ")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								if tok.RevokedAt.Valid {
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<span class=\"badge\">revoked</span>")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<span class=\"badge\">revoked</span>")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div><div class=\"font-mono text-[10px] text-white/40 mt-0.5\">created ")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div><div class=\"font-mono text-[10px] text-white/40 mt-0.5\">created ")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var18 string
 								templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(tok.CreatedAt.Time))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 146, Col: 58}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 171, Col: 58}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, " ")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, " ")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								if tok.LastUsedAt.Valid {
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "· last used ")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "· last used ")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 									var templ_7745c5c3_Var19 string
 									templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(humanize.Time(tok.LastUsedAt.Time))
 									if templ_7745c5c3_Err != nil {
-										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 148, Col: 65}
+										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 173, Col: 65}
 									}
 									_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								} else {
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "· never used")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "· never used")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div></div>")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div></div>")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								if !tok.RevokedAt.Valid {
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<form method=\"POST\" action=\"")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<form method=\"POST\" action=\"")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 									var templ_7745c5c3_Var20 templ.SafeURL
 									templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/settings/tokens/" + tok.ID.String() + "/revoke"))
 									if templ_7745c5c3_Err != nil {
-										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 155, Col: 107}
+										return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 180, Col: 107}
 									}
 									_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
-									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><button type=\"submit\" class=\"ghost-btn-sm text-red-400/70 border-red-500/40 hover:border-red-400 hover:text-red-300\" onclick=\"return confirm('Revoke this token? Connected agents will stop working.')\">Revoke</button></form>")
+									templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\"><button type=\"submit\" class=\"ghost-btn-sm text-red-400/70 border-red-500/40 hover:border-red-400 hover:text-red-300\" onclick=\"return confirm('Revoke this token? Connected agents will stop working.')\">Revoke</button></form>")
 									if templ_7745c5c3_Err != nil {
 										return templ_7745c5c3_Err
 									}
 								}
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div>")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -465,27 +516,8 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = components.CardHeader("BOOKMARKLET", "Drag the button below to your bookmarks bar to quickly archive videos from any page you're browsing.").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, " ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			if !liveProduct {
+				templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -497,23 +529,44 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"bg-black border-2 border-white/20 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-2 uppercase tracking-wider\">How to use:</p><ol class=\"text-xs text-white/80 space-y-1 list-decimal list-inside font-mono\"><li>Drag the \"Archive Video\" button below to your browser's bookmarks bar</li><li>Navigate to any video page (YouTube, Vimeo, etc.)</li><li>Click the bookmarklet in your bookmarks bar</li><li>The current page URL will be submitted as a download job automatically</li></ol></div><div class=\"flex items-center gap-3\"><a href=\"#\" class=\"bookmarklet-link inline-block bg-white text-black px-4 py-2 font-mono text-xs uppercase tracking-wider border-2 border-white hover:bg-white/90 transition cursor-move\" onclick=\"alert('Drag this button to your bookmarks bar instead of clicking it!'); return false;\">📹 Archive Video</a> <span class=\"text-xs text-white/40 font-mono\">← Drag this to your bookmarks bar</span></div><div class=\"mt-3 bg-black border-2 border-white/20 p-3\"><p class=\"text-xs text-white/60 mb-2 font-mono uppercase tracking-wider\">Advanced: Bookmarklet code</p><code class=\"bookmarklet-code text-xs text-white/80 font-mono break-all\">Loading...</code></div>")
+					templ_7745c5c3_Err = components.CardHeader("BOOKMARKLET", "Drag the button below to your bookmarks bar to quickly archive videos from any page you're browsing.").Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, " ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+						if !templ_7745c5c3_IsBuffer {
+							defer func() {
+								templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+								if templ_7745c5c3_Err == nil {
+									templ_7745c5c3_Err = templ_7745c5c3_BufErr
+								}
+							}()
+						}
+						ctx = templ.InitializeContext(ctx)
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<div class=\"bg-black border-2 border-white/20 p-3 mb-3\"><p class=\"text-xs text-white font-mono mb-2 uppercase tracking-wider\">How to use:</p><ol class=\"text-xs text-white/80 space-y-1 list-decimal list-inside font-mono\"><li>Drag the \"Archive Video\" button below to your browser's bookmarks bar</li><li>Navigate to any video page (YouTube, Vimeo, etc.)</li><li>Click the bookmarklet in your bookmarks bar</li><li>The current page URL will be submitted as a download job automatically</li></ol></div><div class=\"flex items-center gap-3\"><a href=\"#\" class=\"bookmarklet-link inline-block bg-white text-black px-4 py-2 font-mono text-xs uppercase tracking-wider border-2 border-white hover:bg-white/90 transition cursor-move\" onclick=\"alert('Drag this button to your bookmarks bar instead of clicking it!'); return false;\">📹 Archive Video</a> <span class=\"text-xs text-white/40 font-mono\">← Drag this to your bookmarks bar</span></div><div class=\"mt-3 bg-black border-2 border-white/20 p-3\"><p class=\"text-xs text-white/60 mb-2 font-mono uppercase tracking-wider\">Advanced: Bookmarklet code</p><code class=\"bookmarklet-code text-xs text-white/80 font-mono break-all\">Loading...</code></div>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						return nil
+					})
+					templ_7745c5c3_Err = components.CardBody(true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = components.CardBody(true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.Card(false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				return nil
-			})
-			templ_7745c5c3_Err = components.Card(false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<section id=\"settings-fonts\" class=\"settings-section mt-8\"><header class=\"rw-section-heading\"><div><h2>Fonts</h2><p>Download Google Fonts as TTF for title cards and burnt-in captions. Bundled Tomorrow and Unifraktur Cook stay available.</p></div></header>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<section id=\"settings-fonts\" class=\"settings-section mt-8\"><header class=\"rw-section-heading\"><div><h2>Fonts</h2><p>Download Google Fonts as TTF for title cards and burnt-in captions. Bundled Tomorrow and Unifraktur Cook stay available.</p></div></header>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -537,7 +590,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -569,7 +622,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -585,7 +638,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div id=\"settings-interface\"></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<div id=\"settings-interface\"></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -593,7 +646,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -601,7 +654,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -617,27 +670,27 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<form method=\"POST\" action=\"/settings/interface\"><div class=\"space-y-4\"><div class=\"flex items-start gap-3\"><input type=\"checkbox\" id=\"sounds_enabled\" name=\"sounds_enabled\" class=\"mt-1 w-4 h-4 bg-black border-2 border-white/20 checked:bg-white checked:border-white focus:outline-none focus:ring-2 focus:ring-white/20 cursor-pointer\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<form method=\"POST\" action=\"/settings/interface\"><div class=\"space-y-4\"><div class=\"flex items-start gap-3\"><input type=\"checkbox\" id=\"sounds_enabled\" name=\"sounds_enabled\" class=\"mt-1 w-4 h-4 bg-black border-2 border-white/20 checked:bg-white checked:border-white focus:outline-none focus:ring-2 focus:ring-white/20 cursor-pointer\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if interfacePreference(ctx, "sounds_enabled") {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, " checked")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, " checked")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "><div class=\"flex-1\"><label for=\"sounds_enabled\" class=\"text-sm font-mono uppercase tracking-wider text-white cursor-pointer\">Sound Effects</label><p class=\"text-xs text-white/60 mt-1 font-mono\">Enable subtle UI sounds for actions like job submission, navigation, and status changes. Sounds play at 30% volume by default.</p></div></div><div class=\"flex items-start gap-3\"><input type=\"checkbox\" name=\"reduced_motion\" id=\"reduced_motion\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "><div class=\"flex-1\"><label for=\"sounds_enabled\" class=\"text-sm font-mono uppercase tracking-wider text-white cursor-pointer\">Sound Effects</label><p class=\"text-xs text-white/60 mt-1 font-mono\">Enable subtle UI sounds for actions like job submission, navigation, and status changes. Sounds play at 30% volume by default.</p></div></div><div class=\"flex items-start gap-3\"><input type=\"checkbox\" name=\"reduced_motion\" id=\"reduced_motion\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if interfacePreference(ctx, "reduced_motion") {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, " checked")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, " checked")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "><div class=\"flex-1\"><label for=\"reduced_motion\" class=\"text-sm font-mono uppercase tracking-wider text-white/60\">Reduced Motion</label><p class=\"text-xs text-white/40 mt-1 font-mono\">Reduce interface animation across your devices. OS accessibility preferences are also honored.</p></div></div></div><div class=\"mt-4 pt-4 border-t-2 border-white/10\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "><div class=\"flex-1\"><label for=\"reduced_motion\" class=\"text-sm font-mono uppercase tracking-wider text-white/60\">Reduced Motion</label><p class=\"text-xs text-white/40 mt-1 font-mono\">Reduce interface animation across your devices. OS accessibility preferences are also honored.</p></div></div></div><div class=\"mt-4 pt-4 border-t-2 border-white/10\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -653,7 +706,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "SAVE PREFERENCES")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "SAVE PREFERENCES")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -663,7 +716,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</div></form>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div></form>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -695,7 +748,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -711,7 +764,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<div class=\"flex items-center justify-between\"><p class=\"text-xs text-white/60 font-mono\">Rebind clip controls, playback, and hardware keys (F14-F24).</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"flex items-center justify-between\"><p class=\"text-xs text-white/60 font-mono\">Rebind clip controls, playback, and hardware keys (F14-F24).</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -727,7 +780,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "EDIT KEYBINDINGS")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "EDIT KEYBINDINGS")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -737,7 +790,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -753,7 +806,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<div class=\"text-center mt-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<div class=\"text-center mt-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -769,7 +822,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "BACK TO HOME")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "BACK TO HOME")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -779,7 +832,7 @@ func SettingsContent(cookiesValue string, message string, mcpToken string, token
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</div></section></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></section></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

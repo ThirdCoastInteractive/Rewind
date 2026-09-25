@@ -174,6 +174,18 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) int {
 		if videoPath == "" {
 			continue
 		}
+		// Imported Live masters are durable R2 keys. Filesystem catchup cannot
+		// canonicalize them and must never replace the authoritative key with a
+		// transient spool path.
+		if isPrivateMasterKey(videoPath) {
+			var idUUID pgtype.UUID
+			if err := idUUID.Scan(videoID); err != nil {
+				continue
+			}
+			slog.Info("asset catchup scheduling remote master", "video_id", videoID)
+			enqueueCatchupAssets(ctx, q, idUUID)
+			continue
+		}
 
 		slog.Info("asset catchup scan", "video_id", videoID, "video_path", videoPath, "thumb_path", derefString(thumbPath), "has_hash", fileHash != nil && strings.TrimSpace(*fileHash) != "", "duration_seconds", row.DurationSeconds)
 
@@ -259,7 +271,7 @@ func runAssetCatchupUnit(ctx context.Context, dbc *db.DatabaseConnection) int {
 			}
 
 			// Thumbnail: find existing or generate
-			if p, err := generateVideoThumbnail(ctx, videoPath, videoID, false); err == nil {
+			if p, err := generateVideoThumbnail(ctx, videoPath, filepath.Dir(videoPath), videoID, false); err == nil {
 				_ = q.UpdateVideoThumbnailPath(ctx, &db.UpdateVideoThumbnailPathParams{ID: idUUID, ThumbnailPath: p})
 			} else {
 				slog.Warn("asset catchup thumbnail failed", "video_id", videoID, "error", err)
@@ -381,9 +393,8 @@ func verifyWaveformAssets(videoPath string) bool {
 }
 
 // generateVideoThumbnail generates a thumbnail for a video, optionally deleting the existing one first.
-func generateVideoThumbnail(ctx context.Context, videoPath, videoID string, forceRegenerate bool) (*string, error) {
-	videoDir := filepath.Dir(videoPath)
-	thumbPath := filepath.Join(videoDir, videoID+".thumbnail.jpg")
+func generateVideoThumbnail(ctx context.Context, ffmpegSrc, outDir, videoID string, forceRegenerate bool) (*string, error) {
+	thumbPath := filepath.Join(outDir, videoID+".thumbnail.jpg")
 
 	if forceRegenerate {
 		if err := os.Remove(thumbPath); err != nil && !os.IsNotExist(err) {
@@ -392,7 +403,7 @@ func generateVideoThumbnail(ctx context.Context, videoPath, videoID string, forc
 			slog.Info("deleted existing thumbnail for regeneration", "path", thumbPath)
 		}
 		for _, variant := range thumbnailVariants {
-			variantPath := thumbnailVariantPath(videoDir, videoID, variant.Label)
+			variantPath := thumbnailVariantPath(outDir, videoID, variant.Label)
 			if err := os.Remove(variantPath); err != nil && !os.IsNotExist(err) {
 				slog.Warn("failed to delete existing thumbnail variant", "path", variantPath, "error", err)
 			} else if err == nil {
@@ -401,7 +412,7 @@ func generateVideoThumbnail(ctx context.Context, videoPath, videoID string, forc
 		}
 	}
 
-	p, err := generateThumbnail(ctx, videoPath)
+	p, err := generateThumbnail(ctx, ffmpegSrc, outDir, videoID)
 	if err != nil {
 		return nil, err
 	}
@@ -409,9 +420,8 @@ func generateVideoThumbnail(ctx context.Context, videoPath, videoID string, forc
 }
 
 // generateVideoPreview generates a preview MP4 for a video, optionally deleting the existing one first.
-func generateVideoPreview(ctx context.Context, videoPath, videoID string, forceRegenerate bool) error {
-	videoDir := filepath.Dir(videoPath)
-	previewPath := filepath.Join(videoDir, videoID+".preview.mp4")
+func generateVideoPreview(ctx context.Context, ffmpegSrc, outDir, videoID string, forceRegenerate bool) error {
+	previewPath := filepath.Join(outDir, videoID+".preview.mp4")
 
 	if forceRegenerate {
 		if err := os.Remove(previewPath); err != nil && !os.IsNotExist(err) {
@@ -421,14 +431,13 @@ func generateVideoPreview(ctx context.Context, videoPath, videoID string, forceR
 		}
 	}
 
-	return generatePreviewMP4(ctx, videoPath)
+	return generatePreviewMP4(ctx, ffmpegSrc, outDir, videoID)
 }
 
 // generateVideoSeekAssets generates seek sprite sheets for a video, optionally deleting existing ones first.
-func generateVideoSeekAssets(ctx context.Context, videoPath, videoID string, durationSeconds *int32, forceRegenerate bool) (bool, error) {
+func generateVideoSeekAssets(ctx context.Context, ffmpegSrc, outDir, videoID string, durationSeconds *int32, forceRegenerate bool) (bool, error) {
 	if forceRegenerate {
-		videoDir := filepath.Dir(videoPath)
-		seekDir := filepath.Join(videoDir, "seek")
+		seekDir := filepath.Join(outDir, "seek")
 		if err := os.RemoveAll(seekDir); err != nil && !os.IsNotExist(err) {
 			slog.Warn("failed to delete existing seek directory", "path", seekDir, "error", err)
 		} else if err == nil {
@@ -436,14 +445,13 @@ func generateVideoSeekAssets(ctx context.Context, videoPath, videoID string, dur
 		}
 	}
 
-	return ensureSeekAssets(ctx, videoPath, durationSeconds)
+	return ensureSeekAssets(ctx, ffmpegSrc, outDir, durationSeconds)
 }
 
 // generateVideoWaveform generates waveform data for a video, optionally deleting existing data first.
-func generateVideoWaveform(ctx context.Context, videoPath, videoID string, durationSeconds *int32, forceRegenerate bool) (bool, error) {
+func generateVideoWaveform(ctx context.Context, ffmpegSrc, outDir, videoID string, durationSeconds *int32, forceRegenerate bool) (bool, error) {
 	if forceRegenerate {
-		videoDir := filepath.Dir(videoPath)
-		waveformDir := filepath.Join(videoDir, "waveform")
+		waveformDir := filepath.Join(outDir, "waveform")
 		if err := os.RemoveAll(waveformDir); err != nil && !os.IsNotExist(err) {
 			slog.Warn("failed to delete existing waveform directory", "path", waveformDir, "error", err)
 		} else if err == nil {
@@ -451,7 +459,7 @@ func generateVideoWaveform(ctx context.Context, videoPath, videoID string, durat
 		}
 	}
 
-	return ensureWaveformAssets(ctx, videoPath, durationSeconds)
+	return ensureWaveformAssets(ctx, ffmpegSrc, outDir, durationSeconds)
 }
 
 func advisoryLockID(scope, id string) int64 {
@@ -563,6 +571,44 @@ func derivedAssetsIncomplete(status map[string]any) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+// runRemoteMasterCatchup queues derived assets for R2 masters. The filesystem
+// catchup query ignores org/ keys so it cannot rewrite them to a spool path.
+func runRemoteMasterCatchup(ctx context.Context, dbc *db.DatabaseConnection) {
+	rows, err := dbc.Query(ctx, `
+		SELECT id::text
+		FROM videos
+		WHERE video_path LIKE 'org/%'
+		  AND (thumbnail_path IS NULL OR btrim(thumbnail_path) = '')
+		ORDER BY updated_at ASC
+		LIMIT 8`)
+	if err != nil {
+		slog.Warn("remote master catchup query failed", "error", err)
+		return
+	}
+	defer rows.Close()
+	q := dbc.Queries(ctx)
+	n := 0
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			slog.Warn("remote master catchup scan failed", "error", err)
+			return
+		}
+		var idUUID pgtype.UUID
+		if err := idUUID.Scan(id); err != nil {
+			continue
+		}
+		enqueueCatchupAssets(ctx, q, idUUID)
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("remote master catchup rows failed", "error", err)
+	}
+	if n > 0 {
+		slog.Info("remote master catchup", "videos", n)
 	}
 }
 

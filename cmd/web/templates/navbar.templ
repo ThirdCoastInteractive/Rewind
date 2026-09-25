@@ -6,20 +6,41 @@ import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 templ Navbar(username string) {
 	{{ accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string) }}
 	{{ registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool) }}
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ brandHref := "/" }}
+	{{ brandLabel := "Rewind home" }}
+	if liveProduct {
+		if accessLevel != "unauthenticated" {
+			{{ brandHref = "/live" }}
+			{{ brandLabel = "Studio" }}
+		} else {
+			{{ brandHref = "/start" }}
+			{{ brandLabel = "Rewind Live home" }}
+		}
+	}
 	<nav id="main-nav" class="site-nav" aria-label="Main navigation" data-signals="{_navOpen: false}" data-on:keydown="if (evt.key === 'Escape') { $_navOpen = false; el.querySelectorAll('details[open]').forEach(d => d.open = false); el.querySelector('[data-nav-toggle]')?.focus() }" data-on:click__outside="$_navOpen = false">
-		<a href="/" class="site-nav-brand" aria-label="Rewind home">
+		<a href={ templ.SafeURL(brandHref) } class="site-nav-brand" aria-label={ brandLabel }>
 			<i class="fa-sharp fa-solid fa-video" aria-hidden="true"></i>
-			<span>REWIND</span>
+			if liveProduct {
+				<span>REWIND LIVE</span>
+			} else {
+				<span>REWIND</span>
+			}
 		</a>
 		if accessLevel != "unauthenticated" {
 			<div class="site-nav-library" aria-label="Library">
-				@navPrimary("/videos", "Videos")
-				@navPrimary("/channels", "Channels")
-				@navPrimary("/creators", "Creators")
-				@navPrimary("/follows", "Follows")
+				if liveProduct {
+					@navPrimary("/live", "Studio")
+					@navPrimary("/videos", "Recordings")
+				} else {
+					@navPrimary("/videos", "Videos")
+					@navPrimary("/channels", "Channels")
+					@navPrimary("/creators", "Creators")
+					@navPrimary("/follows", "Follows")
+				}
 			</div>
 		}
-		if username != "" {
+		if username != "" && !liveProduct {
 			<button type="button" class="site-nav-agent" data-agent-toggle data-on:click="$agentOpen = !$agentOpen" aria-controls="rewind-agent" aria-expanded="false" data-attr:aria-expanded="$agentOpen ? 'true' : 'false'">
 				<i class="fa-sharp fa-solid fa-comment" aria-hidden="true"></i>Assistant
 			</button>
@@ -31,28 +52,27 @@ templ Navbar(username string) {
 			</button>
 			<div id="site-nav-menu" class="site-nav-menu" data-class:is-open="$_navOpen">
 				<div class="site-nav-destinations">
-					@navGroup("Explore", "Discover connections", false) {
-						@navDestination("/visual", "Visual search", "images")
-						@navDestination("/network", "Network", "diagram-project")
-						@navDestination("/investigate", "Investigate", "magnifying-glass")
-						@navDestination("/wiki", "Wiki", "book")
+					if !liveProduct {
+						@navGroup("Explore", "Discover connections", false) {
+							@navDestination("/visual", "Visual search", "images")
+							@navDestination("/network", "Network", "diagram-project")
+							@navDestination("/investigate", "Investigate", "magnifying-glass")
+						}
 					}
-					@navGroup("Studio", "Build something from your archive", false) {
+					@navDestination("/wiki", "Wiki", "book")
+					@navGroup("Editor", "Clip and stitch recordings", false) {
 						@navDestination("/compilations", "Compilations", "layer-group")
 						@navDestination("/stitch", "Stitch", "film")
 						@navDestination("/show-notes", "Show notes", "list-check")
 					}
 					<a href="/jobs" class="site-nav-direct" data-attr:aria-current="window.location.pathname.startsWith('/jobs') ? 'page' : null">Jobs</a>
-				</div>
-				<div class="site-nav-utilities">
-					<a href="/upload" class="site-nav-upload"><i class="fa-sharp fa-solid fa-plus" aria-hidden="true"></i>Upload</a>
-					@navGroup("Account", username, true) {
-						@navDestination("/settings", "Settings", "gear")
-						if accessLevel == "admin" {
-							<p class="site-nav-section-label">Administration</p>
+					if accessLevel == "admin" && !liveProduct {
+						@navGroup("Admin", "Configure and monitor this instance", false) {
 							@navDestination("/admin", "Dashboard", "gauge-high")
+							<p class="site-nav-section-label">Configuration</p>
 							@navDestination("/admin/settings", "Instance", "sliders")
 							@navDestination("/admin/users", "Users", "users")
+							<p class="site-nav-section-label">Maintenance</p>
 							@navDestination("/admin/exports", "Exports", "file-export")
 							@navDestination("/admin/asset-health", "Asset health", "heart-pulse")
 							@navDestination("/admin/database", "Database", "database")
@@ -60,7 +80,22 @@ templ Navbar(username string) {
 								<button type="submit" class="site-nav-item"><i class="fa-sharp fa-solid fa-arrows-rotate" aria-hidden="true"></i>Refresh assets</button>
 							</form>
 						}
-						<div class="site-nav-section-label">Session</div>
+					}
+				</div>
+				<div class="site-nav-utilities">
+					if liveProduct {
+						<a href="/live" class="site-nav-upload"><i class="fa-sharp fa-solid fa-broadcast-tower" aria-hidden="true"></i>Go live</a>
+					}
+					<a href="/upload" class="site-nav-upload"><i class="fa-sharp fa-solid fa-plus" aria-hidden="true"></i>Upload</a>
+					@navUserGroup(username) {
+						@navDestination("/settings", "Settings", "gear")
+						if liveProduct {
+							@navDestination("/billing", "Plan & billing", "credit-card")
+						}
+						if accessLevel == "admin" && liveProduct {
+							@navDestination("/staff", "Staff", "id-badge")
+						}
+						<hr class="site-nav-divider"/>
 						@navDestination("/logout", "Log out", "right-from-bracket")
 					}
 				</div>
@@ -84,7 +119,21 @@ templ navGroup(label, description string, alignRight bool) {
 	<details class={ "site-nav-group", templ.KV("site-nav-group-end", alignRight) } name="site-navigation" data-on:click__outside="el.open = false" data-on:keydown="if (evt.key === 'Escape') { evt.stopPropagation(); el.open = false; el.querySelector('summary').focus() }">
 		<summary>{ label }<i class="fa-sharp fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
 		<div class="site-nav-dropdown">
-			<p class="site-nav-description">{ description }</p>
+			if description != "" {
+				<p class="site-nav-description">{ description }</p>
+			}
+			{ children... }
+		</div>
+	</details>
+}
+
+templ navUserGroup(username string) {
+	<details class="site-nav-group site-nav-group-end" name="site-navigation" data-on:click__outside="el.open = false" data-on:keydown="if (evt.key === 'Escape') { evt.stopPropagation(); el.open = false; el.querySelector('summary').focus() }">
+		<summary aria-label={ "Signed in as " + username }>
+			<span class="site-nav-user"><i class="fa-sharp fa-solid fa-user" aria-hidden="true"></i><span>{ username }</span></span>
+			<i class="fa-sharp fa-solid fa-chevron-down" aria-hidden="true"></i>
+		</summary>
+		<div class="site-nav-dropdown">
 			{ children... }
 		</div>
 	</details>

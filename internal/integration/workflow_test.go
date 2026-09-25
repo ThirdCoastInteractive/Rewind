@@ -17,6 +17,8 @@ import (
 	"thirdcoast.systems/rewind/internal/contextwindow"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/vision"
+	"thirdcoast.systems/rewind/pkg/plugin"
+	"thirdcoast.systems/rewind/pkg/plugin/builtin"
 )
 
 func TestDurableWorkflow(t *testing.T) {
@@ -31,6 +33,9 @@ func TestDurableWorkflow(t *testing.T) {
 	if err = dbc.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	plugin.Reset()
+	t.Cleanup(plugin.Reset)
+	builtin.Defaults(dbc)
 	q := dbc.Queries(ctx)
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -48,8 +53,15 @@ func TestDurableWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs, err := q.ListMLJobsForVideo(ctx, video)
+	if err != nil || len(jobs) != 0 {
+		t.Fatalf("transcript import unexpectedly enqueued ML work: %v %d", err, len(jobs))
+	}
+	if err := q.EnqueueMLJob(ctx, &db.EnqueueMLJobParams{VideoID: video, Kind: "context_windows", Priority: 100, TranscriptHash: first, ModelDigest: "fixture", PromptVersion: contextwindow.PromptVersion}); err != nil {
+		t.Fatal("explicit demand enqueue:", err)
+	}
+	jobs, err = q.ListMLJobsForVideo(ctx, video)
 	if err != nil || len(jobs) != 1 {
-		t.Fatalf("import enqueue: %v %d", err, len(jobs))
+		t.Fatalf("explicit enqueue: %v %d", err, len(jobs))
 	}
 	exec(`UPDATE video_transcripts SET cues='[{"start":2,"end":3,"text":"hello world"}]' WHERE video_id=$1`, video)
 	second, err := q.GetTranscriptFingerprint(ctx, video)
@@ -57,8 +69,15 @@ func TestDurableWorkflow(t *testing.T) {
 		t.Fatal("timing fingerprint unchanged", err)
 	}
 	jobs, err = q.ListMLJobsForVideo(ctx, video)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("timing update unexpectedly enqueued ML work: %v %d", err, len(jobs))
+	}
+	if err := q.EnqueueMLJob(ctx, &db.EnqueueMLJobParams{VideoID: video, Kind: "context_windows", Priority: 100, TranscriptHash: second, ModelDigest: "fixture", PromptVersion: contextwindow.PromptVersion}); err != nil {
+		t.Fatal("explicit refreshed enqueue:", err)
+	}
+	jobs, err = q.ListMLJobsForVideo(ctx, video)
 	if err != nil || len(jobs) != 2 {
-		t.Fatalf("timing enqueue: %v %d", err, len(jobs))
+		t.Fatalf("explicit refreshed enqueue: %v %d", err, len(jobs))
 	}
 	exec(`UPDATE ml_jobs SET status='succeeded' WHERE video_id=$1`, video)
 	window, err := q.CreateContextWindow(ctx, &db.CreateContextWindowParams{VideoID: video, StartTs: 2, EndTs: 20, Title: "old", Summary: "old", Topics: []string{}, Entities: []string{}, Origin: "mcp", TranscriptCueEvidence: []byte("[]"), BoundaryQuality: "cue", CreatedBy: user})

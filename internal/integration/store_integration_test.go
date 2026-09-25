@@ -153,11 +153,15 @@ func TestStitchStoreOwnershipStaleAndConcurrentRetry(t *testing.T) {
 	}
 	other := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	a := stitch.Actor{Kind: "user", ID: u.String()}
+	// Projects are owner-only: another user's read is a missing project.
 	if _, err := s.Get(ctx, other, p); !errors.Is(err, stitch.ErrNotFound) {
-		t.Fatal(err)
+		t.Fatalf("foreign project read leaked: %v", err)
 	}
 	if _, err := s.History(ctx, other, p, 0, 10); !errors.Is(err, stitch.ErrNotFound) {
-		t.Fatal(err)
+		t.Fatalf("foreign history read leaked: %v", err)
+	}
+	if _, err := s.Commit(ctx, other, p, 0, "foreign", a, "foreign", []stitch.Operation{{Type: "set_title", Title: "foreign"}}); !errors.Is(err, stitch.ErrNotFound) {
+		t.Fatalf("foreign write leaked: %v", err)
 	}
 	op := []stitch.Operation{{Type: "set_title", Title: "shared"}}
 	var wg sync.WaitGroup

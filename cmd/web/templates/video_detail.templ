@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/format"
@@ -52,44 +53,56 @@ templ VideoDetailPage(video VideoDetail, clips []*db.Clip, username string, keyb
 }
 
 templ VideoDetailContent(video VideoDetail, clips []*db.Clip, keybindings map[string]string) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ manageTitle := "Manage archive" }}
+	{{ manageDescription := "Downloads and asset repair" }}
+	if liveProduct {
+		{{ manageTitle = "Manage recording" }}
+		{{ manageDescription = "Exports and asset repair" }}
+	}
 	<div class="watch-page mx-auto w-full max-w-wide px-2 py-1" data-watch-page>
 		@videoDetailNav(video)
-		@videoMetadataCard(video)
 		<div class="video-detail-grid watch-view-grid">
 			<div class="min-w-0">
 				@videoPlayer(video)
 			</div>
-			<div class="min-w-0">
+			<div class="watch-side min-w-0">
 				@videoTranscriptAndClips(video, clips)
 			</div>
 		</div>
-		<div class="video-detail-grid">
-			<div class="min-w-0">
-				@videoDescriptionCard(video)
+		@videoMetadataCard(video)
+		@videoDescriptionCard(video)
+		@videoInfoCard(video)
+		@videoStreamsCard(video)
+		<div class="recording-tools" data-signals={ regenSignals(video) }>
+			<div class="recording-toolbar">
+				<div class="recording-toolbar-head">
+					<div>
+						<h2 class="font-bold text-sm">{ manageTitle }</h2>
+						<p class="mt-1 text-xs text-white/50">{ manageDescription }</p>
+					</div>
+					@videoActionButtons(video)
+				</div>
+				@videoRegenButtons(video)
+				@VideoProcessingNotice("")
 			</div>
-			<div class="min-w-0">
-				@videoTagsCard(video)
+			<div class="recording-body">
+				<div class="recording-main min-w-0">
+					<div id="video-processing" class="recording-generated text-xs">Loading generated data status…</div>
+				</div>
+				<aside class="recording-aside min-w-0">
+					@videoJobsCard(video)
+					@videoTagsCard(video)
+				</aside>
 			</div>
 		</div>
 		<link rel="stylesheet" href="/static/dist/video-player.css"/>
 		@KeybindingsData(keybindings)
 		<script src="/static/dist/video-player.js"></script>
-		<div class="video-detail-grid mt-6 pt-6 border-t border-white/10">
-			<section class="min-w-0" aria-label="Archive details">
-				@videoInfoCard(video)
-				@videoStreamsCard(video)
-			</section>
-			<section class="min-w-0" aria-label="Manage archive">
-				@videoDetailSection("Manage archive", "Downloads and asset repair") {
-					@videoActionButtons(video)
-					@videoRegenButtons(video)
-					@VideoProcessingNotice("")
-					<div id="video-processing" class="mt-4 text-xs">Loading generated data status…</div>
-				}
-				@videoJobsCard(video)
-			</section>
-		</div>
-		@videoRedownloadScript()
+
+		if !liveProduct {
+			@videoRedownloadScript()
+		}
 	</div>
 }
 
@@ -128,9 +141,14 @@ templ videoTagsCard(video VideoDetail) {
 
 // videoDetailNav renders the top navigation bar with back + action buttons.
 templ videoDetailNav(video VideoDetail) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ backLabel := "BACK TO VIDEOS" }}
+	if liveProduct {
+		{{ backLabel = "BACK TO RECORDINGS" }}
+	}
 	<div class="mb-4 flex flex-wrap gap-2 justify-between items-center">
 		@components.LinkButton("/videos", "ghost", "sm", "arrow-left", false) {
-			BACK TO VIDEOS
+			{ backLabel }
 		}
 		<div class="flex flex-wrap gap-2">
 			if video.HasMedia {
@@ -148,23 +166,28 @@ templ videoDetailNav(video VideoDetail) {
 // videoPlayer renders the video element and player controls.
 templ videoPlayer(video VideoDetail) {
 	if !video.HasMedia || strings.TrimSpace(video.VideoPath) == "" {
-		<div class="border-2 border-white/10 mb-4 p-4">
-			<p class="font-mono text-sm text-white mb-3">Metadata only — descriptions indexed, media not archived</p>
-			if strings.TrimSpace(video.Src) != "" {
-				<form method="POST" action="/archive" class="flex flex-wrap gap-2 items-center">
-					<input type="hidden" name="url" value={ video.Src }/>
-					<button type="submit" class="btn-primary btn-sm">
-						<i class="fa-sharp fa-solid fa-download mr-1" aria-hidden="true"></i>
-						Download media
-					</button>
-				</form>
+		<div class="border-2 border-white/10 p-4">
+			{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+			if liveProduct {
+				<p class="font-mono text-sm text-white mb-3">Master media is not available for this recording.</p>
 			} else {
-				<p class="font-mono text-xs text-white/60">Archive the media from <a href="/upload" class="text-white hover:underline">Upload</a>.</p>
+				<p class="font-mono text-sm text-white mb-3">Metadata only — descriptions indexed, media not archived</p>
+				if strings.TrimSpace(video.Src) != "" {
+					<form method="POST" action="/archive" class="flex flex-wrap gap-2 items-center">
+						<input type="hidden" name="url" value={ video.Src }/>
+						<button type="submit" class="btn-primary btn-sm">
+							<i class="fa-sharp fa-solid fa-download mr-1" aria-hidden="true"></i>
+							Download media
+						</button>
+					</form>
+				} else {
+					<p class="font-mono text-xs text-white/60">Archive the media from <a href="/upload" class="text-white hover:underline">Upload</a>.</p>
+				}
 			}
 		</div>
 	} else {
 		<div
-			class="custom-video-player border-2 border-white/10 mb-4"
+			class="custom-video-player border-2 border-white/10"
 			data-video-player
 			data-video-id={ video.ID }
 			data-saved-position={ fmt.Sprintf("%.3f", video.SavedPosition) }
@@ -189,8 +212,9 @@ templ videoPlayer(video VideoDetail) {
 // videoTranscriptAndClips renders transcript, clips, markers, and comments as
 // one tabbed panel (one compact row instead of the old space-hungry 2 columns).
 templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	<div
-		class="mb-4"
+		class="watch-explore"
 		data-video-panel
 		data-video-id={ video.ID }
 		data-signals="{videoPanelTab: 'markers'}"
@@ -263,7 +287,9 @@ templ videoTranscriptAndClips(video VideoDetail, clips []*db.Clip) {
 					</div>
 				</div>
 				<div data-show="$videoPanelTab == 'markers'">
-					<p class="text-xs font-mono text-white/50 mb-3">Select a time to jump to a chapter or marker. Only SponsorBlock skip segments are skipped automatically.</p>
+					if !liveProduct {
+						<p class="text-xs font-mono text-white/50 mb-3">Select a time to jump to a chapter or marker. Only SponsorBlock skip segments are skipped automatically.</p>
+					}
 					<div class="space-y-2 max-h-96 overflow-auto" data-markers-list data-init={ fmt.Sprintf("@get('/api/videos/%s/markers/render')", video.ID) }>
 						<div class="text-xs text-white/40 font-mono">Loading…</div>
 					</div>
@@ -295,9 +321,10 @@ templ videoPanelTabButton(tab string, label string) {
 	</button>
 }
 
-// videoMetadataCard puts the title and creator above the viewing workspace.
+// videoMetadataCard puts the title and archive line under the player.
 templ videoMetadataCard(video VideoDetail) {
-	<header class="mb-5 pt-2">
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	<header class="watch-title">
 		<h1 class="text-xl sm:text-2xl font-bold text-white leading-tight mb-3">{ video.Title }</h1>
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-mono text-white/50">
 			if video.Info.Uploader != "" {
@@ -306,7 +333,7 @@ templ videoMetadataCard(video VideoDetail) {
 			if video.Info.Duration > 0 {
 				<span>{ format.Duration(video.Info.Duration) }</span>
 			}
-			if strings.TrimSpace(video.Src) != "" {
+			if !liveProduct && strings.TrimSpace(video.Src) != "" {
 				<a href={ templ.SafeURL(video.Src) } target="_blank" rel="noopener" class="text-white/80 hover:text-white underline underline-offset-4">Original source ↗</a>
 			}
 			<span>Archived { video.CreatedAt }</span>
@@ -316,49 +343,60 @@ templ videoMetadataCard(video VideoDetail) {
 
 // videoActionButtons renders download, redownload, and delete buttons.
 templ videoActionButtons(video VideoDetail) {
-	<div>
-		<div
-			class="flex flex-wrap gap-2"
-			data-signals={ regenSignals(video) }
-		>
-			<button
-				type="button"
-				onclick={ templ.JSFuncCall("redownloadVideo", video.ID) }
-				class="btn-ghost btn-sm"
-			>
-				<i class="fa-sharp fa-solid fa-rotate"></i>
-				FORCE REDOWNLOAD
-			</button>
-			<button
-				type="button"
-				data-on:click="!$deleteArmed ? ($deleteArmed = true) : (confirm('Delete this video from the database? This cannot be undone.') ? @delete($deleteDisk ? $deleteUrlDisk : $deleteUrl) : ($deleteArmed = false, $deleteDisk = false))"
-				data-indicator:_deleting
-				data-attr:disabled="$_deleting"
-				class="btn-ghost btn-sm"
-			>
-				<i class="fa-sharp fa-solid fa-trash"></i>
-				<span
-					class="inline-flex items-center gap-2"
-					data-class:hidden="!$deleteArmed"
-					data-on:click__stop="true"
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	<div class="flex flex-wrap gap-2">
+			if !liveProduct {
+				<button
+					type="button"
+					onclick={ templ.JSFuncCall("redownloadVideo", video.ID) }
+					class="btn-ghost btn-sm"
 				>
-					<input
-						type="checkbox"
-						data-bind:delete-disk
+					<i class="fa-sharp fa-solid fa-rotate"></i>
+					FORCE REDOWNLOAD
+				</button>
+			}
+			if liveProduct {
+				<button
+					type="button"
+					data-on:click="!$deleteArmed ? ($deleteArmed = true) : (confirm('Delete this recording? This cannot be undone.') ? @delete($deleteUrl) : ($deleteArmed = false))"
+					data-indicator:_deleting
+					data-attr:disabled="$_deleting"
+					class="btn-ghost btn-sm"
+				>
+					<i class="fa-sharp fa-solid fa-trash"></i>
+					<span data-text="$deleteArmed ? 'ARE YOU SURE?' : 'DELETE RECORDING'">DELETE RECORDING</span>
+				</button>
+			} else {
+				<button
+					type="button"
+					data-on:click="!$deleteArmed ? ($deleteArmed = true) : (confirm('Delete this video from the database? This cannot be undone.') ? @delete($deleteDisk ? $deleteUrlDisk : $deleteUrl) : ($deleteArmed = false, $deleteDisk = false))"
+					data-indicator:_deleting
+					data-attr:disabled="$_deleting"
+					class="btn-ghost btn-sm"
+				>
+					<i class="fa-sharp fa-solid fa-trash"></i>
+					<span
+						class="inline-flex items-center gap-2"
+						data-class:hidden="!$deleteArmed"
 						data-on:click__stop="true"
-						class="h-4 w-4 accent-white"
-					/>
-					<span class="text-white/80">DELETE CONTENT ON DISK</span>
-				</span>
-				<span data-text="$deleteArmed ? 'ARE YOU SURE?' : 'DELETE VIDEO'">DELETE VIDEO</span>
-			</button>
-		</div>
+					>
+						<input
+							type="checkbox"
+							data-bind:delete-disk
+							data-on:click__stop="true"
+							class="h-4 w-4 accent-white"
+						/>
+						<span class="text-white/80">DELETE CONTENT ON DISK</span>
+					</span>
+					<span data-text="$deleteArmed ? 'ARE YOU SURE?' : 'DELETE VIDEO'">DELETE VIDEO</span>
+				</button>
+			}
 	</div>
 }
 
 // videoRegenButtons renders asset regeneration buttons.
 templ videoRegenButtons(video VideoDetail) {
-	<div class="mt-4 pt-4 border-t-2 border-white/10">
+	<div class="recording-regen">
 		<p class="section-label mb-2">REGENERATE ASSETS</p>
 		<div class="flex flex-wrap gap-2">
 			@regenButton(video.ID, "", "ALL MEDIA ASSETS", "wand-magic-sparkles", "_regenAll")
@@ -447,8 +485,15 @@ templ videoStreamsCard(video VideoDetail) {
 
 // videoJobsCard renders the download jobs list.
 templ videoJobsCard(video VideoDetail) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ jobsTitle := "DOWNLOAD AND ASSET JOBS" }}
+	{{ jobsDescription := "Download and regeneration history · refreshes every 5 seconds" }}
+	if liveProduct {
+		{{ jobsTitle = "RECORDING AND ASSET JOBS" }}
+		{{ jobsDescription = "Recording and regeneration history · refreshes every 5 seconds" }}
+	}
 	@components.Card(false) {
-		@components.CardHeader("DOWNLOAD AND ASSET JOBS", "Download and regeneration history · refreshes every 5 seconds")
+		@components.CardHeader(jobsTitle, jobsDescription)
 		@components.CardBody(true) {
 			<div
 				id="video-jobs-list"
@@ -496,8 +541,13 @@ templ videoRedownloadScript() {
 // SUB-TEMPLATES (jobs, regen)
 // ============================================================================
 templ VideoJobsList(jobs []*db.DownloadJob, ingestJobsByDJ map[string][]*db.IngestJob) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	if len(jobs) == 0 {
-		<div class="text-white/40 font-mono">No download jobs found for this video</div>
+		if liveProduct {
+			<div class="text-white/40 font-mono">No recording jobs found for this video</div>
+		} else {
+			<div class="text-white/40 font-mono">No download jobs found for this video</div>
+		}
 	} else {
 		for _, job := range jobs {
 			@VideoJobCard(job, ingestJobsByDJ[job.ID.String()])
@@ -600,7 +650,8 @@ func regenSignals(video VideoDetail) string {
 		"_regenPreview":  false,
 		"_regenSeek":     false,
 		"_regenWaveform": false,
-		"_regenCaptions": false,
+		"_regenCaptions":  false,
+		"captionsQueuing": false,
 	}
 
 	j, err := templ.JSONString(signals)

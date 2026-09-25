@@ -87,6 +87,7 @@ func IndexContent() templ.Component {
 		ctx = templ.ClearChildren(ctx)
 		accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string)
 		registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool)
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
 		templ_7745c5c3_Var4 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -99,12 +100,68 @@ func IndexContent() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"mb-6 border-b-2 border-white/10 pb-4\"><h1 class=\"page-heading tracking-tight mb-1\">REWIND</h1><p class=\"font-mono text-xs text-white/60 max-w-3xl\">Your archive at a glance.</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"mb-6 border-b-2 border-white/10 pb-4\"><h1 class=\"page-heading tracking-tight mb-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if liveProduct {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "REWIND LIVE")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "REWIND")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</h1><p class=\"font-mono text-xs text-white/60 max-w-3xl\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if liveProduct {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "Stream everywhere. Archive everything. Clip without downloads.")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "Your archive at a glance.")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if liveProduct && accessLevel == "unauthenticated" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"flex gap-3 mb-8\"><a href=\"/login\" class=\"px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80\">Log in</a> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if registrationEnabled {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<a href=\"/register\" class=\"px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40\">Create account</a>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if accessLevel != "unauthenticated" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<!-- Archive a URL (video, playlist, or channel) --> <form method=\"post\" action=\"/archive\" class=\"mb-8\"><label class=\"block font-mono text-xs uppercase tracking-wider text-white/40 mb-2\">Archive a video, playlist, or channel</label><div class=\"flex gap-2\"><input type=\"url\" name=\"url\" required placeholder=\"https://youtube.com/watch?v=…  ·  /playlist?list=…  ·  /@channel\" class=\"flex-1 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\"> <button type=\"submit\" class=\"px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80 transition-colors\">Archive</button></div><p class=\"font-mono text-xs text-white/30 mt-1\">Playlist or channel URLs batch-archive every video; already-archived videos are skipped.</p></form><!-- Stats row --> <div id=\"home-stats\" class=\"grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8\" data-init=\"@get('/api/home/stats')\">")
+				if !liveProduct {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<!-- Archive a URL (video, playlist, or channel) --> <form method=\"post\" action=\"/archive\" class=\"mb-8\"><label class=\"block font-mono text-xs uppercase tracking-wider text-white/40 mb-2\">Archive a video, playlist, or channel</label><div class=\"flex gap-2\"><input type=\"url\" name=\"url\" required placeholder=\"https://youtube.com/watch?v=…  ·  /playlist?list=…  ·  /@channel\" class=\"flex-1 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none\"> <button type=\"submit\" class=\"px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80 transition-colors\">Archive</button></div><p class=\"font-mono text-xs text-white/30 mt-1\">Playlist or channel URLs batch-archive every video; already-archived videos are skipped.</p></form>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " <!-- Stats row --> <div id=\"home-stats\" class=\"grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8\" data-init=\"@get('/api/home/stats')\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -128,7 +185,7 @@ func IndexContent() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><!-- Recent Videos (tabbed: Archived / Published) --> <div class=\"mb-8\"><div class=\"section-header\"><div class=\"flex items-center gap-1\"><button class=\"home-tab tab-btn-active\" data-home-tab=\"archived\" onclick=\"switchHomeTab('archived')\">Recently Archived</button> <button class=\"home-tab tab-btn-inactive\" data-home-tab=\"published\" onclick=\"switchHomeTab('published')\">Recently Published</button></div><a id=\"home-videos-view-all\" href=\"/videos?sort=newest\" class=\"section-header-link\" data-transition>VIEW ALL →</a></div><!-- Archived panel (default, loads immediately) --><div id=\"home-panel-archived\"><div id=\"recently-archived\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\" data-init=\"@get('/api/videos/recent')\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><!-- Recent Videos (tabbed: Archived / Published) --> <div class=\"mb-8\"><div class=\"section-header\"><div class=\"flex items-center gap-1\"><button class=\"home-tab tab-btn-active\" data-home-tab=\"archived\" onclick=\"switchHomeTab('archived')\">Recently Archived</button> <button class=\"home-tab tab-btn-inactive\" data-home-tab=\"published\" onclick=\"switchHomeTab('published')\">Recently Published</button></div><a id=\"home-videos-view-all\" href=\"/videos?sort=newest\" class=\"section-header-link\" data-transition>VIEW ALL →</a></div><!-- Archived panel (default, loads immediately) --><div id=\"home-panel-archived\"><div id=\"recently-archived\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\" data-init=\"@get('/api/videos/recent')\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -138,7 +195,7 @@ func IndexContent() templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div><!-- Published panel (hidden, loads in background) --><div id=\"home-panel-published\" class=\"hidden\"><div id=\"recently-published\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\" data-init=\"@get('/api/home/recent-published')\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></div><!-- Published panel (hidden, loads in background) --><div id=\"home-panel-published\" class=\"hidden\"><div id=\"recently-published\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\" data-init=\"@get('/api/home/recent-published')\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -148,7 +205,7 @@ func IndexContent() templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div></div><!-- Recent Clips --> <div class=\"mb-8\"><div class=\"section-header\"><h2 class=\"section-header-title\">Recent Clips</h2><a href=\"/videos\" class=\"section-header-link\" data-transition>VIEW ALL →</a></div><div id=\"recent-clips\" class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4\" data-init=\"@get('/api/home/recent-clips')\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></div></div><!-- Recent Clips --> <div class=\"mb-8\"><div class=\"section-header\"><h2 class=\"section-header-title\">Recent Clips</h2><a href=\"/videos\" class=\"section-header-link\" data-transition>VIEW ALL →</a></div><div id=\"recent-clips\" class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4\" data-init=\"@get('/api/home/recent-clips')\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -158,11 +215,11 @@ func IndexContent() templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
+			} else if !liveProduct {
 				templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -187,7 +244,7 @@ func IndexContent() templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"text-center py-6\"><i class=\"fa-sharp fa-solid fa-video mx-auto text-white/20 mb-4 text-4xl\" aria-hidden=\"true\"></i><h2 class=\"font-mono font-bold text-lg uppercase tracking-tight text-white mb-2\">AUTHENTICATION REQUIRED</h2><p class=\"font-mono text-xs text-white/60 mb-4 max-w-md mx-auto\">Log in or create an account to access your video archive.</p><div class=\"flex flex-col sm:flex-row justify-center gap-3\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"text-center py-6\"><i class=\"fa-sharp fa-solid fa-video mx-auto text-white/20 mb-4 text-4xl\" aria-hidden=\"true\"></i><h2 class=\"font-mono font-bold text-lg uppercase tracking-tight text-white mb-2\">AUTHENTICATION REQUIRED</h2><p class=\"font-mono text-xs text-white/60 mb-4 max-w-md mx-auto\">Log in or create an account to access your video archive.</p><div class=\"flex flex-col sm:flex-row justify-center gap-3\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -204,7 +261,7 @@ func IndexContent() templ.Component {
 									}()
 								}
 								ctx = templ.InitializeContext(ctx)
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "REGISTER")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "REGISTER")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
@@ -227,7 +284,7 @@ func IndexContent() templ.Component {
 								}()
 							}
 							ctx = templ.InitializeContext(ctx)
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "LOGIN")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "LOGIN")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -237,7 +294,7 @@ func IndexContent() templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</div></div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -260,7 +317,7 @@ func IndexContent() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<script>\n\t\tfunction switchHomeTab(tab) {\n\t\t\tdocument.querySelectorAll('.home-tab').forEach(t => {\n\t\t\t\tconst isActive = t.getAttribute('data-home-tab') === tab;\n\t\t\t\tt.classList.toggle('tab-btn-active', isActive);\n\t\t\t\tt.classList.toggle('tab-btn-inactive', !isActive);\n\t\t\t});\n\t\t\tdocument.getElementById('home-panel-archived').classList.toggle('hidden', tab !== 'archived');\n\t\t\tdocument.getElementById('home-panel-published').classList.toggle('hidden', tab !== 'published');\n\t\t\tdocument.getElementById('home-videos-view-all').href =\n\t\t\t\ttab === 'published' ? '/videos?sort=published-newest' : '/videos?sort=newest';\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<script>\n\t\tfunction switchHomeTab(tab) {\n\t\t\tdocument.querySelectorAll('.home-tab').forEach(t => {\n\t\t\t\tconst isActive = t.getAttribute('data-home-tab') === tab;\n\t\t\t\tt.classList.toggle('tab-btn-active', isActive);\n\t\t\t\tt.classList.toggle('tab-btn-inactive', !isActive);\n\t\t\t});\n\t\t\tdocument.getElementById('home-panel-archived').classList.toggle('hidden', tab !== 'archived');\n\t\t\tdocument.getElementById('home-panel-published').classList.toggle('hidden', tab !== 'published');\n\t\t\tdocument.getElementById('home-videos-view-all').href =\n\t\t\t\ttab === 'published' ? '/videos?sort=published-newest' : '/videos?sort=newest';\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -290,7 +347,7 @@ func HomeStatsRow(stats *db.GetHomeStatsRow) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div id=\"home-stats\" class=\"grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div id=\"home-stats\" class=\"grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -314,7 +371,7 @@ func HomeStatsRow(stats *db.GetHomeStatsRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -343,7 +400,7 @@ func homeStatCard(label, value, icon string) templ.Component {
 			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-center gap-2 mb-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-center gap-2 mb-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -352,7 +409,7 @@ func homeStatCard(label, value, icon string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<i class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<i class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -365,33 +422,33 @@ func homeStatCard(label, value, icon string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" aria-hidden=\"true\"></i> <span class=\"font-mono text-xs text-white/30 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" aria-hidden=\"true\"></i> <span class=\"font-mono text-xs text-white/30 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 187, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 206, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span></div><div class=\"font-mono text-lg font-bold text-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</span></div><div class=\"font-mono text-lg font-bold text-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 189, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 208, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -420,7 +477,7 @@ func homeStatSkeleton() templ.Component {
 			templ_7745c5c3_Var15 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-center gap-2 mb-1\"><div class=\"skeleton w-3 h-3\"></div><div class=\"skeleton-text w-16\"></div></div><div class=\"skeleton-text w-12 h-5\"></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-center gap-2 mb-1\"><div class=\"skeleton w-3 h-3\"></div><div class=\"skeleton-text w-16\"></div></div><div class=\"skeleton-text w-12 h-5\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -450,20 +507,20 @@ func HomeVideoSection(id string, videos []*db.Video) templ.Component {
 			templ_7745c5c3_Var16 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 206, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 225, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -480,7 +537,7 @@ func HomeVideoSection(id string, videos []*db.Video) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -510,7 +567,7 @@ func HomeClipsSection(clips []*db.ListRecentClipsRow) templ.Component {
 			templ_7745c5c3_Var18 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div id=\"recent-clips\" class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div id=\"recent-clips\" class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -527,7 +584,7 @@ func HomeClipsSection(clips []*db.ListRecentClipsRow) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -556,33 +613,33 @@ func clipCard(clip *db.ListRecentClipsRow) templ.Component {
 			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 templ.SafeURL
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/videos/" + clip.VideoID.String() + "/cut"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 234, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 253, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"border-2 border-white/10 hover:border-white/20 transition-colors p-3 block group\"><div class=\"flex items-start gap-3\"><div class=\"w-10 h-10 flex-shrink-0 flex items-center justify-center border-2\" style=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" class=\"border-2 border-white/10 hover:border-white/20 transition-colors p-3 block group\"><div class=\"flex items-start gap-3\"><div class=\"w-10 h-10 flex-shrink-0 flex items-center justify-center border-2\" style=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("border-color: " + clip.Color + "; color: " + clip.Color + ";")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 240, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 259, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><i class=\"fa-sharp fa-solid fa-scissors text-sm\" aria-hidden=\"true\"></i></div><div class=\"flex-1 min-w-0\"><h3 class=\"font-mono text-sm font-bold text-white truncate group-hover:text-white/90\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\"><i class=\"fa-sharp fa-solid fa-scissors text-sm\" aria-hidden=\"true\"></i></div><div class=\"flex-1 min-w-0\"><h3 class=\"font-mono text-sm font-bold text-white truncate group-hover:text-white/90\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -590,84 +647,84 @@ func clipCard(clip *db.ListRecentClipsRow) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(clip.ClipTitle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 247, Col: 22}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 266, Col: 22}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "Untitled Clip")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "Untitled Clip")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</h3><div class=\"meta-row mt-1\"><span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</h3><div class=\"meta-row mt-1\"><span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(format.Duration(clip.Duration))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 253, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 272, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</span> <span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</span> <span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", clip.StartTs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 254, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 273, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "s – ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "s – ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", clip.EndTs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 254, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 273, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "s</span></div><div class=\"font-mono text-xs text-white/40 truncate mt-0.5\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "s</span></div><div class=\"font-mono text-xs text-white/40 truncate mt-0.5\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(clip.VideoTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 256, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 275, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(clip.VideoTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 257, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `index.templ`, Line: 276, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div></div></div></a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div></div></div></a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -696,7 +753,7 @@ func clipCardSkeleton() templ.Component {
 			templ_7745c5c3_Var28 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-start gap-3\"><div class=\"skeleton w-10 h-10 flex-shrink-0\"></div><div class=\"flex-1 min-w-0\"><div class=\"skeleton-text w-32 mb-2\"></div><div class=\"skeleton-text w-20 mb-1\"></div><div class=\"skeleton-text w-40\"></div></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"border-2 border-white/10 p-3\"><div class=\"flex items-start gap-3\"><div class=\"skeleton w-10 h-10 flex-shrink-0\"></div><div class=\"flex-1 min-w-0\"><div class=\"skeleton-text w-32 mb-2\"></div><div class=\"skeleton-text w-20 mb-1\"></div><div class=\"skeleton-text w-40\"></div></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -726,7 +783,7 @@ func RecentVideosGrid(videos []*db.Video) templ.Component {
 			templ_7745c5c3_Var29 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<div id=\"recently-archived\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<div id=\"recently-archived\" class=\"grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -743,7 +800,7 @@ func RecentVideosGrid(videos []*db.Video) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

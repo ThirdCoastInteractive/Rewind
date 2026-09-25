@@ -24,6 +24,9 @@ const (
 	visionLockFile        = "/opt/vision/requirements.lock"
 	textclsLockFile       = "/opt/textcls/requirements.txt"
 	alignmentLockFile     = "/opt/alignment/requirements.lock"
+	diarizeLockFile       = "/opt/diarize/requirements.txt"
+	diarizeTransformers   = "https://github.com/huggingface/transformers/archive/8f080cb5aa480f794283c6e8618f917cc9a6506d.tar.gz"
+	diarizeInstallTimeout = 60 * time.Minute
 	onnxruntimeCPU        = "onnxruntime==1.20.1"
 	onnxruntimeGPU        = "onnxruntime-gpu==1.20.2"
 	ollamaDownloadTimeout = 30 * time.Minute
@@ -258,6 +261,55 @@ func ensureTextcls(ctx context.Context, dir string) error {
 		return err
 	}
 	return writeStamp(dir, "textcls", stamp)
+}
+
+func ensureDiarize(ctx context.Context, dir, device string) error {
+	lock := envOr("DIARIZE_LOCK", diarizeLockFile)
+	raw, err := os.ReadFile(lock)
+	if err != nil {
+		return fmt.Errorf("diarize lockfile: %w", err)
+	}
+	device = strings.ToLower(strings.TrimSpace(device))
+	if device != "cuda" {
+		device = "cpu"
+	}
+	stamp := fmt.Sprintf("diarize=%x device=%s transformers=%s", sha256.Sum256(raw), device, diarizeTransformers)
+	venv := filepath.Join(dir, "diarize")
+	venvPython := filepath.Join(venv, "bin", "python")
+	if stampOK(dir, "diarize", stamp) {
+		if _, err := os.Stat(venvPython); err == nil {
+			return nil
+		}
+	}
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		py, err = exec.LookPath("python")
+	}
+	if err != nil {
+		return fmt.Errorf("python3 not on PATH")
+	}
+	slog.Info("installing diarize python runtime", "venv", venv, "device", device)
+	ctx, cancel := context.WithTimeout(ctx, diarizeInstallTimeout)
+	defer cancel()
+	_ = os.RemoveAll(venv)
+	if err := runCmd(ctx, py, "-m", "venv", venv); err != nil {
+		return err
+	}
+	pip := filepath.Join(venv, "bin", "pip")
+	if err := runCmd(ctx, pip, "install", "--no-cache-dir", "-r", lock); err != nil {
+		return err
+	}
+	torchArgs := []string{"install", "--no-cache-dir", "torch"}
+	if device == "cpu" {
+		torchArgs = append(torchArgs, "--index-url", "https://download.pytorch.org/whl/cpu")
+	}
+	if err := runCmd(ctx, pip, torchArgs...); err != nil {
+		return err
+	}
+	if err := runCmd(ctx, pip, "install", "--no-cache-dir", diarizeTransformers); err != nil {
+		return err
+	}
+	return writeStamp(dir, "diarize", stamp)
 }
 
 func stampOK(dir, name, want string) bool {

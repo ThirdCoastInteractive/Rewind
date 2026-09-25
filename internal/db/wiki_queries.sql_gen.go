@@ -13,39 +13,43 @@ import (
 
 const deleteWikiLinksForPage = `-- name: DeleteWikiLinksForPage :exec
 DELETE FROM wiki_links
-WHERE from_tree = $1 AND from_slug = $2
+WHERE tenant_id = $1
+  AND from_tree = $2 AND from_slug = $3
 `
 
 type DeleteWikiLinksForPageParams struct {
-	Tree string `db:"tree" json:"Tree"`
-	Slug string `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
 }
 
 // DeleteWikiLinksForPage
 //
 //	DELETE FROM wiki_links
-//	WHERE from_tree = $1 AND from_slug = $2
+//	WHERE tenant_id = $1
+//	  AND from_tree = $2 AND from_slug = $3
 func (q *Queries) DeleteWikiLinksForPage(ctx context.Context, arg *DeleteWikiLinksForPageParams) error {
-	_, err := q.db.Exec(ctx, deleteWikiLinksForPage, arg.Tree, arg.Slug)
+	_, err := q.db.Exec(ctx, deleteWikiLinksForPage, arg.TenantID, arg.Tree, arg.Slug)
 	return err
 }
 
 const getWikiPage = `-- name: GetWikiPage :one
-SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-WHERE tree = $1 AND slug = $2
+SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+WHERE tenant_id = $1 AND tree = $2 AND slug = $3
 `
 
 type GetWikiPageParams struct {
-	Tree string `db:"tree" json:"Tree"`
-	Slug string `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
 }
 
 // GetWikiPage
 //
-//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-//	WHERE tree = $1 AND slug = $2
+//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+//	WHERE tenant_id = $1 AND tree = $2 AND slug = $3
 func (q *Queries) GetWikiPage(ctx context.Context, arg *GetWikiPageParams) (*WikiPage, error) {
-	row := q.db.QueryRow(ctx, getWikiPage, arg.Tree, arg.Slug)
+	row := q.db.QueryRow(ctx, getWikiPage, arg.TenantID, arg.Tree, arg.Slug)
 	var i WikiPage
 	err := row.Scan(
 		&i.Tree,
@@ -57,27 +61,34 @@ func (q *Queries) GetWikiPage(ctx context.Context, arg *GetWikiPageParams) (*Wik
 		&i.ChannelID,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }
 
 const getWikiRevision = `-- name: GetWikiRevision :one
-SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
-WHERE tree = $1 AND slug = $2 AND revision = $3
+SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
+WHERE tenant_id = $1 AND tree = $2 AND slug = $3 AND revision = $4
 `
 
 type GetWikiRevisionParams struct {
-	Tree     string `db:"tree" json:"Tree"`
-	Slug     string `db:"slug" json:"Slug"`
-	Revision int32  `db:"revision" json:"Revision"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
+	Revision int32       `db:"revision" json:"Revision"`
 }
 
 // GetWikiRevision
 //
-//	SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
-//	WHERE tree = $1 AND slug = $2 AND revision = $3
+//	SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
+//	WHERE tenant_id = $1 AND tree = $2 AND slug = $3 AND revision = $4
 func (q *Queries) GetWikiRevision(ctx context.Context, arg *GetWikiRevisionParams) (*WikiRevision, error) {
-	row := q.db.QueryRow(ctx, getWikiRevision, arg.Tree, arg.Slug, arg.Revision)
+	row := q.db.QueryRow(ctx, getWikiRevision,
+		arg.TenantID,
+		arg.Tree,
+		arg.Slug,
+		arg.Revision,
+	)
 	var i WikiRevision
 	err := row.Scan(
 		&i.ID,
@@ -96,30 +107,33 @@ func (q *Queries) GetWikiRevision(ctx context.Context, arg *GetWikiRevisionParam
 		&i.ClientVersion,
 		&i.TokenName,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }
 
 const insertWikiLink = `-- name: InsertWikiLink :exec
-INSERT INTO wiki_links (from_tree, from_slug, to_tree, to_slug)
-VALUES ($1, $2, $3, $4)
+INSERT INTO wiki_links (tenant_id, from_tree, from_slug, to_tree, to_slug)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT DO NOTHING
 `
 
 type InsertWikiLinkParams struct {
-	FromTree string `db:"from_tree" json:"FromTree"`
-	FromSlug string `db:"from_slug" json:"FromSlug"`
-	ToTree   string `db:"to_tree" json:"ToTree"`
-	ToSlug   string `db:"to_slug" json:"ToSlug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	FromTree string      `db:"from_tree" json:"FromTree"`
+	FromSlug string      `db:"from_slug" json:"FromSlug"`
+	ToTree   string      `db:"to_tree" json:"ToTree"`
+	ToSlug   string      `db:"to_slug" json:"ToSlug"`
 }
 
 // InsertWikiLink
 //
-//	INSERT INTO wiki_links (from_tree, from_slug, to_tree, to_slug)
-//	VALUES ($1, $2, $3, $4)
+//	INSERT INTO wiki_links (tenant_id, from_tree, from_slug, to_tree, to_slug)
+//	VALUES ($1, $2, $3, $4, $5)
 //	ON CONFLICT DO NOTHING
 func (q *Queries) InsertWikiLink(ctx context.Context, arg *InsertWikiLinkParams) error {
 	_, err := q.db.Exec(ctx, insertWikiLink,
+		arg.TenantID,
 		arg.FromTree,
 		arg.FromSlug,
 		arg.ToTree,
@@ -130,21 +144,22 @@ func (q *Queries) InsertWikiLink(ctx context.Context, arg *InsertWikiLinkParams)
 
 const insertWikiPage = `-- name: InsertWikiPage :one
 INSERT INTO wiki_pages (
-    tree, slug, title, body, revision, creator_id, channel_id, updated_by
+    tenant_id, tree, slug, title, body, revision, creator_id, channel_id, updated_by
 ) VALUES (
-    $1,
-    $2,
+    $1, $2,
     $3,
     $4,
-    1,
     $5,
+    1,
     $6,
-    $7
+    $7,
+    $8
 )
-RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 `
 
 type InsertWikiPageParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
 	Tree      string      `db:"tree" json:"Tree"`
 	Slug      string      `db:"slug" json:"Slug"`
 	Title     string      `db:"title" json:"Title"`
@@ -157,20 +172,21 @@ type InsertWikiPageParams struct {
 // InsertWikiPage
 //
 //	INSERT INTO wiki_pages (
-//	    tree, slug, title, body, revision, creator_id, channel_id, updated_by
+//	    tenant_id, tree, slug, title, body, revision, creator_id, channel_id, updated_by
 //	) VALUES (
-//	    $1,
-//	    $2,
+//	    $1, $2,
 //	    $3,
 //	    $4,
-//	    1,
 //	    $5,
+//	    1,
 //	    $6,
-//	    $7
+//	    $7,
+//	    $8
 //	)
-//	RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+//	RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 func (q *Queries) InsertWikiPage(ctx context.Context, arg *InsertWikiPageParams) (*WikiPage, error) {
 	row := q.db.QueryRow(ctx, insertWikiPage,
+		arg.TenantID,
 		arg.Tree,
 		arg.Slug,
 		arg.Title,
@@ -190,18 +206,18 @@ func (q *Queries) InsertWikiPage(ctx context.Context, arg *InsertWikiPageParams)
 		&i.ChannelID,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }
 
 const insertWikiRevision = `-- name: InsertWikiRevision :one
 INSERT INTO wiki_revisions (
-    tree, slug, revision, title, body, diff, summary,
+    tenant_id, tree, slug, revision, title, body, diff, summary,
     actor_kind, actor_id, user_id, session_id,
     client_name, client_version, token_name
 ) VALUES (
-    $1,
-    $2,
+    $1, $2,
     $3,
     $4,
     $5,
@@ -213,12 +229,14 @@ INSERT INTO wiki_revisions (
     $11,
     $12,
     $13,
-    $14
+    $14,
+    $15
 )
-RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at
+RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id
 `
 
 type InsertWikiRevisionParams struct {
+	TenantID      pgtype.UUID `db:"tenant_id" json:"TenantID"`
 	Tree          string      `db:"tree" json:"Tree"`
 	Slug          string      `db:"slug" json:"Slug"`
 	Revision      int32       `db:"revision" json:"Revision"`
@@ -238,12 +256,11 @@ type InsertWikiRevisionParams struct {
 // InsertWikiRevision
 //
 //	INSERT INTO wiki_revisions (
-//	    tree, slug, revision, title, body, diff, summary,
+//	    tenant_id, tree, slug, revision, title, body, diff, summary,
 //	    actor_kind, actor_id, user_id, session_id,
 //	    client_name, client_version, token_name
 //	) VALUES (
-//	    $1,
-//	    $2,
+//	    $1, $2,
 //	    $3,
 //	    $4,
 //	    $5,
@@ -255,11 +272,13 @@ type InsertWikiRevisionParams struct {
 //	    $11,
 //	    $12,
 //	    $13,
-//	    $14
+//	    $14,
+//	    $15
 //	)
-//	RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at
+//	RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id
 func (q *Queries) InsertWikiRevision(ctx context.Context, arg *InsertWikiRevisionParams) (*WikiRevision, error) {
 	row := q.db.QueryRow(ctx, insertWikiRevision,
+		arg.TenantID,
 		arg.Tree,
 		arg.Slug,
 		arg.Revision,
@@ -293,6 +312,7 @@ func (q *Queries) InsertWikiRevision(ctx context.Context, arg *InsertWikiRevisio
 		&i.ClientVersion,
 		&i.TokenName,
 		&i.CreatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }
@@ -300,14 +320,15 @@ func (q *Queries) InsertWikiRevision(ctx context.Context, arg *InsertWikiRevisio
 const listWikiBacklinks = `-- name: ListWikiBacklinks :many
 SELECT p.tree, p.slug, p.title, p.revision, p.updated_at
 FROM wiki_links l
-JOIN wiki_pages p ON p.tree = l.from_tree AND p.slug = l.from_slug
-WHERE l.to_tree = $1 AND l.to_slug = $2
+JOIN wiki_pages p ON p.tenant_id = l.tenant_id AND p.tree = l.from_tree AND p.slug = l.from_slug
+WHERE l.tenant_id = $1 AND l.to_tree = $2 AND l.to_slug = $3
 ORDER BY p.tree, p.slug
 `
 
 type ListWikiBacklinksParams struct {
-	Tree string `db:"tree" json:"Tree"`
-	Slug string `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
 }
 
 type ListWikiBacklinksRow struct {
@@ -322,11 +343,11 @@ type ListWikiBacklinksRow struct {
 //
 //	SELECT p.tree, p.slug, p.title, p.revision, p.updated_at
 //	FROM wiki_links l
-//	JOIN wiki_pages p ON p.tree = l.from_tree AND p.slug = l.from_slug
-//	WHERE l.to_tree = $1 AND l.to_slug = $2
+//	JOIN wiki_pages p ON p.tenant_id = l.tenant_id AND p.tree = l.from_tree AND p.slug = l.from_slug
+//	WHERE l.tenant_id = $1 AND l.to_tree = $2 AND l.to_slug = $3
 //	ORDER BY p.tree, p.slug
 func (q *Queries) ListWikiBacklinks(ctx context.Context, arg *ListWikiBacklinksParams) ([]*ListWikiBacklinksRow, error) {
-	rows, err := q.db.Query(ctx, listWikiBacklinks, arg.Tree, arg.Slug)
+	rows, err := q.db.Query(ctx, listWikiBacklinks, arg.TenantID, arg.Tree, arg.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -354,23 +375,32 @@ func (q *Queries) ListWikiBacklinks(ctx context.Context, arg *ListWikiBacklinksP
 const listWikiLinks = `-- name: ListWikiLinks :many
 SELECT from_tree, from_slug, to_tree, to_slug
 FROM wiki_links
+WHERE tenant_id = $1
 ORDER BY from_tree, from_slug, to_tree, to_slug
 `
+
+type ListWikiLinksRow struct {
+	FromTree string `db:"from_tree" json:"FromTree"`
+	FromSlug string `db:"from_slug" json:"FromSlug"`
+	ToTree   string `db:"to_tree" json:"ToTree"`
+	ToSlug   string `db:"to_slug" json:"ToSlug"`
+}
 
 // ListWikiLinks
 //
 //	SELECT from_tree, from_slug, to_tree, to_slug
 //	FROM wiki_links
+//	WHERE tenant_id = $1
 //	ORDER BY from_tree, from_slug, to_tree, to_slug
-func (q *Queries) ListWikiLinks(ctx context.Context) ([]*WikiLink, error) {
-	rows, err := q.db.Query(ctx, listWikiLinks)
+func (q *Queries) ListWikiLinks(ctx context.Context, tenantID pgtype.UUID) ([]*ListWikiLinksRow, error) {
+	rows, err := q.db.Query(ctx, listWikiLinks, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []*WikiLink
+	var items []*ListWikiLinksRow
 	for rows.Next() {
-		var i WikiLink
+		var i ListWikiLinksRow
 		if err := rows.Scan(
 			&i.FromTree,
 			&i.FromSlug,
@@ -390,13 +420,14 @@ func (q *Queries) ListWikiLinks(ctx context.Context) ([]*WikiLink, error) {
 const listWikiLinksFromPage = `-- name: ListWikiLinksFromPage :many
 SELECT to_tree, to_slug
 FROM wiki_links
-WHERE from_tree = $1 AND from_slug = $2
+WHERE tenant_id = $1 AND from_tree = $2 AND from_slug = $3
 ORDER BY to_tree, to_slug
 `
 
 type ListWikiLinksFromPageParams struct {
-	Tree string `db:"tree" json:"Tree"`
-	Slug string `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
 }
 
 type ListWikiLinksFromPageRow struct {
@@ -408,10 +439,10 @@ type ListWikiLinksFromPageRow struct {
 //
 //	SELECT to_tree, to_slug
 //	FROM wiki_links
-//	WHERE from_tree = $1 AND from_slug = $2
+//	WHERE tenant_id = $1 AND from_tree = $2 AND from_slug = $3
 //	ORDER BY to_tree, to_slug
 func (q *Queries) ListWikiLinksFromPage(ctx context.Context, arg *ListWikiLinksFromPageParams) ([]*ListWikiLinksFromPageRow, error) {
-	rows, err := q.db.Query(ctx, listWikiLinksFromPage, arg.Tree, arg.Slug)
+	rows, err := q.db.Query(ctx, listWikiLinksFromPage, arg.TenantID, arg.Tree, arg.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -431,18 +462,25 @@ func (q *Queries) ListWikiLinksFromPage(ctx context.Context, arg *ListWikiLinksF
 }
 
 const listWikiPages = `-- name: ListWikiPages :many
-SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-WHERE ($1::text = '' OR tree = $1)
+SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+WHERE tenant_id = $1
+  AND ($2::text = '' OR tree = $2)
 ORDER BY tree, slug
 `
 
+type ListWikiPagesParams struct {
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree     string      `db:"tree" json:"Tree"`
+}
+
 // ListWikiPages
 //
-//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-//	WHERE ($1::text = '' OR tree = $1)
+//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+//	WHERE tenant_id = $1
+//	  AND ($2::text = '' OR tree = $2)
 //	ORDER BY tree, slug
-func (q *Queries) ListWikiPages(ctx context.Context, tree string) ([]*WikiPage, error) {
-	rows, err := q.db.Query(ctx, listWikiPages, tree)
+func (q *Queries) ListWikiPages(ctx context.Context, arg *ListWikiPagesParams) ([]*WikiPage, error) {
+	rows, err := q.db.Query(ctx, listWikiPages, arg.TenantID, arg.Tree)
 	if err != nil {
 		return nil, err
 	}
@@ -460,6 +498,7 @@ func (q *Queries) ListWikiPages(ctx context.Context, tree string) ([]*WikiPage, 
 			&i.ChannelID,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -472,18 +511,23 @@ func (q *Queries) ListWikiPages(ctx context.Context, tree string) ([]*WikiPage, 
 }
 
 const listWikiPagesForChannel = `-- name: ListWikiPagesForChannel :many
-SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-WHERE channel_id = $1
+SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+WHERE tenant_id = $1 AND channel_id = $2
 ORDER BY tree, slug
 `
 
+type ListWikiPagesForChannelParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	ChannelID pgtype.UUID `db:"channel_id" json:"ChannelID"`
+}
+
 // ListWikiPagesForChannel
 //
-//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-//	WHERE channel_id = $1
+//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+//	WHERE tenant_id = $1 AND channel_id = $2
 //	ORDER BY tree, slug
-func (q *Queries) ListWikiPagesForChannel(ctx context.Context, channelID pgtype.UUID) ([]*WikiPage, error) {
-	rows, err := q.db.Query(ctx, listWikiPagesForChannel, channelID)
+func (q *Queries) ListWikiPagesForChannel(ctx context.Context, arg *ListWikiPagesForChannelParams) ([]*WikiPage, error) {
+	rows, err := q.db.Query(ctx, listWikiPagesForChannel, arg.TenantID, arg.ChannelID)
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +545,7 @@ func (q *Queries) ListWikiPagesForChannel(ctx context.Context, channelID pgtype.
 			&i.ChannelID,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -513,18 +558,23 @@ func (q *Queries) ListWikiPagesForChannel(ctx context.Context, channelID pgtype.
 }
 
 const listWikiPagesForCreator = `-- name: ListWikiPagesForCreator :many
-SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-WHERE creator_id = $1
+SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+WHERE tenant_id = $1 AND creator_id = $2
 ORDER BY tree, slug
 `
 
+type ListWikiPagesForCreatorParams struct {
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	CreatorID pgtype.UUID `db:"creator_id" json:"CreatorID"`
+}
+
 // ListWikiPagesForCreator
 //
-//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-//	WHERE creator_id = $1
+//	SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+//	WHERE tenant_id = $1 AND creator_id = $2
 //	ORDER BY tree, slug
-func (q *Queries) ListWikiPagesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*WikiPage, error) {
-	rows, err := q.db.Query(ctx, listWikiPagesForCreator, creatorID)
+func (q *Queries) ListWikiPagesForCreator(ctx context.Context, arg *ListWikiPagesForCreatorParams) ([]*WikiPage, error) {
+	rows, err := q.db.Query(ctx, listWikiPagesForCreator, arg.TenantID, arg.CreatorID)
 	if err != nil {
 		return nil, err
 	}
@@ -542,6 +592,7 @@ func (q *Queries) ListWikiPagesForCreator(ctx context.Context, creatorID pgtype.
 			&i.ChannelID,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -554,23 +605,26 @@ func (q *Queries) ListWikiPagesForCreator(ctx context.Context, creatorID pgtype.
 }
 
 const listWikiRevisions = `-- name: ListWikiRevisions :many
-SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
+SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
 WHERE tree = $1 AND slug = $2
+  AND tenant_id = $3
 ORDER BY revision DESC
 `
 
 type ListWikiRevisionsParams struct {
-	Tree string `db:"tree" json:"Tree"`
-	Slug string `db:"slug" json:"Slug"`
+	Tree     string      `db:"tree" json:"Tree"`
+	Slug     string      `db:"slug" json:"Slug"`
+	TenantID pgtype.UUID `db:"tenant_id" json:"TenantID"`
 }
 
 // ListWikiRevisions
 //
-//	SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
+//	SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
 //	WHERE tree = $1 AND slug = $2
+//	  AND tenant_id = $3
 //	ORDER BY revision DESC
 func (q *Queries) ListWikiRevisions(ctx context.Context, arg *ListWikiRevisionsParams) ([]*WikiRevision, error) {
-	rows, err := q.db.Query(ctx, listWikiRevisions, arg.Tree, arg.Slug)
+	rows, err := q.db.Query(ctx, listWikiRevisions, arg.Tree, arg.Slug, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -595,6 +649,7 @@ func (q *Queries) ListWikiRevisions(ctx context.Context, arg *ListWikiRevisionsP
 			&i.ClientVersion,
 			&i.TokenName,
 			&i.CreatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -607,20 +662,22 @@ func (q *Queries) ListWikiRevisions(ctx context.Context, arg *ListWikiRevisionsP
 }
 
 const searchWikiPages = `-- name: SearchWikiPages :many
-SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at,
+SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at, p.tenant_id,
        ts_rank(s.search, websearch_to_tsquery('simple', $1))::float8 AS rank
 FROM wiki_pages p
-JOIN wiki_search s ON s.tree = p.tree AND s.slug = p.slug
+JOIN wiki_search s ON s.tenant_id = p.tenant_id AND s.tree = p.tree AND s.slug = p.slug
 WHERE s.search @@ websearch_to_tsquery('simple', $1)
-  AND ($2::text = '' OR p.tree = $2)
+  AND p.tenant_id = $2
+  AND ($3::text = '' OR p.tree = $3)
 ORDER BY rank DESC, p.updated_at DESC
-LIMIT $3
+LIMIT $4
 `
 
 type SearchWikiPagesParams struct {
-	Query     string `db:"query" json:"Query"`
-	Tree      string `db:"tree" json:"Tree"`
-	PageLimit int32  `db:"page_limit" json:"PageLimit"`
+	Query     string      `db:"query" json:"Query"`
+	TenantID  pgtype.UUID `db:"tenant_id" json:"TenantID"`
+	Tree      string      `db:"tree" json:"Tree"`
+	PageLimit int32       `db:"page_limit" json:"PageLimit"`
 }
 
 type SearchWikiPagesRow struct {
@@ -633,21 +690,28 @@ type SearchWikiPagesRow struct {
 	ChannelID pgtype.UUID        `db:"channel_id" json:"ChannelID"`
 	UpdatedBy string             `db:"updated_by" json:"UpdatedBy"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"UpdatedAt"`
+	TenantID  pgtype.UUID        `db:"tenant_id" json:"TenantID"`
 	Rank      float64            `db:"rank" json:"Rank"`
 }
 
 // SearchWikiPages
 //
-//	SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at,
+//	SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at, p.tenant_id,
 //	       ts_rank(s.search, websearch_to_tsquery('simple', $1))::float8 AS rank
 //	FROM wiki_pages p
-//	JOIN wiki_search s ON s.tree = p.tree AND s.slug = p.slug
+//	JOIN wiki_search s ON s.tenant_id = p.tenant_id AND s.tree = p.tree AND s.slug = p.slug
 //	WHERE s.search @@ websearch_to_tsquery('simple', $1)
-//	  AND ($2::text = '' OR p.tree = $2)
+//	  AND p.tenant_id = $2
+//	  AND ($3::text = '' OR p.tree = $3)
 //	ORDER BY rank DESC, p.updated_at DESC
-//	LIMIT $3
+//	LIMIT $4
 func (q *Queries) SearchWikiPages(ctx context.Context, arg *SearchWikiPagesParams) ([]*SearchWikiPagesRow, error) {
-	rows, err := q.db.Query(ctx, searchWikiPages, arg.Query, arg.Tree, arg.PageLimit)
+	rows, err := q.db.Query(ctx, searchWikiPages,
+		arg.Query,
+		arg.TenantID,
+		arg.Tree,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -665,6 +729,7 @@ func (q *Queries) SearchWikiPages(ctx context.Context, arg *SearchWikiPagesParam
 			&i.ChannelID,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.TenantID,
 			&i.Rank,
 		); err != nil {
 			return nil, err
@@ -687,9 +752,10 @@ SET title = $1,
     updated_by = $5,
     updated_at = NOW()
 WHERE tree = $6
-  AND slug = $7
-  AND revision = $8
-RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+  AND tenant_id = $7
+  AND slug = $8
+  AND revision = $9
+RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 `
 
 type UpdateWikiPageParams struct {
@@ -699,6 +765,7 @@ type UpdateWikiPageParams struct {
 	ChannelID        pgtype.UUID `db:"channel_id" json:"ChannelID"`
 	UpdatedBy        string      `db:"updated_by" json:"UpdatedBy"`
 	Tree             string      `db:"tree" json:"Tree"`
+	TenantID         pgtype.UUID `db:"tenant_id" json:"TenantID"`
 	Slug             string      `db:"slug" json:"Slug"`
 	ExpectedRevision int32       `db:"expected_revision" json:"ExpectedRevision"`
 }
@@ -714,9 +781,10 @@ type UpdateWikiPageParams struct {
 //	    updated_by = $5,
 //	    updated_at = NOW()
 //	WHERE tree = $6
-//	  AND slug = $7
-//	  AND revision = $8
-//	RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+//	  AND tenant_id = $7
+//	  AND slug = $8
+//	  AND revision = $9
+//	RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 func (q *Queries) UpdateWikiPage(ctx context.Context, arg *UpdateWikiPageParams) (*WikiPage, error) {
 	row := q.db.QueryRow(ctx, updateWikiPage,
 		arg.Title,
@@ -725,6 +793,7 @@ func (q *Queries) UpdateWikiPage(ctx context.Context, arg *UpdateWikiPageParams)
 		arg.ChannelID,
 		arg.UpdatedBy,
 		arg.Tree,
+		arg.TenantID,
 		arg.Slug,
 		arg.ExpectedRevision,
 	)
@@ -739,6 +808,7 @@ func (q *Queries) UpdateWikiPage(ctx context.Context, arg *UpdateWikiPageParams)
 		&i.ChannelID,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return &i, err
 }

@@ -102,12 +102,22 @@ test("call devices and signaling stay off until explicitly started", async () =>
   expect(await ownerPage.evaluate(() => (window as any).__rewindRoom?.isJoined())).toBe(false);
 });
 
-test("navbar collapses before labels can stack", async () => {
-  await ownerPage.setViewportSize({ width: 1278, height: 900 });
-  await ownerPage.goto(`/show-notes/${noteID}`);
-  await expect(ownerPage.getByRole("button", { name: "Toggle menu" })).toBeVisible();
-  await expect(ownerPage.locator('a.nav-link[href="/show-notes"]')).toBeHidden();
-  await ownerPage.setViewportSize({ width: 1280, height: 900 });
+test("navbar collapses at the container breakpoint", async () => {
+  try {
+    // navigation.css switches from the menu button to inline destinations at
+    // a 70rem container width. Keep both sides of that boundary explicit so a
+    // viewport change cannot silently reintroduce stacked labels.
+    await ownerPage.setViewportSize({ width: 1000, height: 900 });
+    await ownerPage.goto(`/show-notes/${noteID}`);
+    await expect(ownerPage.locator("[data-nav-toggle]")).toBeVisible();
+    await expect(ownerPage.locator('a.site-nav-direct[href="/jobs"]')).toBeHidden();
+
+    await ownerPage.setViewportSize({ width: 1200, height: 900 });
+    await expect(ownerPage.locator("[data-nav-toggle]")).toBeHidden();
+    await expect(ownerPage.locator('a.site-nav-direct[href="/jobs"]')).toBeVisible();
+  } finally {
+    await ownerPage.setViewportSize({ width: 1280, height: 900 });
+  }
 });
 
 test("two editors converge and undo remains local", async ({ browser }) => {

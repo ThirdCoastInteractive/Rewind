@@ -1,6 +1,15 @@
 #!/bin/sh
 # Isolated model diagnostic: no database connection, downloads, or archive writes.
 set -eu
+runtime_dir=${RUNTIME_DIR:-/runtime}
+export PATH="$runtime_dir/bin:${PATH:-}"
+if [ -d "$runtime_dir/lib/ollama" ]; then
+  export LD_LIBRARY_PATH="$runtime_dir/lib/ollama:${LD_LIBRARY_PATH:-}"
+fi
+if ! command -v ollama >/dev/null 2>&1; then
+  echo "ollama runtime is missing from $runtime_dir/bin" >&2
+  exit 127
+fi
 export OLLAMA_HOST=127.0.0.1:11434
 export OLLAMA_DEBUG=1
 export OLLAMA_KEEP_ALIVE=0

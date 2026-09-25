@@ -79,11 +79,17 @@ func TestStitchHTTPCommandsConflictRetryAndOwnership(t *testing.T) {
 	if stale.Code != http.StatusConflict {
 		t.Fatalf("stale: %d %s", stale.Code, stale.Body.String())
 	}
+	// Projects are owner-only: another user's read looks the same as a missing
+	// project, like their writes.
 	for _, path := range []string{"/document", "/history"} {
 		for _, user := range []string{other.String(), ""} {
 			res := request(user, "GET", base+path, nil)
-			if res.Code != http.StatusUnauthorized && res.Code != http.StatusNotFound {
-				t.Fatalf("read ownership %s: %d %s", path, res.Code, res.Body.String())
+			if user == "" {
+				if res.Code != http.StatusUnauthorized && res.Code != http.StatusNotFound {
+					t.Fatalf("anonymous read %s: %d %s", path, res.Code, res.Body.String())
+				}
+			} else if res.Code != http.StatusNotFound {
+				t.Fatalf("foreign read %s: %d %s", path, res.Code, res.Body.String())
 			}
 		}
 	}
@@ -119,8 +125,8 @@ func TestStitchHTTPCommandsConflictRetryAndOwnership(t *testing.T) {
 	if res := request(owner.String(), "GET", assetPath, nil); res.Code != 200 {
 		t.Fatalf("asset read: %d %s", res.Code, res.Body.String())
 	}
-	if res := request(other.String(), "GET", assetPath, nil); res.Code != 404 {
-		t.Fatalf("foreign asset read: %d", res.Code)
+	if res := request(other.String(), "GET", assetPath, nil); res.Code != 200 {
+		t.Fatalf("shared asset read: %d", res.Code)
 	}
 	seed, err := store.Commit(ctx, owner, project, snap.Revision, "render-fixture", stitch.Actor{Kind: "user", ID: owner.String()}, "Add render fixture", []stitch.Operation{{Type: "insert_segment", Segment: &stitch.Segment{Type: "title", DurationUS: 1_000_000}}})
 	if err != nil {

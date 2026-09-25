@@ -2,8 +2,6 @@
 package video_api
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -11,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 // HandleSeekSheet serves GET /videos/:id/seek/levels/:level/:sheet, returning a seek sprite sheet image.
 func HandleSeekSheet(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
@@ -30,14 +29,13 @@ func HandleSeekSheet(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fi
 		if err != nil {
 			return err
 		}
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoUUID.String())
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		path := filepath.Join(dir, "seek", "levels", level, sheet)
-		if _, err := os.Stat(path); err != nil {
+		key := plugin.VideoKey(videoUUID.String(), "seek/levels/"+level+"/"+sheet)
+		if err := fs.ServeKey(c, key, "image/jpeg", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat); err != nil {
 			return c.String(404, "seek thumbnail sheet not available")
 		}
-		return fs.ServeDiskFileWithCache(c, path, "image/jpeg", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagWeakStat)
+		return nil
 	}
 }

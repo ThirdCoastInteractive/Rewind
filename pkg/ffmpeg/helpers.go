@@ -6,8 +6,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -49,16 +52,19 @@ func GeneratePreview(ctx context.Context, input, output string, opts *PreviewOpt
 // ThumbnailOptions configures thumbnail extraction.
 type ThumbnailOptions struct {
 	Offset   time.Duration // Where to extract from (default: 5s)
+	AtStart  bool          // Use the first frame instead of the default offset
 	MaxWidth int           // Maximum width (default: 640)
 	Quality  int           // JPEG quality 1-31, lower is better (default: 4)
 }
 
-// ExtractThumbnail extracts a single frame as an image.
+// ExtractThumbnail extracts a single frame as an image. If the requested
+// offset is beyond a short input, it retries from the first frame when the
+// initial command produces no valid image.
 func ExtractThumbnail(ctx context.Context, input, output string, opts *ThumbnailOptions) RunResult {
 	if opts == nil {
 		opts = &ThumbnailOptions{}
 	}
-	if opts.Offset == 0 {
+	if opts.Offset == 0 && !opts.AtStart {
 		opts.Offset = 5 * time.Second
 	}
 	if opts.MaxWidth == 0 {
@@ -68,12 +74,61 @@ func ExtractThumbnail(ctx context.Context, input, output string, opts *Thumbnail
 		opts.Quality = 4
 	}
 
+	result := extractThumbnailAtOffset(ctx, input, output, opts, opts.Offset)
+	if result.Err == nil && thumbnailOutputIsValid(output) {
+		return result
+	}
+	if result.Err == nil {
+		result.Err = fmt.Errorf("ffmpeg thumbnail produced no valid image")
+	}
+	if opts.Offset <= 0 || ctx.Err() != nil {
+		return result
+	}
+
+	// A seek beyond EOF may be reported as a successful ffmpeg invocation
+	// even though no frame was encoded. Remove that output before retrying so
+	// a stale or partial file cannot make the fallback appear successful.
+	_ = os.Remove(output)
+	fallback := extractThumbnailAtOffset(ctx, input, output, opts, 0)
+	fallback.Logs = joinThumbnailLogs(result.Logs, fallback.Logs)
+	if fallback.Err == nil && thumbnailOutputIsValid(output) {
+		return fallback
+	}
+	if fallback.Err == nil {
+		fallback.Err = fmt.Errorf("ffmpeg thumbnail produced no valid image")
+	}
+	return fallback
+}
+
+func extractThumbnailAtOffset(ctx context.Context, input, output string, opts *ThumbnailOptions, offset time.Duration) RunResult {
 	return RunCapture(ctx, input, output,
-		Seek(opts.Offset),
+		Seek(offset),
 		ScaleWidth(opts.MaxWidth),
 		Frames(1),
 		Quality(opts.Quality),
+		SingleImage(),
 	)
+}
+
+func thumbnailOutputIsValid(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	config, _, err := image.DecodeConfig(f)
+	return err == nil && config.Width > 0 && config.Height > 0
+}
+
+func joinThumbnailLogs(first, second string) string {
+	if first == "" {
+		return second
+	}
+	if second == "" {
+		return first
+	}
+	return first + "\n" + second
 }
 
 // ExtractClip extracts a time range from a video.
@@ -122,16 +177,34 @@ func Remux(ctx context.Context, input, output string, opts *RemuxOptions) error 
 // playback and seek immediately without downloading the whole file first.
 // A temporary file is written next to the source and atomically renamed over it.
 func ApplyFaststart(ctx context.Context, path string) error {
-	tmp := path + ".faststart.tmp"
+	sourceInfo, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat faststart source: %w", err)
+	}
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".faststart-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create faststart temporary file: %w", err)
+	}
+	tmp := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close faststart temporary file: %w", err)
+	}
+	if err := os.Chmod(tmp, sourceInfo.Mode().Perm()); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("preserve faststart source mode: %w", err)
+	}
+	defer os.Remove(tmp)
 	args := []string{
 		"-hide_banner", "-y",
 		"-i", path,
+		"-map", "0",
 		"-c", "copy",
 		"-movflags", "+faststart",
+		"-f", "mp4",
 		tmp,
 	}
 	if err := run(ctx, args, nil); err != nil {
-		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)

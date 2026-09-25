@@ -32,7 +32,10 @@ func handleTranscribe(ctx context.Context, dbc *db.DatabaseConnection, job *db.M
 		return fmt.Errorf("waiting_assets: video not found")
 	}
 	videoID := uuidString(video.ID)
-	videoPath := resolveVideoPath(video, downloadsDir)
+	videoPath, cleanup := resolveVideoPath(ctx, video, downloadsDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
 	if videoPath == "" {
 		return fmt.Errorf("waiting_assets: no video file for %s", videoID)
 	}
@@ -50,8 +53,12 @@ func handleTranscribe(ctx context.Context, dbc *db.DatabaseConnection, job *db.M
 		}
 	}
 	var bounds []float64
+	needScratch := isHTTPURL(videoPath)
 	if job.RangeStart != nil && job.RangeEnd != nil {
 		bounds = []float64{*job.RangeStart, *job.RangeEnd}
+		needScratch = true
+	}
+	if needScratch {
 		var err error
 		dir, err = os.MkdirTemp("", "rewind-asr-")
 		if err != nil {
@@ -87,37 +94,68 @@ func handleTranscribe(ctx context.Context, dbc *db.DatabaseConnection, job *db.M
 		return fmt.Errorf("ingest transcript: %w", err)
 	}
 	slog.Info("transcribe ingested captions", "video_id", videoID, "lang", lang, "path", capPath)
-
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if e := maybeEnqueueDiarize(ctx, dbc, video.ID); e != nil {
+		slog.Warn("enqueue diarize", "video_id", videoID, "error", e)
+	}
+	return nil
 }
 
 var videoExts = []string{".mp4", ".webm", ".mkv", ".mov", ".avi"}
 
-func resolveVideoPath(v *db.Video, downloadsDir string) string {
+func isHTTPURL(s string) bool {
+	low := strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://")
+}
+
+// resolveVideoPath order: videos.video_path → plugin.LocalMaster → downloadsDir
+// globs → plugin.MasterSource (local path or http(s) for ffmpeg -i).
+func resolveVideoPath(ctx context.Context, v *db.Video, downloadsDir string) (string, func()) {
 	if v.VideoPath != nil {
 		p := strings.TrimSpace(*v.VideoPath)
 		if p != "" {
 			if _, err := os.Stat(p); err == nil {
-				return p
+				return p, nil
+			}
+			// In Live, VideoPath may be the private R2 object key. Once remote
+			// media is configured, an invalid key must fail closed rather than
+			// falling through to an unrelated local or public source.
+			if os.Getenv("R2_PUBLIC_URL") != "" || os.Getenv("R2_SIGNING_SECRET") != "" {
+				if src, err := configuredPrivateMasterURL(p, time.Now()); err == nil {
+					return src, nil
+				}
+				return "", nil
 			}
 		}
 	}
 	id := uuidString(v.ID)
 	if p, ok := plugin.LocalMaster(id); ok {
-		return p
+		return p, nil
 	}
 	dir := filepath.Join(downloadsDir, id)
 	for _, ext := range videoExts {
 		p := filepath.Join(dir, id+".video"+ext)
 		if _, err := os.Stat(p); err == nil {
-			return p
+			return p, nil
 		}
 	}
 	matches, _ := filepath.Glob(filepath.Join(dir, id+".video.*"))
 	for _, p := range matches {
 		if _, err := os.Stat(p); err == nil {
-			return p
+			return p, nil
 		}
 	}
-	return ""
+
+	src, cleanup, err := plugin.MasterSource(ctx, id)
+	if err != nil || strings.TrimSpace(src) == "" {
+		if cleanup != nil {
+			cleanup()
+		}
+		return "", nil
+	}
+	src = strings.TrimSpace(src)
+	// extractWav16k shells ffmpeg -i, which accepts http(s); pass through.
+	return src, cleanup
 }

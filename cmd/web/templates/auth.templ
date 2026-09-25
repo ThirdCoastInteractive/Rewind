@@ -1,6 +1,8 @@
 package templates
 
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 import "thirdcoast.systems/rewind/cmd/web/templates/components"
+import "thirdcoast.systems/rewind/pkg/plugin"
 
 templ Login(errorMsg string) {
 	@Layout("Login", "") {
@@ -9,17 +11,35 @@ templ Login(errorMsg string) {
 }
 
 templ LoginContent(errorMsg string) {
+	{{
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
+		notice := plugin.AuthNotice(ctx)
+	}}
 	<div class="min-h-[calc(100vh-200px)] flex items-center justify-center">
 		<div class="max-w-md w-full">
 			@components.Card(false) {
-				@components.CardHeader("LOGIN", "Access this self-hosted instance")
+				if liveProduct {
+					@components.CardHeader("LOGIN", "Continue to your Rewind Live workspace")
+				} else {
+					@components.CardHeader("LOGIN", "Access this self-hosted instance")
+				}
 				@components.CardBody(true) {
+					if liveProduct {
+						<p class="mb-4 text-sm text-white/60">
+							Stream live everywhere, keep private masters, and clip in your browser.
+						</p>
+					}
 					if errorMsg != "" {
 						@Alert("error", errorMsg)
+					} else if notice != "" {
+						@Alert("error", notice)
 					}
 					<form method="POST" class="space-y-4">
 						@components.Input("USERNAME OR EMAIL", "username", "text", true, "Enter your username or email")
 						@components.Input("PASSWORD", "password", "password", true, "Enter your password")
+						if liveProduct {
+							@liveAuthShield()
+						}
 						<div class="flex items-center">
 							@components.Checkbox("Remember me", "remember", false)
 						</div>
@@ -34,6 +54,11 @@ templ LoginContent(errorMsg string) {
 								Create an account
 							</a>
 						</p>
+						if liveProduct {
+							<p class="mt-3 text-xs font-mono uppercase tracking-wider">
+								<a href="/" class="text-white/60 hover:text-white transition">← Rewind Live home</a>
+							</p>
+						}
 					</div>
 				}
 			}
@@ -48,15 +73,30 @@ templ Register(errorMsg string) {
 }
 
 templ RegisterContent(errorMsg string) {
+	{{
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
+		notice := plugin.AuthNotice(ctx)
+	}}
 	<div class="min-h-[calc(100vh-200px)] flex items-center justify-center py-12">
 		<div class="max-w-md w-full">
 			@components.Card(false) {
-				@components.CardHeader("REGISTER", "Create a user account on this instance")
+				if liveProduct {
+					@components.CardHeader("REGISTER", "Create your Rewind Live account")
+				} else {
+					@components.CardHeader("REGISTER", "Create a user account on this instance")
+				}
 				@components.CardBody(true) {
+					if liveProduct {
+						<p class="mb-4 text-sm text-white/60">
+							Stream live everywhere, keep private masters, and clip in your browser.
+						</p>
+					}
 					if errorMsg != "" {
 						@Alert("error", errorMsg)
+					} else if notice != "" {
+						@Alert("error", notice)
 					}
-					<form method="POST" action="/register" class="space-y-4">
+					<form method="POST" class="space-y-4">
 						<div>
 							@components.Input("USERNAME", "username", "text", true, "Choose a username")
 							<p class="mt-1 text-xs text-white/40 font-mono">3-30 characters, letters, numbers, - and _ only</p>
@@ -67,6 +107,9 @@ templ RegisterContent(errorMsg string) {
 							<p class="mt-1 text-xs text-white/40 font-mono">Minimum 8 characters</p>
 						</div>
 						@components.Input("CONFIRM PASSWORD", "confirm_password", "password", true, "Confirm your password")
+						if liveProduct {
+							@liveAuthShield()
+						}
 						@components.FormButton("primary", "md", "", true) {
 							CREATE ACCOUNT
 						}
@@ -78,9 +121,117 @@ templ RegisterContent(errorMsg string) {
 								Sign in
 							</a>
 						</p>
+						if liveProduct {
+							<p class="mt-3 text-xs font-mono uppercase tracking-wider">
+								<a href="/" class="text-white/60 hover:text-white transition">← Rewind Live home</a>
+							</p>
+						}
 					</div>
 				}
 			}
 		</div>
 	</div>
+}
+
+// turnstileOnce emits the Turnstile script once per page. A second copy of
+// api.js re-scans the page and leaves the widget without a token.
+var turnstileOnce = templ.NewOnceHandle()
+
+// liveAuthShield is the Live-only spam gate on login and register: a honeypot
+// field scripted clients fill in, and the Turnstile widget when a site key is
+// configured. The honeypot is off-screen rather than display:none so a bot
+// that skips hidden inputs still trips it. Real visitors never tab into it.
+templ liveAuthShield() {
+	<div aria-hidden="true" style="position:absolute;left:-9999px;top:0;height:0;width:0;overflow:hidden">
+		<label>
+			Website
+			<input type="text" name="website" tabindex="-1" autocomplete="off" value=""/>
+		</label>
+	</div>
+	if key := plugin.AuthShieldSiteKey(); key != "" {
+		<div
+			class="cf-turnstile my-2"
+			data-sitekey={ key }
+			data-theme="auto"
+			data-callback="tcTurnstileSolved"
+			data-expired-callback="tcTurnstileStale"
+			data-timeout-callback="tcTurnstileStale"
+			data-error-callback="tcTurnstileFailed"
+			data-retry="auto"
+			data-retry-interval="2000"
+			data-refresh-expired="auto"
+		></div>
+		@turnstileOnce.Once() {
+			<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>
+			<script>
+				(function () {
+					if (window.tcTurnstile) return;
+					var FIELD = "cf-turnstile-response";
+					var WAIT_MS = 20000;
+					var pending = new Map();
+					var abandoned = new WeakSet();
+					var poll = null;
+					function tokenOf(form) {
+						var el = form && form.querySelector('[name="' + FIELD + '"]');
+						return el && el.value ? el.value : "";
+					}
+					function note(form, msg) {
+						var w = form.querySelector(".cf-turnstile");
+						if (!w || !w.parentNode) return;
+						var n = w.parentNode.querySelector("[data-tc-turnstile-note]");
+						if (!n) {
+							n = document.createElement("p");
+							n.setAttribute("data-tc-turnstile-note", "");
+							n.setAttribute("role", "status");
+							n.className = "text-xs text-white/60 mt-1";
+							w.parentNode.insertBefore(n, w.nextSibling);
+						}
+						n.textContent = msg || "";
+						n.hidden = !msg;
+					}
+					function tick() {
+						var now = Date.now();
+						pending.forEach(function (started, form) {
+							if (tokenOf(form)) {
+								pending.delete(form);
+								note(form, "");
+								form.requestSubmit();
+								return;
+							}
+							if (now - started > WAIT_MS) {
+								pending.delete(form);
+								abandoned.add(form);
+								note(form, "The captcha did not load. Check your connection or any content blocker, then submit again.");
+							}
+						});
+						if (!pending.size && poll) {
+							clearInterval(poll);
+							poll = null;
+						}
+					}
+					function hold(form) {
+						if (!pending.has(form)) pending.set(form, Date.now());
+						note(form, "Checking that you are human...");
+						if (!poll) poll = setInterval(tick, 200);
+					}
+					document.addEventListener("submit", function (e) {
+						var form = e.target;
+						if (!(form instanceof HTMLFormElement) || !form.querySelector(".cf-turnstile")) return;
+						if (tokenOf(form) || abandoned.has(form)) return;
+						e.preventDefault();
+						e.stopPropagation();
+						hold(form);
+					}, true);
+					window.tcTurnstile = {
+						solved: function () { setTimeout(tick, 0); },
+						stale: function () {},
+						failed: function () {}
+					};
+					window.tcTurnstileSolved = function () { window.tcTurnstile.solved(); };
+					window.tcTurnstileStale = function () { window.tcTurnstile.stale(); };
+					window.tcTurnstileFailed = function () { window.tcTurnstile.failed(); };
+				})();
+			</script>
+		}
+	}
 }

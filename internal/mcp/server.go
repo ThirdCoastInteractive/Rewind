@@ -25,6 +25,7 @@ import (
 	"thirdcoast.systems/rewind/internal/search"
 	"thirdcoast.systems/rewind/internal/wiki"
 	"thirdcoast.systems/rewind/pkg/captions"
+	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/utils/language"
 )
 
@@ -48,6 +49,25 @@ func Handler(ctx context.Context, dbc *db.DatabaseConnection) http.Handler {
 		}
 		reqCtx := withToken(r.Context(), tok)
 		reqCtx = withSession(reqCtx, sessionInfo{ID: sid, ClientName: "mcp"})
+		var tenant string
+		if authn := plugin.Auth(); authn != nil {
+			if scoped, ok := authn.(interface {
+				WorkspaceForUser(context.Context, string) (string, error)
+			}); ok {
+				tenant, err = scoped.WorkspaceForUser(reqCtx, tok.UserID.String())
+				if err != nil {
+					http.Error(w, "workspace unavailable", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		if plugin.LiveIngest() != nil && strings.TrimSpace(tenant) == "" {
+			http.Error(w, "workspace required", http.StatusForbidden)
+			return
+		}
+		if plugin.LiveIngest() != nil {
+			reqCtx = plugin.WithTenantScope(reqCtx, tenant, true)
+		}
 		inner.ServeHTTP(w, r.WithContext(reqCtx))
 	})
 }
@@ -71,6 +91,9 @@ func newServer(dbc *db.DatabaseConnection) *mcpsdk.Server {
 		Version: "1.0.0",
 	}, options)
 	srv.AddReceivingMiddleware(sessionIdentityMiddleware)
+	if plugin.LiveIngest() != nil {
+		srv.AddReceivingMiddleware(liveMCPAllowlistMiddleware(liveMCPToolAllowlist()))
+	}
 	registerOSINTTools(srv, dbc)
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "whoami",
@@ -277,6 +300,55 @@ func newServer(dbc *db.DatabaseConnection) *mcpsdk.Server {
 	}, proposeRundownPrompt)
 
 	return srv
+}
+
+// liveMCPToolAllowlist and its middleware keep Live limited to stores that
+// enforce workspace scope. OSS retains the complete archive and OSINT surface.
+func liveMCPToolAllowlist() map[string]struct{} {
+	allowed := map[string]struct{}{
+		"whoami":      {},
+		"wiki_search": {}, "wiki_get": {}, "wiki_pages_for": {}, "list_topic_windows": {},
+		"wiki_put": {}, "wiki_history": {}, "wiki_diff": {},
+		"list_show_notes": {}, "get_show_note": {}, "join_show_note_room": {},
+		"wait_show_note_events": {}, "leave_show_note_room": {}, "post_show_note_message": {},
+		"add_show_note_comment": {}, "propose_show_note_patch": {},
+		"stitch_inspect": {}, "stitch_apply": {}, "stitch_history": {}, "stitch_undo": {},
+		"stitch_redo": {}, "stitch_wait": {}, "stitch_export": {}, "stitch_preview": {},
+		"stitch_frame": {}, "stitch_render_status": {},
+		"request_stitch_alignment": {}, "get_stitch_alignment_status": {},
+		"get_clipping_workflow": {}, "find_clip_candidates": {}, "create_clip": {},
+		"save_compilation_plan": {}, "append_compilation_segments": {},
+		"create_stitch_project": {}, "get_compilation_plan": {}, "list_compilation_plans": {},
+		"get_transcript": {}, "get_context_windows": {},
+	}
+	return allowed
+}
+
+func liveMCPAllowlistMiddleware(allowed map[string]struct{}) mcpsdk.Middleware {
+	return func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
+			if method == "tools/call" {
+				if call, ok := req.(*mcpsdk.CallToolRequest); ok {
+					if _, permitted := allowed[call.Params.Name]; !permitted {
+						return nil, fmt.Errorf("Live MCP tool is not available: %s", call.Params.Name)
+					}
+				}
+			}
+			result, err := next(ctx, method, req)
+			if method == "tools/list" && err == nil {
+				if listed, ok := result.(*mcpsdk.ListToolsResult); ok {
+					filtered := listed.Tools[:0]
+					for _, tool := range listed.Tools {
+						if _, permitted := allowed[tool.Name]; permitted {
+							filtered = append(filtered, tool)
+						}
+					}
+					listed.Tools = filtered
+				}
+			}
+			return result, err
+		}
+	}
 }
 
 func startShowNoteResourceNotifications(ctx context.Context, dbc *db.DatabaseConnection, srv *mcpsdk.Server) {
@@ -577,6 +649,9 @@ func getTranscript(dbc *db.DatabaseConnection) func(context.Context, *mcpsdk.Cal
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, args *getTranscriptArgs) (*mcpsdk.CallToolResult, any, error) {
 		id, err := parseUUID(args.ID)
 		if err != nil {
+			return nil, nil, err
+		}
+		if err = requireWorkspaceVideo(ctx, dbc.Queries(ctx), id); err != nil {
 			return nil, nil, err
 		}
 		var row *db.VideoTranscript

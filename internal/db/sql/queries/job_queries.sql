@@ -194,7 +194,10 @@ WITH cte AS (
           )
         END
       )
-    ORDER BY ij.created_at
+    -- Seek sheets decode the whole master. Claim every other asset job first.
+    ORDER BY
+      CASE WHEN btrim(coalesce(ij.asset_scope, '')) = 'seek' THEN 1 ELSE 0 END,
+      ij.created_at
     LIMIT 1
     FOR UPDATE OF ij SKIP LOCKED
 )

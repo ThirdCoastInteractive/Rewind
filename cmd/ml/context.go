@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"thirdcoast.systems/rewind/cmd/ml/internal/mlcore"
@@ -32,6 +31,19 @@ func handleContextWindows(ctx context.Context, dbc *db.DatabaseConnection, job *
 	q := dbc.Queries(ctx)
 	promptVersion := contextwindow.GenerationVersion(job.PromptVersion)
 	videoID := job.VideoID
+	video, err := q.GetVideoByID(ctx, videoID)
+	if err != nil {
+		return fmt.Errorf("source video: %w", err)
+	}
+	if video.TenantID.Valid && video.TenantID.Bytes != [16]byte{} {
+		// Hosted workers may run without the Live plugin registered; the source
+		// video remains the authoritative workspace scope.
+		ctx = plugin.WithTenantScope(ctx, video.TenantID.String(), true)
+	} else if plugin.LiveIngest() != nil {
+		if !video.TenantID.Valid || video.TenantID.Bytes == [16]byte{} {
+			return fmt.Errorf("wiki tenant is required for Live context generation")
+		}
+	}
 	hash, err := q.GetTranscriptFingerprint(ctx, videoID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -185,7 +197,6 @@ func handleContextWindows(ctx context.Context, dbc *db.DatabaseConnection, job *
 	prev := windowsFromRows(prevRows)
 	sameHash := previousSetSameHash(ctx, q, videoID, set.ID, hash)
 
-	video, _ := q.GetVideoByID(ctx, videoID)
 	duration := mlcore.DurationFromCues(cues)
 	if video != nil && video.DurationSeconds != nil && *video.DurationSeconds > 0 {
 		duration = float64(*video.DurationSeconds)
@@ -266,15 +277,14 @@ func handleContextWindows(ctx context.Context, dbc *db.DatabaseConnection, job *
 		return err
 	}
 
-	if err := plugin.Enqueue(ctx, plugin.Job{
-		VideoID:        uuid.UUID(videoID.Bytes).String(),
-		Kind:           plugin.KindRefine,
-		Priority:       50,
-		TranscriptHash: hash,
-		ModelDigest:    digest,
-		PromptVersion:  promptVersion,
+	// Enqueue inside the publication transaction. A separate plugin queue
+	// transaction here would wait on the video lock held until Commit and
+	// deadlock the worker; the durable DB row commits atomically with output.
+	if err := q.EnqueueMLJob(ctx, &db.EnqueueMLJobParams{
+		VideoID: videoID, Kind: plugin.KindRefine, Priority: 50,
+		TranscriptHash: hash, ModelDigest: digest, PromptVersion: promptVersion,
 	}); err != nil {
-		slog.Warn("enqueue refine_boundaries failed", "error", err)
+		return fmt.Errorf("enqueue refine_boundaries: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err

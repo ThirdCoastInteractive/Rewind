@@ -3,7 +3,7 @@
  *
  * Prerequisites:
  * - The full Docker Compose stack is running (`make up`)
- * - At least one video exists in the database
+ * - `E2E_VIDEO_ID` names a disposable video fixture in the database
  * - The app is accessible at WEBSERVER_PORT (default 9115)
  *
  * Run with:
@@ -12,7 +12,6 @@
 import { test, expect } from "@playwright/test";
 import {
   login,
-  getFirstVideoID,
   goToCutPage,
   openFiltersPanel,
   addFilter,
@@ -27,10 +26,24 @@ import {
 let videoID: string;
 
 test.beforeAll(async ({ browser }) => {
+  videoID = process.env.E2E_VIDEO_ID?.trim() || "";
+  test.skip(
+    !videoID,
+    "Filter-stack E2E mutates a cut fixture; set E2E_VIDEO_ID to an explicit disposable video UUID.",
+  );
+
   const page = await browser.newPage();
-  await login(page);
-  videoID = await getFirstVideoID(page);
-  await page.close();
+  try {
+    await login(page);
+    const response = await page.request.get(`/videos/${videoID}`);
+    if (!response.ok()) {
+      throw new Error(
+        `E2E_VIDEO_ID=${videoID} is not available at ${response.status()}; provide a disposable fixture video`,
+      );
+    }
+  } finally {
+    await page.close();
+  }
 });
 
 test.describe("Filter Stack — Add / Remove", () => {

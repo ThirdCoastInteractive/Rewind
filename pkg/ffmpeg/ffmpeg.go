@@ -277,6 +277,14 @@ func AudioFilter(f string) Option {
 
 // --- Output Options ---
 
+// SingleImage tells the image2 muxer to overwrite one file instead of
+// treating the name as a frame sequence.
+func SingleImage() Option {
+	return OptionFunc(func(cmd *Command) {
+		cmd.postInput = append(cmd.postInput, "-update", "1")
+	})
+}
+
 // Frames sets the number of frames to output (-frames:v).
 func Frames(n int) Option {
 	return OptionFunc(func(cmd *Command) {

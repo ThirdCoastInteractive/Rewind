@@ -16,12 +16,16 @@ import (
 // network_queries.sql. Run via pool until 00087 lands and sqlc can generate.
 const listCommenterNetworkNodesSQL = `
 WITH sparse AS (
-  SELECT c.id
-  FROM commenters c
-  WHERE c.channel_id IS NOT NULL
-     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+  UNION
+  SELECT w.commenter_id FROM commenter_watchlist w
+  UNION
+  SELECT f.commenter_id FROM osint_flags f
+  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+  UNION
+  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+  UNION
+  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 )
 SELECT c.id,
        c.source,
@@ -45,12 +49,16 @@ LIMIT 200`
 
 const listCommenterNetworkEdgesSQL = `
 WITH sparse AS (
-  SELECT c.id
-  FROM commenters c
-  WHERE c.channel_id IS NOT NULL
-     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+  UNION
+  SELECT w.commenter_id FROM commenter_watchlist w
+  UNION
+  SELECT f.commenter_id FROM osint_flags f
+  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+  UNION
+  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+  UNION
+  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 ), edge_rows AS (
   SELECT e.id::text AS id,
          e.from_channel_id,
@@ -84,12 +92,16 @@ LIMIT 200`
 
 const listCommenterNetworkEdgesFallbackSQL = `
 WITH sparse AS (
-  SELECT c.id
-  FROM commenters c
-  WHERE c.channel_id IS NOT NULL
-     OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-     OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-     OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+  SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+  UNION
+  SELECT w.commenter_id FROM commenter_watchlist w
+  UNION
+  SELECT f.commenter_id FROM osint_flags f
+  WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+  UNION
+  SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+  UNION
+  SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 )
 SELECT ('fallback:' || v.channel_row_id::text || ':' || c.id::text) AS id,
        v.channel_row_id AS from_channel_id,

@@ -8,7 +8,9 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 import "thirdcoast.systems/rewind/cmd/web/templates/components"
+import "thirdcoast.systems/rewind/pkg/plugin"
 
 func Login(errorMsg string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -78,6 +80,8 @@ func LoginContent(errorMsg string) templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
+		notice := plugin.AuthNotice(ctx)
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"min-h-[calc(100vh-200px)] flex items-center justify-center\"><div class=\"max-w-md w-full\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -94,9 +98,16 @@ func LoginContent(errorMsg string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = components.CardHeader("LOGIN", "Access this self-hosted instance").Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if liveProduct {
+				templ_7745c5c3_Err = components.CardHeader("LOGIN", "Continue to your Rewind Live workspace").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = components.CardHeader("LOGIN", "Access this self-hosted instance").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " ")
 			if templ_7745c5c3_Err != nil {
@@ -114,13 +125,28 @@ func LoginContent(errorMsg string) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
+				if liveProduct {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"mb-4 text-sm text-white/60\">Stream live everywhere, keep private masters, and clip in your browser.</p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 				if errorMsg != "" {
 					templ_7745c5c3_Err = Alert("error", errorMsg).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+				} else if notice != "" {
+					templ_7745c5c3_Err = Alert("error", notice).Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " <form method=\"POST\" class=\"space-y-4\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " <form method=\"POST\" class=\"space-y-4\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -132,7 +158,13 @@ func LoginContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"flex items-center\">")
+				if liveProduct {
+					templ_7745c5c3_Err = liveAuthShield().Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"flex items-center\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -140,7 +172,7 @@ func LoginContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -156,7 +188,7 @@ func LoginContent(errorMsg string) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "SIGN IN")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "SIGN IN")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -166,7 +198,17 @@ func LoginContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</form><div class=\"mt-4 text-center\"><p class=\"text-white/60 text-xs font-mono uppercase tracking-wider\">Don't have an account? <a href=\"/register\" class=\"text-white hover:text-white/80 transition\">Create an account</a></p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</form><div class=\"mt-4 text-center\"><p class=\"text-white/60 text-xs font-mono uppercase tracking-wider\">Don't have an account? <a href=\"/register\" class=\"text-white hover:text-white/80 transition\">Create an account</a></p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if liveProduct {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"mt-3 text-xs font-mono uppercase tracking-wider\"><a href=\"/\" class=\"text-white/60 hover:text-white transition\">← Rewind Live home</a></p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -182,7 +224,7 @@ func LoginContent(errorMsg string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -258,7 +300,9 @@ func RegisterContent(errorMsg string) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"min-h-[calc(100vh-200px)] flex items-center justify-center py-12\"><div class=\"max-w-md w-full\">")
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
+		notice := plugin.AuthNotice(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"min-h-[calc(100vh-200px)] flex items-center justify-center py-12\"><div class=\"max-w-md w-full\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -274,11 +318,18 @@ func RegisterContent(errorMsg string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = components.CardHeader("REGISTER", "Create a user account on this instance").Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if liveProduct {
+				templ_7745c5c3_Err = components.CardHeader("REGISTER", "Create your Rewind Live account").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = components.CardHeader("REGISTER", "Create a user account on this instance").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -294,13 +345,28 @@ func RegisterContent(errorMsg string) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
+				if liveProduct {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<p class=\"mb-4 text-sm text-white/60\">Stream live everywhere, keep private masters, and clip in your browser.</p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 				if errorMsg != "" {
 					templ_7745c5c3_Err = Alert("error", errorMsg).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+				} else if notice != "" {
+					templ_7745c5c3_Err = Alert("error", notice).Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " <form method=\"POST\" action=\"/register\" class=\"space-y-4\"><div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " <form method=\"POST\" class=\"space-y-4\"><div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -308,7 +374,7 @@ func RegisterContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"mt-1 text-xs text-white/40 font-mono\">3-30 characters, letters, numbers, - and _ only</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<p class=\"mt-1 text-xs text-white/40 font-mono\">3-30 characters, letters, numbers, - and _ only</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -316,7 +382,7 @@ func RegisterContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -324,13 +390,19 @@ func RegisterContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<p class=\"mt-1 text-xs text-white/40 font-mono\">Minimum 8 characters</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p class=\"mt-1 text-xs text-white/40 font-mono\">Minimum 8 characters</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				templ_7745c5c3_Err = components.Input("CONFIRM PASSWORD", "confirm_password", "password", true, "Confirm your password").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
+				}
+				if liveProduct {
+					templ_7745c5c3_Err = liveAuthShield().Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
 				templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -344,7 +416,7 @@ func RegisterContent(errorMsg string) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "CREATE ACCOUNT")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "CREATE ACCOUNT")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -354,7 +426,17 @@ func RegisterContent(errorMsg string) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</form><div class=\"mt-4 text-center\"><p class=\"text-white/60 text-xs font-mono uppercase tracking-wider\">Already have an account? <a href=\"/login\" class=\"text-white hover:text-white/80 transition\">Sign in</a></p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</form><div class=\"mt-4 text-center\"><p class=\"text-white/60 text-xs font-mono uppercase tracking-wider\">Already have an account? <a href=\"/login\" class=\"text-white hover:text-white/80 transition\">Sign in</a></p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if liveProduct {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<p class=\"mt-3 text-xs font-mono uppercase tracking-wider\"><a href=\"/\" class=\"text-white/60 hover:text-white transition\">← Rewind Live home</a></p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -370,9 +452,87 @@ func RegisterContent(errorMsg string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// turnstileOnce emits the Turnstile script once per page. A second copy of
+// api.js re-scans the page and leaves the widget without a token.
+var turnstileOnce = templ.NewOnceHandle()
+
+// liveAuthShield is the Live-only spam gate on login and register: a honeypot
+// field scripted clients fill in, and the Turnstile widget when a site key is
+// configured. The honeypot is off-screen rather than display:none so a bot
+// that skips hidden inputs still trips it. Real visitors never tab into it.
+func liveAuthShield() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div aria-hidden=\"true\" style=\"position:absolute;left:-9999px;top:0;height:0;width:0;overflow:hidden\"><label>Website <input type=\"text\" name=\"website\" tabindex=\"-1\" autocomplete=\"off\" value=\"\"></label></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if key := plugin.AuthShieldSiteKey(); key != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"cf-turnstile my-2\" data-sitekey=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var14 string
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `auth.templ`, Line: 154, Col: 21}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-theme=\"auto\" data-callback=\"tcTurnstileSolved\" data-expired-callback=\"tcTurnstileStale\" data-timeout-callback=\"tcTurnstileStale\" data-error-callback=\"tcTurnstileFailed\" data-retry=\"auto\" data-retry-interval=\"2000\" data-refresh-expired=\"auto\"></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Var15 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+				if !templ_7745c5c3_IsBuffer {
+					defer func() {
+						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err == nil {
+							templ_7745c5c3_Err = templ_7745c5c3_BufErr
+						}
+					}()
+				}
+				ctx = templ.InitializeContext(ctx)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\" defer></script> <script>\n\t\t\t\t(function () {\n\t\t\t\t\tif (window.tcTurnstile) return;\n\t\t\t\t\tvar FIELD = \"cf-turnstile-response\";\n\t\t\t\t\tvar WAIT_MS = 20000;\n\t\t\t\t\tvar pending = new Map();\n\t\t\t\t\tvar abandoned = new WeakSet();\n\t\t\t\t\tvar poll = null;\n\t\t\t\t\tfunction tokenOf(form) {\n\t\t\t\t\t\tvar el = form && form.querySelector('[name=\"' + FIELD + '\"]');\n\t\t\t\t\t\treturn el && el.value ? el.value : \"\";\n\t\t\t\t\t}\n\t\t\t\t\tfunction note(form, msg) {\n\t\t\t\t\t\tvar w = form.querySelector(\".cf-turnstile\");\n\t\t\t\t\t\tif (!w || !w.parentNode) return;\n\t\t\t\t\t\tvar n = w.parentNode.querySelector(\"[data-tc-turnstile-note]\");\n\t\t\t\t\t\tif (!n) {\n\t\t\t\t\t\t\tn = document.createElement(\"p\");\n\t\t\t\t\t\t\tn.setAttribute(\"data-tc-turnstile-note\", \"\");\n\t\t\t\t\t\t\tn.setAttribute(\"role\", \"status\");\n\t\t\t\t\t\t\tn.className = \"text-xs text-white/60 mt-1\";\n\t\t\t\t\t\t\tw.parentNode.insertBefore(n, w.nextSibling);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tn.textContent = msg || \"\";\n\t\t\t\t\t\tn.hidden = !msg;\n\t\t\t\t\t}\n\t\t\t\t\tfunction tick() {\n\t\t\t\t\t\tvar now = Date.now();\n\t\t\t\t\t\tpending.forEach(function (started, form) {\n\t\t\t\t\t\t\tif (tokenOf(form)) {\n\t\t\t\t\t\t\t\tpending.delete(form);\n\t\t\t\t\t\t\t\tnote(form, \"\");\n\t\t\t\t\t\t\t\tform.requestSubmit();\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (now - started > WAIT_MS) {\n\t\t\t\t\t\t\t\tpending.delete(form);\n\t\t\t\t\t\t\t\tabandoned.add(form);\n\t\t\t\t\t\t\t\tnote(form, \"The captcha did not load. Check your connection or any content blocker, then submit again.\");\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t\tif (!pending.size && poll) {\n\t\t\t\t\t\t\tclearInterval(poll);\n\t\t\t\t\t\t\tpoll = null;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tfunction hold(form) {\n\t\t\t\t\t\tif (!pending.has(form)) pending.set(form, Date.now());\n\t\t\t\t\t\tnote(form, \"Checking that you are human...\");\n\t\t\t\t\t\tif (!poll) poll = setInterval(tick, 200);\n\t\t\t\t\t}\n\t\t\t\t\tdocument.addEventListener(\"submit\", function (e) {\n\t\t\t\t\t\tvar form = e.target;\n\t\t\t\t\t\tif (!(form instanceof HTMLFormElement) || !form.querySelector(\".cf-turnstile\")) return;\n\t\t\t\t\t\tif (tokenOf(form) || abandoned.has(form)) return;\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\te.stopPropagation();\n\t\t\t\t\t\thold(form);\n\t\t\t\t\t}, true);\n\t\t\t\t\twindow.tcTurnstile = {\n\t\t\t\t\t\tsolved: function () { setTimeout(tick, 0); },\n\t\t\t\t\t\tstale: function () {},\n\t\t\t\t\t\tfailed: function () {}\n\t\t\t\t\t};\n\t\t\t\t\twindow.tcTurnstileSolved = function () { window.tcTurnstile.solved(); };\n\t\t\t\t\twindow.tcTurnstileStale = function () { window.tcTurnstile.stale(); };\n\t\t\t\t\twindow.tcTurnstileFailed = function () { window.tcTurnstile.failed(); };\n\t\t\t\t})();\n\t\t\t</script>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				return nil
+			})
+			templ_7745c5c3_Err = turnstileOnce.Once().Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		return nil
 	})

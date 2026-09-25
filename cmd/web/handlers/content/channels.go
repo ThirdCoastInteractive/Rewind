@@ -109,11 +109,13 @@ func HandleChannelViewPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		}
 
 		sort := "published-newest"
-		videos, err := q.ListVideosPaginated(ctx, &db.ListVideosPaginatedParams{
+		videoParams := &db.ListVideosPaginatedParams{
 			Uploader:  &name,
 			SortOrder: sort,
 			PageLimit: 60,
-		})
+		}
+		common.WithActorTenant(c, videoParams)
+		videos, err := q.ListVideosPaginated(ctx, videoParams)
 		if err != nil {
 			slog.Error("failed to list channel videos", "error", err, "uploader", name)
 			videos = nil

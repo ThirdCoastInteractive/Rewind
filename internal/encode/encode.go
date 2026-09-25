@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -184,11 +185,38 @@ func processExport(ctx context.Context, q *db.Queries, exportsDir, downloadsDir 
 	}
 
 	videoID := uuidString(clipData.VideoID)
-	videoDir := filepath.Join(downloadsDir, videoID)
-	inputPath := findVideoFile(videoDir, videoID)
-	if inputPath == "" {
-		return fmt.Errorf("video file not found in %s", videoDir)
+	if clipData.TenantID.Valid && clipData.TenantID.Bytes != [16]byte{} {
+		if incoming, scoped := plugin.TenantScope(ctx); scoped && incoming != clipData.TenantID.String() {
+			return fmt.Errorf("clip export tenant scope mismatch")
+		}
+		ctx = plugin.WithTenantScope(ctx, clipData.TenantID.String(), true)
+	} else if plugin.LiveIngest() != nil {
+		return fmt.Errorf("live clip export requires a workspace tenant")
 	}
+	var inputPath string
+	var cleanup func()
+	var srcErr error
+	if clipData.VideoPath != nil && strings.TrimSpace(*clipData.VideoPath) != "" {
+		inputPath, cleanup, srcErr = plugin.MasterSourceAt(ctx, *clipData.VideoPath)
+	}
+	if srcErr != nil && plugin.LiveIngest() != nil {
+		return fmt.Errorf("resolve workspace master for %s: %w", videoID, srcErr)
+	}
+	if inputPath == "" {
+		inputPath, cleanup, srcErr = plugin.MasterSource(ctx, videoID)
+	}
+	if srcErr != nil || inputPath == "" {
+		videoDir := filepath.Join(downloadsDir, videoID)
+		inputPath = findVideoFile(videoDir, videoID)
+		if inputPath == "" {
+			if srcErr != nil {
+				return fmt.Errorf("video file not found for %s: %w", videoID, srcErr)
+			}
+			return fmt.Errorf("video file not found for %s", videoID)
+		}
+		cleanup = func() {}
+	}
+	defer cleanup()
 
 	clipExportDir := filepath.Join(exportsDir, "clips", clipID)
 	if err := os.MkdirAll(clipExportDir, 0o755); err != nil {
@@ -355,8 +383,39 @@ func processExport(ctx context.Context, q *db.Queries, exportsDir, downloadsDir 
 		return fmt.Errorf("failed to mark export ready: %w", err)
 	}
 
+	if b := plugin.Blobs(); b != nil {
+		key := plugin.VideoKey(videoID, "exports/"+filepath.Base(outputPath))
+		if _, local := b.LocalPath(key); !local {
+			if err := uploadExportBlob(ctx, b, key, outputPath); err != nil {
+				slog.Warn("failed to upload export blob", "key", key, "error", err)
+			}
+		}
+	}
+
 	slog.Info("export complete", "export_id", exportID, "clip_id", clipID, "size_bytes", st.Size())
 	return nil
+}
+
+func uploadExportBlob(ctx context.Context, b plugin.Blob, key, path string) error {
+	w, err := b.Create(ctx, key)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		_ = w.Close()
+		return err
+	}
+	_, copyErr := io.Copy(w, f)
+	closeFileErr := f.Close()
+	closeBlobErr := w.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeFileErr != nil {
+		return closeFileErr
+	}
+	return closeBlobErr
 }
 
 func clipLoudnormTarget(specFilters []ffmpeg.FilterSpec, stack json.RawMessage) (float64, bool) {

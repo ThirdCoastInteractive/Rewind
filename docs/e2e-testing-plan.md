@@ -12,8 +12,13 @@ roundtrips, filter stack mutations, editor workflows, and export pipelines.
 # Prerequisites: Docker stack running
 make up
 
-# Run all E2E tests
-make e2e
+# Run all E2E tests against a disposable fixture video
+E2E_VIDEO_ID=<fixture-video-uuid> make e2e
+
+# Run the read-only network document and client readiness smoke against the
+# disposable fixture database (requires the isolated stack on WEBSERVER_PORT)
+E2E_NETWORK_SMOKE=1 WEBSERVER_PORT=19115 \
+  pnpm exec playwright test tests/e2e/navigation.spec.ts
 
 # Run with browser visible
 pnpm run e2e:headed
@@ -35,6 +40,11 @@ tests/e2e/
 - **No dev server management** — tests assume the full stack is already
   running via `docker compose up`
 - **Auth:** Tests log in via session form; cookies persist within each test
+- **Safety:** The filter-stack suite skips unless `E2E_VIDEO_ID` is set. It
+  never discovers or mutates the first video in a personal archive.
+- **Network safety:** `/network` is covered by an opt-in readiness smoke only.
+  Set `E2E_NETWORK_SMOKE=1` when the isolated fixture stack is running; this
+  keeps a slow production database from blocking the general shell smoke.
 
 ## Test Suites
 

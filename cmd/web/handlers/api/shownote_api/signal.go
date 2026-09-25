@@ -45,8 +45,11 @@ func HandleSignalProxy(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 			// Viewers (program output / OBS) join unauthenticated to subscribe to
 			// host tracks, but only while the show is live. The note id — reached
 			// via the public viewer page — is the access capability.
+			// Public viewers have no workspace session, so RequireTenant would
+			// incorrectly reject the capability route. Private host/editor paths
+			// below still require the workspace-scoped lookup.
 			note, err := dbc.Queries(ctx).GetShowNote(ctx, noteUUID)
-			if err != nil || !note.IsLive {
+			if err != nil || !publicViewerAllowed(note) {
 				return c.String(403, "show is not live")
 			}
 		} else {
@@ -104,6 +107,10 @@ func HandleSignalProxy(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 		<-done
 		return nil
 	}
+}
+
+func publicViewerAllowed(note *db.ShowNote) bool {
+	return note != nil && note.IsLive
 }
 
 // pipeWS forwards every message read from src to dst until either side errors.

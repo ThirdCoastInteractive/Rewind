@@ -8,7 +8,52 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
+
+type workspaceResolver interface {
+	WorkspaceForUser(context.Context, string) (string, error)
+}
+
+// workspaceTenant is intentionally resolved at the store boundary. HTTP
+// preflight is insufficient because MCP and other callers enter the store
+// directly. OSS keeps its existing owner checks; Live must have a trusted
+// workspace scope or source validation fails closed.
+func workspaceTenant(ctx context.Context, owner pgtype.UUID) (pgtype.UUID, bool, error) {
+	if plugin.LiveIngest() == nil {
+		return pgtype.UUID{}, false, nil
+	}
+	a := plugin.Auth()
+	r, ok := a.(workspaceResolver)
+	if !ok {
+		return pgtype.UUID{}, true, fmt.Errorf("live workspace resolver unavailable")
+	}
+	raw, err := r.WorkspaceForUser(ctx, owner.String())
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return pgtype.UUID{}, true, fmt.Errorf("live workspace unavailable")
+	}
+	tenant, err := parseUUID(raw)
+	var zero [16]byte
+	if err != nil || !tenant.Valid || tenant.Bytes == zero {
+		return pgtype.UUID{}, true, fmt.Errorf("live workspace is invalid")
+	}
+	return tenant, true, nil
+}
+
+func sameWorkspaceCreator(ctx context.Context, owner pgtype.UUID, creator string) bool {
+	tenant, enforce, err := workspaceTenant(ctx, owner)
+	if err != nil || !enforce {
+		return false
+	}
+	a := plugin.Auth()
+	r, ok := a.(workspaceResolver)
+	if !ok {
+		return false
+	}
+	raw, err := r.WorkspaceForUser(ctx, creator)
+	other, scanErr := parseUUID(raw)
+	return err == nil && scanErr == nil && other.Valid && other.Bytes == tenant.Bytes
+}
 
 type frozenClip struct {
 	ClipID      string          `json:"clip_id"`
@@ -22,6 +67,10 @@ type frozenClip struct {
 }
 
 func hydrateLegacySegments(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, raw json.RawMessage) (json.RawMessage, error) {
+	tenant, enforceTenant, err := workspaceTenant(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
 	var rows []map[string]any
 	if len(raw) == 0 || json.Unmarshal(raw, &rows) != nil {
 		return raw, nil
@@ -37,9 +86,19 @@ func hydrateLegacySegments(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, ra
 		}
 		var start, end, dur float64
 		var vid pgtype.UUID
+		var videoTenant pgtype.UUID
 		var crops, shotList, filters []byte
-		if err = tx.QueryRow(ctx, `SELECT video_id,start_ts,end_ts,duration,crops,shot_list,filter_stack FROM clips WHERE id=$1 AND created_by=$2`, id, owner).Scan(&vid, &start, &end, &dur, &crops, &shotList, &filters); err != nil {
+		clipQuery := `SELECT c.video_id,c.start_ts,c.end_ts,c.duration,c.crops,c.shot_list,c.filter_stack,v.tenant_id FROM clips c JOIN videos v ON v.id=c.video_id WHERE c.id=$1`
+		clipArgs := []any{id}
+		if !enforceTenant {
+			clipQuery += ` AND c.created_by=$2`
+			clipArgs = append(clipArgs, owner)
+		}
+		if err = tx.QueryRow(ctx, clipQuery, clipArgs...).Scan(&vid, &start, &end, &dur, &crops, &shotList, &filters, &videoTenant); err != nil {
 			return nil, err
+		}
+		if enforceTenant && videoTenant.Bytes != tenant.Bytes {
+			return nil, fmt.Errorf("clip %s source is outside workspace", cid)
 		}
 		if _, ok := row["start_ts"]; !ok {
 			row["start_ts"] = start
@@ -70,8 +129,131 @@ func parseUUID(s string) (pgtype.UUID, error) {
 	return u, nil
 }
 
+func validateNestedRenderJob(ctx context.Context, tx pgx.Tx, owner, jobID pgtype.UUID, seen map[string]bool, depth int) error {
+	if depth > 4 || seen[jobID.String()] {
+		return fmt.Errorf("nested export source cycle or depth exceeded")
+	}
+	seen[jobID.String()] = true
+	defer delete(seen, jobID.String())
+	var creator string
+	var snapshot, legacy []byte
+	if err := tx.QueryRow(ctx, `SELECT created_by::text,document_snapshot,segments FROM stitch_jobs WHERE id=$1`, jobID).Scan(&creator, &snapshot, &legacy); err != nil {
+		return fmt.Errorf("export %s is unavailable", jobID)
+	}
+	if creator != owner.String() && !sameWorkspaceCreator(ctx, owner, creator) {
+		return fmt.Errorf("export %s is outside workspace", jobID)
+	}
+	var doc Document
+	if len(snapshot) > 0 {
+		var frozen RenderSnapshot
+		if err := json.Unmarshal(snapshot, &frozen); err != nil {
+			return fmt.Errorf("export %s has invalid snapshot", jobID)
+		}
+		doc = frozen.Document
+	} else if len(legacy) > 0 {
+		var rows []map[string]json.RawMessage
+		if json.Unmarshal(legacy, &rows) != nil {
+			return fmt.Errorf("export %s has invalid sources", jobID)
+		}
+		for _, row := range rows {
+			for _, field := range []string{"video_id", "source_video_id"} {
+				var raw string
+				if json.Unmarshal(row[field], &raw) == nil && raw != "" {
+					id, err := parseUUID(raw)
+					if err != nil || !nestedVideoInWorkspace(ctx, tx, owner, id) {
+						return fmt.Errorf("export %s source is unavailable", jobID)
+					}
+				}
+			}
+			if raw := row["legacy_metadata"]; len(raw) > 0 {
+				var frozen struct {
+					VideoID string `json:"video_id"`
+				}
+				if json.Unmarshal(raw, &frozen) == nil && frozen.VideoID != "" {
+					id, err := parseUUID(frozen.VideoID)
+					if err != nil || !nestedVideoInWorkspace(ctx, tx, owner, id) {
+						return fmt.Errorf("export %s frozen source is unavailable", jobID)
+					}
+				}
+			}
+			if raw := row["clip_id"]; len(raw) > 0 {
+				var idText string
+				if json.Unmarshal(raw, &idText) == nil && idText != "" {
+					id, err := parseUUID(idText)
+					if err != nil || !nestedClipInWorkspace(ctx, tx, owner, id) {
+						return fmt.Errorf("export %s clip source is unavailable", jobID)
+					}
+				}
+			}
+			for _, field := range []string{"export_job_id", "stitch_job_id"} {
+				var idText string
+				if json.Unmarshal(row[field], &idText) == nil && idText != "" {
+					id, err := parseUUID(idText)
+					if err != nil || validateNestedRenderJob(ctx, tx, owner, id, seen, depth+1) != nil {
+						return fmt.Errorf("export %s nested source is unavailable", jobID)
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for _, segment := range doc.Segments {
+		if segment.VideoID != "" {
+			id, err := parseUUID(segment.VideoID)
+			if err != nil || !nestedVideoInWorkspace(ctx, tx, owner, id) {
+				return fmt.Errorf("export %s source is unavailable", jobID)
+			}
+		}
+		if segment.ClipID != "" {
+			id, err := parseUUID(segment.ClipID)
+			if err != nil || !nestedClipInWorkspace(ctx, tx, owner, id) {
+				return fmt.Errorf("export %s source is unavailable", jobID)
+			}
+		}
+		if segment.ExportJobID != "" {
+			id, err := parseUUID(segment.ExportJobID)
+			if err != nil || validateNestedRenderJob(ctx, tx, owner, id, seen, depth+1) != nil {
+				return fmt.Errorf("export %s source is unavailable", jobID)
+			}
+		}
+	}
+	return nil
+}
+
+func nestedVideoInWorkspace(ctx context.Context, tx pgx.Tx, owner, videoID pgtype.UUID) bool {
+	tenant, enforce, err := workspaceTenant(ctx, owner)
+	if err != nil {
+		return false
+	}
+	var ok bool
+	if enforce {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM videos WHERE id=$1 AND tenant_id=$2)`, videoID, tenant).Scan(&ok)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM videos WHERE id=$1)`, videoID).Scan(&ok)
+	}
+	return err == nil && ok
+}
+
+func nestedClipInWorkspace(ctx context.Context, tx pgx.Tx, owner, clipID pgtype.UUID) bool {
+	tenant, enforce, err := workspaceTenant(ctx, owner)
+	if err != nil {
+		return false
+	}
+	var ok bool
+	if enforce {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM clips c JOIN videos v ON v.id=c.video_id WHERE c.id=$1 AND v.tenant_id=$2)`, clipID, tenant).Scan(&ok)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM clips WHERE id=$1 AND created_by=$2)`, clipID, owner).Scan(&ok)
+	}
+	return err == nil && ok
+}
+
 // validateSources checks references and freezes mutable clip metadata in segments.
 func validateSources(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, d Document) (Document, error) {
+	tenant, enforceTenant, err := workspaceTenant(ctx, owner)
+	if err != nil {
+		return d, err
+	}
 	for i := range d.Segments {
 		s := &d.Segments[i]
 		if s.ClipID != "" {
@@ -84,15 +266,24 @@ func validateSources(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, d Docume
 				return d, fmt.Errorf("clip %s has invalid legacy metadata", s.ClipID)
 			}
 			frozenExisting := len(legacyRaw["legacy_metadata"]) > 0
-			var vid pgtype.UUID
+			var vid, videoTenant pgtype.UUID
 			var start, end, duration float64
 			var crops, shotList, filters []byte
-			err = tx.QueryRow(ctx, `SELECT video_id,start_ts,end_ts,duration,crops,shot_list,filter_stack FROM clips WHERE id=$1 AND created_by=$2`, cid, owner).Scan(&vid, &start, &end, &duration, &crops, &shotList, &filters)
+			clipQuery := `SELECT c.video_id,c.start_ts,c.end_ts,c.duration,c.crops,c.shot_list,c.filter_stack,v.tenant_id FROM clips c JOIN videos v ON v.id=c.video_id WHERE c.id=$1`
+			clipArgs := []any{cid}
+			if !enforceTenant {
+				clipQuery += ` AND c.created_by=$2`
+				clipArgs = append(clipArgs, owner)
+			}
+			err = tx.QueryRow(ctx, clipQuery, clipArgs...).Scan(&vid, &start, &end, &duration, &crops, &shotList, &filters, &videoTenant)
 			if err != nil {
 				if err == pgx.ErrNoRows {
 					return d, fmt.Errorf("clip %s is unavailable", s.ClipID)
 				}
 				return d, err
+			}
+			if enforceTenant && videoTenant.Bytes != tenant.Bytes {
+				return d, fmt.Errorf("clip %s source is outside workspace", s.ClipID)
 			}
 			if !frozenExisting && s.DurationUS <= 0 {
 				s.DurationUS = int64(duration * 1e6)
@@ -154,7 +345,7 @@ func validateSources(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, d Docume
 			}
 			var exists bool
 			var videoDuration *int
-			if err = tx.QueryRow(ctx, `SELECT duration_seconds FROM videos WHERE id=$1`, vid).Scan(&videoDuration); err != nil && err != pgx.ErrNoRows {
+			if err = tx.QueryRow(ctx, `SELECT duration_seconds FROM videos WHERE id=$1 AND ($2::boolean = false OR tenant_id=$3)`, vid, enforceTenant, tenant).Scan(&videoDuration); err != nil && err != pgx.ErrNoRows {
 				return d, err
 			}
 			exists = videoDuration != nil || err == nil
@@ -171,8 +362,17 @@ func validateSources(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, d Docume
 				return d, fmt.Errorf("invalid export id: %w", err)
 			}
 			var exists bool
-			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stitch_jobs WHERE id=$1 AND created_by=$2)`, jid, owner).Scan(&exists); err != nil {
+			var creator string
+			if err = tx.QueryRow(ctx, `SELECT created_by::text FROM stitch_jobs WHERE id=$1`, jid).Scan(&creator); err != nil && err != pgx.ErrNoRows {
 				return d, err
+			}
+			if err == nil {
+				exists = creator == owner.String() || sameWorkspaceCreator(ctx, owner, creator)
+				if exists {
+					if nestedErr := validateNestedRenderJob(ctx, tx, owner, jid, map[string]bool{}, 0); nestedErr != nil {
+						return d, nestedErr
+					}
+				}
 			}
 			if !exists {
 				return d, fmt.Errorf("export %s is unavailable", s.ExportJobID)

@@ -14,22 +14,24 @@ func persistDirToBlob(ctx context.Context, videoID, dir string) error {
 	if b == nil {
 		return nil
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		src := filepath.Join(dir, e.Name())
-		key := plugin.VideoKey(videoID, e.Name())
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		key := plugin.VideoKey(videoID, filepath.ToSlash(rel))
 		if p, ok := b.LocalPath(key); ok {
-			if samePath(p, src) {
-				continue
+			if samePath(p, path) {
+				return nil
 			}
 		}
-		in, err := os.Open(src)
+		in, err := os.Open(path)
 		if err != nil {
 			return err
 		}
@@ -47,8 +49,8 @@ func persistDirToBlob(ctx context.Context, videoID, dir string) error {
 		if closeErr != nil {
 			return closeErr
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func samePath(a, b string) bool {

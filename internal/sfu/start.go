@@ -13,6 +13,7 @@ import (
 
 	"thirdcoast.systems/rewind/internal/config"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/turn"
 )
 
 const defaultSFUPort = 8081
@@ -21,13 +22,13 @@ const defaultSFUPort = 8081
 // listener exits. Signaling binds 127.0.0.1 by default (web proxies to
 // loopback). Set SFU_LISTEN_HOST=0.0.0.0 only for a dedicated SFU container
 // that other Compose services must reach. ICE/media still use UDP 50000-50100.
-func Start(ctx context.Context, dbc *db.DatabaseConnection, conf *config.Config) error {
+func Start(ctx context.Context, dbc *db.DatabaseConnection, conf *config.Config, providers ...*turn.Provider) error {
 	port := conf.SFUPort
 	if port == 0 {
 		port = defaultSFUPort
 	}
 
-	srv, err := NewServer(dbc, conf)
+	srv, err := NewServer(dbc, conf, providers...)
 	if err != nil {
 		return err
 	}

@@ -2,15 +2,22 @@ package templates
 
 import (
 	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/internal/db"
 	"time"
 )
 
 // VideoProcessing renders generated-data controls and the video's ML job history.
 templ VideoProcessing(videoID string, jobs []*db.MlJob, health []*db.MlRuntimeHealth, hasTranscript bool, windows int) {
-	<div id="video-processing" class="mt-4 pt-4 border-t-2 border-white/10 space-y-3">
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ lead := "Captions → transcript → context windows. Context generation uses the local ML worker. Explicit requests run ahead of background context work." }}
+	if liveProduct {
+		{{ lead = "Captions → transcript → context windows. Context is built from the transcript. Explicit requests run ahead of background context work." }}
+	}
+	<div id="video-processing" class="recording-generated">
+		<div class="recording-generated-head">
 		<h3 class="font-bold text-sm">Generated data</h3>
-		<p class="text-xs text-white/60">Captions → transcript → context windows. Context generation uses the local ML worker. Explicit requests run ahead of background context work.</p>
+		<p class="text-xs text-white/60">{ lead }</p>
 		<p class="text-xs font-mono">{ generatedDataSummary(jobs, health, hasTranscript, windows) }</p>
 		<div class="flex flex-wrap gap-2">
 			if !hasTranscript {
@@ -21,6 +28,8 @@ templ VideoProcessing(videoID string, jobs []*db.MlJob, health []*db.MlRuntimeHe
 			<a class="btn-ghost btn-sm" href="/admin/settings#settings-models">Model settings</a>
 		</div>
 		<p class="text-xs text-white/50">Existing context for the current transcript and model is reused. Captions and media asset controls are above. Status refreshes every 5 seconds.</p>
+		</div>
+		<div class="generated-status">
 		for _, h := range relevantMLHealth(jobs, health, hasTranscript) {
 			{{ hc := mlErrorCopy(h.LastError) }}
 			<div class="text-xs font-mono border border-white/20 p-2 space-y-1 break-words">
@@ -41,7 +50,9 @@ templ VideoProcessing(videoID string, jobs []*db.MlJob, health []*db.MlRuntimeHe
 		if len(jobs) == 0 {
 			<p class="text-xs font-mono text-white/50">No ML jobs for this video yet.</p>
 		}
-		<div class="space-y-2 max-h-96 overflow-auto">
+		</div>
+		if len(jobs) > 0 {
+		<div class="generated-ml-jobs">
 			for _, j := range jobs {
 				<article class="border border-white/20 p-2 text-xs font-mono space-y-1 break-words">
 					<p class="font-bold">{ mlJobHeadline(j.Kind, j.Status, j.Attempts, j.LastError) }</p>
@@ -75,6 +86,7 @@ templ VideoProcessing(videoID string, jobs []*db.MlJob, health []*db.MlRuntimeHe
 				</article>
 			}
 		</div>
+		}
 	</div>
 }
 

@@ -251,10 +251,15 @@ RETURNING *;
 -- name: NoteWorkspaceReferencesVideo :one
 SELECT EXISTS (
     SELECT 1 FROM show_note_references r
+    JOIN show_notes sn ON sn.id = r.show_note_id
     LEFT JOIN clips c ON c.id = r.clip_id
     LEFT JOIN markers m ON m.id = r.marker_id
+    LEFT JOIN videos rv ON rv.id = r.video_id
+    LEFT JOIN videos cv ON cv.id = c.video_id
+    LEFT JOIN videos mv ON mv.id = m.video_id
     WHERE r.show_note_id = sqlc.arg(show_note_id)
       AND (r.video_id = sqlc.arg(video_id) OR c.video_id = sqlc.arg(video_id) OR m.video_id = sqlc.arg(video_id))
+      AND (rv.tenant_id = sn.tenant_id OR cv.tenant_id = sn.tenant_id OR mv.tenant_id = sn.tenant_id)
 );
 
 -- name: CreateShowNoteRoomEvent :one

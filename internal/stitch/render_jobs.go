@@ -140,6 +140,9 @@ func (s *Store) queueRender(ctx context.Context, owner, project pgtype.UUID, rev
 	if e != nil {
 		return RenderJob{}, e
 	}
+	if snap.Document, e = validateSources(ctx, tx, owner, snap.Document); e != nil {
+		return RenderJob{}, e
+	}
 	var job RenderJob
 	optionsJSON, _ := json.Marshal(o)
 	opts, _ := json.Marshal(struct {

@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/pkg/utils/format"
 )
 
@@ -36,6 +37,7 @@ templ MarkerList(videoID string, markers []MarkerItem) {
 
 // MarkerRow renders a single marker row.
 templ MarkerRow(videoID string, m MarkerItem) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	<div class="flex items-start gap-3 border-b border-white/10 py-3 text-sm last:border-0">
 		<button
 			type="button"
@@ -53,7 +55,9 @@ templ MarkerRow(videoID string, m MarkerItem) {
 			{ markerTitle(m) }
 		</div>
 		if m.IsSponsorBlock {
-			<div class="text-xs text-neutral-400 py-1" title="SponsorBlock">SB</div>
+			if !liveProduct {
+				<div class="text-xs text-neutral-400 py-1" title="SponsorBlock">SB</div>
+			}
 		} else {
 			<button
 				type="button"

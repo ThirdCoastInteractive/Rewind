@@ -5,6 +5,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/google/uuid"
@@ -163,8 +164,8 @@ func TestAgentClippingWorkflow(t *testing.T) {
 		t.Fatal("segments lost")
 	}
 	for i, s := range media {
-		if s.VideoID != selected[i].VideoID || s.Start != selected[i].Start || s.End != selected[i].End {
-			t.Fatal("editorial bounds/order changed")
+		if s.VideoID != selected[i].VideoID || math.Abs(s.Start-selected[i].Start) > 1e-6 || math.Abs(s.End-selected[i].End) > 1e-6 {
+			t.Fatalf("editorial bounds/order changed: media=%+v selected=%+v", media, selected)
 		}
 	}
 	exec("UPDATE stitch_projects SET title='human edit' WHERE id=$1", projectID)

@@ -2,10 +2,12 @@ package content
 
 import (
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/archival"
 	"thirdcoast.systems/rewind/internal/db"
@@ -17,6 +19,10 @@ import (
 // jobs appear).
 func HandleArchiveSubmit(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if live, _ := c.Request().Context().Value(ctxkeys.LiveProduct).(bool); live {
+			return c.NoContent(http.StatusNotFound)
+		}
+
 		archivedByUUID, _, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.Redirect(302, "/login")

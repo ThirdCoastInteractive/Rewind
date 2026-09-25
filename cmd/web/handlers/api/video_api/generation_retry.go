@@ -14,6 +14,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/contextwindow"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleGenerationRetry queues guided context generation or an audio range repair.
@@ -23,6 +24,10 @@ func HandleGenerationRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 			return err
 		}
 		id, err := common.RequireUUIDParam(c, "id")
+		if err != nil {
+			return err
+		}
+		video, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), id, plugin.ActionVideoWrite)
 		if err != nil {
 			return err
 		}
@@ -51,10 +56,6 @@ func HandleGenerationRetry(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		}
 		defer tx.Rollback(ctx)
 		if _, err := q.LockVideoForContext(ctx, id); err != nil {
-			return err
-		}
-		video, err := q.GetVideoByID(ctx, id)
-		if err != nil {
 			return err
 		}
 		kind := "context_windows"

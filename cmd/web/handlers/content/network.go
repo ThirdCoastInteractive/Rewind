@@ -11,18 +11,24 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/wiki"
 )
 
 func loadNetworkWiki(ctx context.Context, q *db.Queries) ([]*db.WikiPage, []*db.WikiLink) {
-	pages, err := q.ListWikiPages(ctx, "")
+	pages, err := q.ListWikiPages(ctx, &db.ListWikiPagesParams{TenantID: wiki.TenantFromContext(ctx)})
 	if err != nil {
 		slog.Error("failed to list wiki pages for network", "error", err)
 		pages = nil
 	}
-	links, err := q.ListWikiLinks(ctx)
+	rows, err := q.ListWikiLinks(ctx, wiki.TenantFromContext(ctx))
+	links := make([]*db.WikiLink, 0, len(rows))
 	if err != nil {
 		slog.Error("failed to list wiki links for network", "error", err)
 		links = nil
+	} else {
+		for _, row := range rows {
+			links = append(links, &db.WikiLink{FromTree: row.FromTree, FromSlug: row.FromSlug, ToTree: row.ToTree, ToSlug: row.ToSlug})
+		}
 	}
 	return pages, links
 }

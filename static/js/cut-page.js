@@ -278,7 +278,9 @@ import { MulticamEngine } from './lib/multicam.js';
           headers: { Accept: 'application/json' },
         });
         if (!res.ok) throw new Error(`Context Windows request failed (${res.status})`);
-        this.contextWindows = (await res.json()).map((raw) => ({
+        const body = await res.json();
+        const rows = Array.isArray(body) ? body : [];
+        this.contextWindows = rows.map((raw) => ({
           id: String(raw.ID ?? raw.id ?? ''),
           start: Number(raw.StartTs ?? raw.start_ts ?? 0),
           end: Number(raw.EndTs ?? raw.end_ts ?? 0),
@@ -466,7 +468,8 @@ import { MulticamEngine } from './lib/multicam.js';
           headers: { 'Accept': 'application/json' }
         });
         if (!res.ok) return;
-        this.markers = (await res.json()).map(normalizeMarker);
+        const body = await res.json();
+        this.markers = (Array.isArray(body) ? body : []).map(normalizeMarker);
       } catch (_) {
         // Best-effort.
       }

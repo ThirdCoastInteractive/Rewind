@@ -72,6 +72,9 @@ func createClipMCP(dbc *db.DatabaseConnection) func(context.Context, *mcpsdk.Cal
 		if err != nil {
 			return nil, nil, err
 		}
+		if err = requireWorkspaceVideo(ctx, dbc.Queries(ctx), vid); err != nil {
+			return nil, nil, err
+		}
 		title := strings.TrimSpace(a.Title)
 		if title == "" {
 			title = "Untitled clip"

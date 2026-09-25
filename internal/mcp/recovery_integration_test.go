@@ -5,15 +5,18 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"testing"
 	"thirdcoast.systems/rewind/internal/application"
 	"thirdcoast.systems/rewind/internal/config"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/transcription"
 	"thirdcoast.systems/rewind/pkg/captions"
+	"thirdcoast.systems/rewind/pkg/plugin"
+	"thirdcoast.systems/rewind/pkg/plugin/builtin"
 	"thirdcoast.systems/rewind/pkg/utils/language"
 )
 
@@ -28,6 +31,9 @@ func TestAgentRecoveryAndSearchScope(t *testing.T) {
 	if err := dbc.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	plugin.Reset()
+	t.Cleanup(plugin.Reset)
+	builtin.Defaults(dbc)
 	id := func() pgtype.UUID { return pgtype.UUID{Bytes: uuid.New(), Valid: true} }
 	user, video, other, catalogVideo, matchingCatalog := id(), id(), id(), id(), id()
 	exec := func(sql string, args ...any) {

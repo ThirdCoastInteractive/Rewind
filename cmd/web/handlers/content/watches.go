@@ -2,9 +2,11 @@ package content
 
 import (
 	"log/slog"
+	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
 )
@@ -17,6 +19,10 @@ func HandleFollowsPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo
 // HandleWatchesPage serves GET /watches, rendering the follows page.
 func HandleWatchesPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if live, _ := c.Request().Context().Value(ctxkeys.LiveProduct).(bool); live {
+			return c.NoContent(http.StatusNotFound)
+		}
+
 		_, username, err := sm.GetSession(c.Request())
 		if err != nil {
 			return c.Redirect(302, "/login")

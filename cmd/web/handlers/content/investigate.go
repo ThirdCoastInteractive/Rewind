@@ -234,7 +234,7 @@ func HandleInvestigateIndexXReplies(sm *auth.SessionManager, dbc *db.DatabaseCon
 		}
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
-		video, err := q.SelectVideoBySrc(ctx, normalized)
+		video, err := q.SelectVideoBySrc(ctx, &db.SelectVideoBySrcParams{Src: normalized, TenantID: db.OSSTenant()})
 		if err != nil {
 			return c.Redirect(302, "/investigate?notice="+url.QueryEscape("Archive that X post first, then index replies."))
 		}

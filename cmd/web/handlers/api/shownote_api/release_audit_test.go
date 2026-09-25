@@ -26,6 +26,11 @@ func TestOfflineSceneRejectsAnonymousViewer(t *testing.T) {
 	}
 	defer pool.Close()
 	dbc := &db.DatabaseConnection{Pool: pool}
+	// The release gate runs this before the integration suite, so the
+	// disposable database may still be empty.
+	if err := dbc.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
 	user, note := uuid.NewString(), uuid.NewString()
 	if _, err = pool.Exec(ctx, "INSERT INTO users(id,user_name,email,password) VALUES($1,$2,$2,'fixture')", user, user); err != nil {
 		t.Fatal(err)

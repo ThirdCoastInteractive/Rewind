@@ -16,8 +16,15 @@ templ LayoutFullscreen(title string, username string) {
 }
 
 templ appLayout(title, username string, fullscreen bool) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ productName := "Rewind" }}
+	{{ productDescription := "Rewind — self-hosted video archival and management" }}
+	if liveProduct {
+		{{ productName = "Rewind Live" }}
+		{{ productDescription = "Rewind Live — stream everywhere, archive everything, and clip without downloads" }}
+	}
 	if partial, _ := ctx.Value(ctxkeys.PageNavigation).(bool); partial {
-		@pageContent(title, fullscreen) {
+		@pageContent(title, fullscreen, productName) {
 			{ children... }
 		}
 	} else {
@@ -26,8 +33,8 @@ templ appLayout(title, username string, fullscreen bool) {
 			<head>
 				<meta charset="UTF-8"/>
 				<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-				<meta name="description" content="Rewind — self-hosted video archival and management"/>
-				<title>{ title } - Rewind</title>
+				<meta name="description" content={ productDescription }/>
+				<title>{ title } - { productName }</title>
 				<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-regular.woff2" as="font" type="font/woff2" crossorigin/>
 				<link rel="preload" href="/static/fonts/woff/tomorrow-v19-latin-700.woff2" as="font" type="font/woff2" crossorigin/>
 				<link rel="stylesheet" href={ versionedAsset(ctx, "/static/dist/fontawesome/all.min.css") }/>
@@ -38,10 +45,10 @@ templ appLayout(title, username string, fullscreen bool) {
 				@Navbar(username)
 				<div id="navigation-bridge" data-on:rewind-navigate__window="@get(evt.detail.url, {headers: {'X-Rewind-Navigation': 'true'}, filterSignals: {exclude: /.*/}, retry: 'never'})"></div>
 				<div id="navigation-status" role="status" class="navigation-status" hidden></div>
-				@pageContent(title, fullscreen) {
+				@pageContent(title, fullscreen, productName) {
 					{ children... }
 				}
-				if username != "" {
+				if username != "" && !liveProduct {
 					@AgentPanel()
 				}
 				<script type="module">
@@ -53,8 +60,8 @@ templ appLayout(title, username string, fullscreen bool) {
 	}
 }
 
-templ pageContent(title string, fullscreen bool) {
-	<main id="page-content" class="flex-1 min-h-0 flex flex-col" tabindex="-1" data-page-title={ title + " - Rewind" } data-page-fullscreen={ strconv.FormatBool(fullscreen) }>
+templ pageContent(title string, fullscreen bool, productName string) {
+	<main id="page-content" class="flex-1 min-h-0 flex flex-col" tabindex="-1" data-page-title={ title + " - " + productName } data-page-fullscreen={ strconv.FormatBool(fullscreen) }>
 		{ children... }
 		if !fullscreen {
 			@Footer()
@@ -63,23 +70,49 @@ templ pageContent(title string, fullscreen bool) {
 }
 
 templ Footer() {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	<footer class="bg-black mt-auto border-t-2 border-white/10">
 		<div class="mx-auto px-4 py-3">
-			<div class="flex flex-col sm:flex-row justify-between items-center gap-4">
-				<p class="font-mono text-xs text-white/40 uppercase tracking-wider">
-					Archival Software &copy; 2026 <a class={ "underline","text-yellow-400 hover:text-yellow-300","underline-yellow-400/70 hover:underline-yellow-400/50" } href="https://thirdcoast.systems" target="_blank">Third Coast Interactive LLC.</a>.
-				</p>
-				<p class="font-mono text-xs text-white/40 tracking-tighter">
-					All content is the property of its respective owners. Use responsibly.
-				</p>
-			</div>
+			if liveProduct {
+				<div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+					<p class="font-mono text-xs text-white/60 uppercase tracking-wider">
+						Stream everywhere. Archive everything. Clip without downloads.
+					</p>
+					<nav class="flex items-center gap-4 font-mono text-xs uppercase tracking-wider" aria-label="Rewind Live">
+						<a href="/features" class="text-white/60 hover:text-white transition">Features</a>
+						<a href="/pricing" class="text-white/60 hover:text-white transition">Pricing</a>
+						<a href="/docs" class="text-white/60 hover:text-white transition">Docs</a>
+					</nav>
+				</div>
+			} else {
+				<div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+					<p class="font-mono text-xs text-white/40 uppercase tracking-wider">
+						Archival Software &copy; 2026 <a class={ "underline","text-yellow-400 hover:text-yellow-300","underline-yellow-400/70 hover:underline-yellow-400/50" } href="https://thirdcoast.systems" target="_blank">Third Coast Interactive LLC.</a>.
+					</p>
+					<p class="font-mono text-xs text-white/40 tracking-tighter">
+						All content is the property of its respective owners. Use responsibly.
+					</p>
+				</div>
+			}
 		</div>
 	</footer>
 }
 
 templ FooterInline() {
-	<div class="px-2 py-1 text-xs font-mono text-white/20 leading-tight">
-		<p>&copy; 2026 <a class="text-yellow-400/40 hover:text-yellow-400/60" href="https://thirdcoast.systems" target="_blank">Third Coast Interactive LLC.</a></p>
-		<p>Content belongs to respective owners.</p>
-	</div>
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	if liveProduct {
+		<div class="px-2 py-1 text-xs font-mono text-white/60 leading-tight">
+			<p>Stream everywhere. Archive everything. Clip without downloads.</p>
+			<nav class="flex items-center gap-3" aria-label="Rewind Live">
+				<a href="/features" class="hover:text-white/60 transition">Features</a>
+				<a href="/pricing" class="hover:text-white/60 transition">Pricing</a>
+				<a href="/docs" class="hover:text-white/60 transition">Docs</a>
+			</nav>
+		</div>
+	} else {
+		<div class="px-2 py-1 text-xs font-mono text-white/20 leading-tight">
+			<p>&copy; 2026 <a class="text-yellow-400/40 hover:text-yellow-400/60" href="https://thirdcoast.systems" target="_blank">Third Coast Interactive LLC.</a></p>
+			<p>Content belongs to respective owners.</p>
+		</div>
+	}
 }

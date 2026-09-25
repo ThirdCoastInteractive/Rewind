@@ -761,7 +761,7 @@ func (q *Queries) GetClipExportStorageLimit(ctx context.Context) (int64, error) 
 
 const getClipForExport = `-- name: GetClipForExport :one
 SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack,
-       c.title AS clip_title, v.video_path
+       c.title AS clip_title, v.video_path, v.tenant_id
 FROM clips c
 JOIN videos v ON v.id = c.video_id
 WHERE c.id = $1
@@ -777,12 +777,13 @@ type GetClipForExportRow struct {
 	FilterStack []byte          `db:"filter_stack" json:"FilterStack"`
 	ClipTitle   string          `db:"clip_title" json:"ClipTitle"`
 	VideoPath   *string         `db:"video_path" json:"VideoPath"`
+	TenantID    pgtype.UUID     `db:"tenant_id" json:"TenantID"`
 }
 
 // Get clip data needed for encoding
 //
 //	SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack,
-//	       c.title AS clip_title, v.video_path
+//	       c.title AS clip_title, v.video_path, v.tenant_id
 //	FROM clips c
 //	JOIN videos v ON v.id = c.video_id
 //	WHERE c.id = $1
@@ -799,6 +800,7 @@ func (q *Queries) GetClipForExport(ctx context.Context, id pgtype.UUID) (*GetCli
 		&i.FilterStack,
 		&i.ClipTitle,
 		&i.VideoPath,
+		&i.TenantID,
 	)
 	return &i, err
 }

@@ -84,6 +84,13 @@ func queueRenderRequest(c echo.Context, sm *auth.SessionManager, dbc *db.Databas
 		return echo.NewHTTPError(http.StatusBadRequest, "frame_time_us is required")
 	}
 	store := stitch.NewStore(dbc)
+	snapshot, err := store.Get(c.Request().Context(), owner, project)
+	if err != nil {
+		return editorError(c, err)
+	}
+	if err := requireStitchDocumentSources(c, dbc, snapshot.Document, map[string]bool{}, 0); err != nil {
+		return err
+	}
 	var job stitch.RenderJob
 	switch kind {
 	case "preview":

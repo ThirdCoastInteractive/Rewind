@@ -17,6 +17,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/internal/producer"
 	"thirdcoast.systems/rewind/cmd/web/internal/scene"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/shownote"
 )
 
 // randomCode returns a 6-digit numeric code for the public viewer URL.
@@ -38,7 +39,7 @@ func HandleGoLive(sm *auth.SessionManager, dbc *db.DatabaseConnection, sceneHub 
 		ctx := c.Request().Context()
 		q := dbc.Queries(ctx)
 
-		note, err := q.GetShowNote(ctx, noteUUID)
+		note, err := shownote.RequireTenant(ctx, dbc, noteUUID)
 		if err != nil {
 			return echo.NewHTTPError(404, "not found")
 		}

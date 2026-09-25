@@ -2,7 +2,6 @@ package shownote_api
 
 import (
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -14,10 +13,8 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
-
-// mp4 is the remux target; fall back to legacy containers.
-var contentVideoExtensions = []string{".mp4", ".webm", ".mkv"}
 
 // HandleContentStream serves a show note's referenced video to the live program
 // output. Unauthenticated but scoped: the note must be live and the video must be
@@ -35,11 +32,18 @@ func HandleContentStream(dbc *db.DatabaseConnection) echo.HandlerFunc {
 			return err
 		}
 		ctx := c.Request().Context()
-		note, err := dbc.Queries(ctx).GetShowNote(ctx, noteUUID)
+		q := dbc.Queries(ctx)
+		// Public program output is capability-based and must behave identically
+		// for anonymous and logged-in viewers. The live note UUID is the
+		// capability; private editor routes use tenant guards elsewhere.
+		note, err := q.GetShowNote(ctx, noteUUID)
 		if err != nil || !note.IsLive {
 			return c.String(404, "not available")
 		}
-		q := dbc.Queries(ctx)
+		video, err := q.GetVideoByID(ctx, videoUUID)
+		if err != nil || (plugin.LiveIngest() != nil && (!note.TenantID.Valid || note.TenantID.Bytes == [16]byte{} || note.TenantID != video.TenantID)) {
+			return c.String(404, "video not available")
+		}
 		ok, err := q.NoteReferencesVideo(ctx, &db.NoteReferencesVideoParams{ShowNoteID: noteUUID, VideoID: videoUUID})
 		if err == nil && !ok {
 			ok, err = q.NoteWorkspaceReferencesVideo(ctx, &db.NoteWorkspaceReferencesVideoParams{ShowNoteID: noteUUID, VideoID: videoUUID})
@@ -49,26 +53,16 @@ func HandleContentStream(dbc *db.DatabaseConnection) echo.HandlerFunc {
 		}
 
 		videoID := videoUUID.String()
-		dir, err := fileserver.GetVideoDirForID(ctx, videoID)
+		u, r, name, err := fileserver.OpenOrRedirect(ctx, plugin.Blobs(), plugin.MasterKeys(videoID))
 		if err != nil {
-			return c.String(404, "not found")
-		}
-		var path string
-		var f *os.File
-		for _, ext := range contentVideoExtensions {
-			p := filepath.Join(dir, videoID+".video"+ext)
-			if fh, openErr := os.Open(p); openErr == nil {
-				path, f = p, fh
-				break
-			}
-		}
-		if f == nil {
 			return c.String(404, "video file not available")
 		}
-		defer f.Close()
-
+		if u != "" {
+			return c.Redirect(http.StatusFound, u)
+		}
+		defer r.Close()
 		ct := "video/mp4"
-		switch filepath.Ext(path) {
+		switch filepath.Ext(name) {
 		case ".webm":
 			ct = "video/webm"
 		case ".mkv":
@@ -77,7 +71,7 @@ func HandleContentStream(dbc *db.DatabaseConnection) echo.HandlerFunc {
 		c.Response().Header().Set("Content-Type", ct)
 		c.Response().Header().Set("Cache-Control", "private, no-cache")
 		c.Response().Header().Set("Accept-Ranges", "bytes")
-		http.ServeContent(c.Response(), c.Request(), filepath.Base(path), time.Time{}, f)
+		http.ServeContent(c.Response(), c.Request(), filepath.Base(name), time.Time{}, r)
 		return nil
 	}
 }

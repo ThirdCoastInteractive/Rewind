@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+
 	"golang.org/x/text/language"
 	"os"
 
@@ -112,5 +114,11 @@ func handleTranscriptRepair(ctx context.Context, dbc *db.DatabaseConnection, job
 	if _, err := contextwindow.EnqueueRetry(ctx, q, job.VideoID, job.RetryInstructions); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if e := maybeEnqueueDiarize(ctx, dbc, job.VideoID); e != nil {
+		slog.Warn("enqueue diarize", "video_id", uuidString(job.VideoID), "error", e)
+	}
+	return nil
 }

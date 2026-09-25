@@ -1,6 +1,7 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -34,6 +35,24 @@ func TestCommandBuild(t *testing.T) {
 				"-c", "copy",
 				"-movflags", "+faststart",
 				"output.mp4",
+			},
+		},
+		{
+			name:   "single jpeg",
+			input:  "input.mp4",
+			output: "out.jpg",
+			opts: []Option{
+				Seek(5 * time.Second),
+				Frames(1),
+				SingleImage(),
+			},
+			wantArgs: []string{
+				"-hide_banner", "-y",
+				"-ss", "5.000",
+				"-i", "input.mp4",
+				"-frames:v", "1",
+				"-update", "1",
+				"out.jpg",
 			},
 		},
 		{
@@ -399,6 +418,63 @@ func TestIntegration_Run(t *testing.T) {
 	assert.Greater(t, info.Size(), int64(0), "output file is empty")
 }
 
+func TestIntegration_ApplyFaststart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	input := filepath.Join(t.TempDir(), "slow-multi-track.mp4")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	args := []string{
+		"-hide_banner", "-y",
+		"-f", "lavfi", "-i", "testsrc2=duration=2:size=320x240:rate=30",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=44100",
+		"-f", "lavfi", "-i", "sine=frequency=880:duration=2:sample_rate=44100",
+		"-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0",
+		"-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+		"-c:a", "aac", "-b:a", "64k", "-pix_fmt", "yuv420p",
+		"-shortest", input,
+	}
+	proc, err := Start(ctx, args, nil)
+	require.NoError(t, err)
+	require.NoError(t, proc.Wait(), "failed to generate multi-track test video: %s", proc.Stderr())
+
+	before, err := Probe(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, 1, before.VideoStreams)
+	require.Equal(t, 2, before.AudioStreams)
+	source, err := os.ReadFile(input)
+	require.NoError(t, err)
+	mdatBefore, moovBefore := bytes.Index(source, []byte("mdat")), bytes.Index(source, []byte("moov"))
+	require.GreaterOrEqual(t, mdatBefore, 0)
+	require.Greater(t, moovBefore, mdatBefore, "fixture should start with moov after mdat")
+
+	require.NoError(t, ApplyFaststart(ctx, input))
+	after, err := Probe(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, before.VideoStreams, after.VideoStreams)
+	require.Equal(t, before.AudioStreams, after.AudioStreams)
+	require.InDelta(t, before.Duration, after.Duration, 0.5, "faststart remux changed duration")
+	output, err := os.ReadFile(input)
+	require.NoError(t, err)
+	datAfter, moovAfter := bytes.Index(output, []byte("mdat")), bytes.Index(output, []byte("moov"))
+	require.GreaterOrEqual(t, datAfter, 0)
+	require.GreaterOrEqual(t, moovAfter, 0)
+	require.Less(t, moovAfter, datAfter, "faststart remux did not move moov before mdat")
+	info, err := os.Stat(input)
+	require.NoError(t, err, "faststart source file missing after remux")
+	require.Greater(t, info.Size(), int64(0), "faststart output is empty")
+	unchanged, err := os.ReadFile(input)
+	require.NoError(t, err)
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.Error(t, ApplyFaststart(canceled, input))
+	afterFailure, err := os.ReadFile(input)
+	require.NoError(t, err)
+	require.Equal(t, unchanged, afterFailure, "failed faststart remux changed source")
+}
+
 func TestIntegration_ExtractThumbnail(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -424,6 +500,32 @@ func TestIntegration_ExtractThumbnail(t *testing.T) {
 	info, err := os.Stat(output)
 	require.NoError(t, err, "thumbnail not created")
 	assert.Greater(t, info.Size(), int64(0), "thumbnail is empty")
+}
+
+func TestIntegration_ExtractThumbnailShortSourceFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	for _, tc := range []struct {
+		name     string
+		duration time.Duration
+	}{
+		{name: "short source", duration: 2 * time.Second},
+		{name: "normal source", duration: 8 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := generateTestVideo(t, tc.duration)
+			output := filepath.Join(t.TempDir(), "thumb.jpg")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			result := ExtractThumbnail(ctx, input, output, nil)
+			require.NoError(t, result.Err)
+			require.True(t, thumbnailOutputIsValid(output), "thumbnail is not a valid image")
+		})
+	}
 }
 
 func TestIntegration_ExtractClip(t *testing.T) {

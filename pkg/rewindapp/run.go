@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/boot"
 	"thirdcoast.systems/rewind/internal/application"
 	"thirdcoast.systems/rewind/internal/config"
@@ -23,6 +22,7 @@ import (
 	"thirdcoast.systems/rewind/internal/encode"
 	"thirdcoast.systems/rewind/internal/ingest"
 	"thirdcoast.systems/rewind/internal/sfu"
+	"thirdcoast.systems/rewind/internal/turn"
 	"thirdcoast.systems/rewind/pkg/archive"
 	"thirdcoast.systems/rewind/pkg/plugin/builtin"
 )
@@ -113,8 +113,20 @@ func serve() {
 	conf, dbc := openDB(ctx)
 	defer dbc.Close()
 
-	builtin.Defaults(auth.NewSessionManager(os.Getenv("SESSION_SECRET")), dbc)
+	builtin.Defaults(dbc)
 	archive.Bind(dbc)
+	iceProvider, err := turn.NewProvider(turn.Config{
+		STUNURLs:     conf.STUNUrls,
+		TURNURLs:     conf.TURNUrls,
+		TURNUsername: conf.TURNUsername,
+		TURNPassword: conf.TURNPassword,
+		TurnKeyID:    conf.CFTurnKeyID,
+		TurnAPIToken: conf.CFTurnAPIToken,
+	})
+	if err != nil {
+		slog.Error("invalid TURN configuration", "error", err)
+		os.Exit(1)
+	}
 
 	if roles["sfu"] && os.Getenv("SFU_SIGNAL_URL") == "" {
 		conf.SFUSignalURL = "ws://127.0.0.1:8081/signal"
@@ -143,11 +155,11 @@ func serve() {
 	}
 	if roles["sfu"] {
 		started = true
-		go runRole(ctx, "sfu", func() error { return sfu.Start(ctx, dbc, conf) })
+		go runRole(ctx, "sfu", func() error { return sfu.Start(ctx, dbc, conf, iceProvider) })
 	}
 	if roles["web"] {
 		started = true
-		go runRole(ctx, "web", func() error { return boot.StartWeb(ctx, dbc, conf) })
+		go runRole(ctx, "web", func() error { return boot.StartWeb(ctx, dbc, conf, iceProvider) })
 	}
 	if !started {
 		return

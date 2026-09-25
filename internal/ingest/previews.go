@@ -13,17 +13,22 @@ import (
 	"thirdcoast.systems/rewind/pkg/ffmpeg"
 )
 
-func generatePreviewMP4(ctx context.Context, videoPath string) error {
-	if strings.TrimSpace(videoPath) == "" {
+func generatePreviewMP4(ctx context.Context, ffmpegSrc, videoDir, videoID string) error {
+	if strings.TrimSpace(ffmpegSrc) == "" {
 		return errors.New("missing video path")
 	}
-	videoID := filepath.Base(filepath.Dir(videoPath))
-	out := filepath.Join(filepath.Dir(videoPath), videoID+".preview.mp4")
+	if strings.TrimSpace(videoDir) == "" {
+		return errors.New("missing video dir")
+	}
+	if strings.TrimSpace(videoID) == "" {
+		videoID = filepath.Base(videoDir)
+	}
+	out := filepath.Join(videoDir, videoID+".preview.mp4")
 	if _, err := os.Stat(out); err == nil {
 		return nil
 	}
 
-	result := ffmpeg.GeneratePreview(ctx, videoPath, out, &ffmpeg.PreviewOptions{
+	result := ffmpeg.GeneratePreview(ctx, ffmpegSrc, out, &ffmpeg.PreviewOptions{
 		StartOffset: 10 * time.Second,
 		Duration:    6 * time.Second,
 		MaxWidth:    480,

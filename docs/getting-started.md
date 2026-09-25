@@ -17,7 +17,7 @@ Rewind runs three containers:
 | `rewind` | Web UI, download/ingest/encode workers, WebRTC SFU, and migrations |
 | `rewind-ml` | Whisper transcription, Ollama context windows, and vision |
 
-Worker counts (download, ingest, encode) are live admin settings, not Compose replicas.
+Worker counts (download, ingest, encode) are live admin settings, not Compose replicas. See [Architecture](architecture.md) for process diagrams.
 
 ## Installation
 

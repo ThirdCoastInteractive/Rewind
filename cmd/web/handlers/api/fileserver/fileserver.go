@@ -156,23 +156,9 @@ func (fs *FileServer) ServeDiskFileWithCache(c echo.Context, absPath string, con
 	return nil
 }
 
-// GetVideoDirForID returns the directory path for a video UUID.
-// It checks both /downloads (prod) and /download (dev) paths.
+// GetVideoDirForID returns the local directory for a video's blob prefix.
+// Remote blobs have no directory; callers must use ServeKey / Open instead.
 func GetVideoDirForID(ctx context.Context, videoID string) (string, error) {
 	_ = ctx
-	if dir, err := plugin.VideoDir(videoID); err == nil {
-		return dir, nil
-	}
-	// Tests and legacy layouts without a blob plugin.
-	candidates := []string{
-		filepath.Join(string(filepath.Separator)+"downloads", videoID),
-		filepath.Join(string(filepath.Separator)+"download", videoID),
-	}
-	for _, dir := range candidates {
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return dir, nil
-		}
-	}
-	// Default to prod path and let callers 404 on missing files.
-	return candidates[0], nil
+	return plugin.VideoDir(videoID)
 }

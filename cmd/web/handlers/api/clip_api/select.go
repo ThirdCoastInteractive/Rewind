@@ -13,10 +13,15 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/filters"
 )
+
 // HandleSelect serves GET /videos/:videoId/clips/:clipId/select, rendering the clip editor panel for a selected clip.
 func HandleSelect(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
+		user, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return err
+		}
 
 		clipUUID, err := common.RequireUUIDParam(c, "clipId")
 		if err != nil {
@@ -34,6 +39,9 @@ func HandleSelect(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		clip, err := q.GetClip(ctx, clipUUID)
 		if err != nil || clip == nil {
 			return c.String(404, "clip not found")
+		}
+		if err := requireClipRead(c, sm, q, clip, user); err != nil {
+			return err
 		}
 
 		// Patch the inspector form with clip data

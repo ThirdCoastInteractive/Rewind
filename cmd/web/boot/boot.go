@@ -18,24 +18,28 @@ import (
 	"thirdcoast.systems/rewind/internal/application"
 	"thirdcoast.systems/rewind/internal/config"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/turn"
 	"thirdcoast.systems/rewind/pkg/plugin"
 	"thirdcoast.systems/rewind/pkg/plugin/builtin"
 )
 
 // StartWeb serves the Rewind UI. Plugins must already be Use'd, or Defaults fill gaps.
-func StartWeb(ctx context.Context, dbc *db.DatabaseConnection, conf *config.Config) error {
+func StartWeb(ctx context.Context, dbc *db.DatabaseConnection, conf *config.Config, providers ...*turn.Provider) error {
 	encMgr, err := application.InitEncryptionManager()
 	if err != nil {
 		return fmt.Errorf("initialize encryption manager: %w", err)
 	}
 
 	sessionMgr := auth.NewSessionManager(os.Getenv("SESSION_SECRET"))
-	builtin.Defaults(sessionMgr, dbc)
+	if plugin.Auth() == nil {
+		plugin.Use(plugin.Set{Authn: auth.NewLocalAuth(sessionMgr)})
+	}
+	builtin.Defaults(dbc)
 	if plugin.Auth() == nil || plugin.Blobs() == nil {
 		return fmt.Errorf("plugin auth and blob are required")
 	}
 
-	e, err := web.NewWebserver(ctx, dbc, encMgr, sessionMgr)
+	e, err := web.NewWebserver(ctx, dbc, encMgr, sessionMgr, providers...)
 	if err != nil {
 		return fmt.Errorf("create webserver: %w", err)
 	}

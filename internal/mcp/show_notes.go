@@ -17,6 +17,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	eventhub "thirdcoast.systems/rewind/internal/events"
 	"thirdcoast.systems/rewind/internal/shownote"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 const showNoteAgentLeaseDuration = 2 * time.Minute
@@ -145,6 +146,19 @@ func listShowNotesMCP(dbc *db.DatabaseConnection) func(context.Context, *mcpsdk.
 		if err != nil {
 			return nil, nil, err
 		}
+		if plugin.LiveIngest() != nil {
+			tenant, terr := shownote.TenantForContext(ctx)
+			if terr != nil {
+				return nil, nil, terr
+			}
+			filtered := rows[:0]
+			for _, row := range rows {
+				if row.TenantID == tenant {
+					filtered = append(filtered, row)
+				}
+			}
+			rows = filtered
+		}
 		return jsonResult(rows)
 	}
 }
@@ -194,7 +208,7 @@ func showNoteResource(dbc *db.DatabaseConnection) mcpsdk.ResourceHandler {
 
 func showNoteResourceState(ctx context.Context, dbc *db.DatabaseConnection, noteID pgtype.UUID) (map[string]any, error) {
 	q := dbc.Queries(ctx)
-	note, err := q.GetShowNote(ctx, noteID)
+	note, err := shownote.RequireTenant(ctx, dbc, noteID)
 	if err != nil {
 		return nil, err
 	}

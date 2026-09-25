@@ -81,7 +81,7 @@ func modelAssignments(raw []byte, name string) string {
 	var in struct{ Assignments map[string]any }
 	_ = json.Unmarshal(raw, &in)
 	var labels []string
-	for _, item := range []struct{ key, label string }{{"agent.model", "Assistant"}, {"ml.context_model", "Context"}, {"whisper.model", "Transcription"}, {"vision.clip_model", "Visual search"}, {"textcls.sentiment_model", "Sentiment"}, {"textcls.toxicity_model", "Toxicity"}} {
+	for _, item := range []struct{ key, label string }{{"agent.model", "Assistant"}, {"ml.context_model", "Context"}, {"whisper.model", "Transcription"}, {"vision.clip_model", "Visual search"}, {"textcls.sentiment_model", "Sentiment"}, {"textcls.toxicity_model", "Toxicity"}, {"diarize.model", "Diarization"}} {
 		if fmt.Sprint(in.Assignments[item.key]) == name {
 			labels = append(labels, item.label)
 		}

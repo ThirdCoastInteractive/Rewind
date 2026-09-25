@@ -361,6 +361,11 @@ func migrateVideoAssetsToCanonicalDir(ctx context.Context, videoID string, video
 	if videoID == "" || videoPath == "" {
 		return videoPath, thumbnailPath, nil
 	}
+	// A blob key or a path that is not on this disk must stay as written.
+	// Inventing /downloads/<id>/<basename> replaces the only pointer to the master.
+	if st, err := os.Stat(videoPath); err != nil || !st.Mode().IsRegular() {
+		return videoPath, thumbnailPath, nil
+	}
 
 	oldDir := filepath.Dir(videoPath)
 	if isCanonicalVideoDir(oldDir, videoID) {

@@ -2,14 +2,13 @@
 package video_api
 
 import (
-	"errors"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleRedownload creates a new download job for an existing video (force redownload).
@@ -25,13 +24,9 @@ func HandleRedownload(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 			return err
 		}
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoWrite)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return c.String(404, "video not found")
-			}
-			slog.Error("failed to fetch video for redownload", "error", err, "video_id", videoUUID)
-			return c.String(500, "failed to fetch video")
+			return err
 		}
 
 		job, err := dbc.Queries(c.Request().Context()).EnqueueDownloadJob(c.Request().Context(), &db.EnqueueDownloadJobParams{

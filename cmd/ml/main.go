@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"thirdcoast.systems/rewind/cmd/ml/internal/mlcore"
-	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/internal/application"
 	"thirdcoast.systems/rewind/internal/config"
 	"thirdcoast.systems/rewind/internal/db"
@@ -63,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer dbc.Close()
-	builtin.Defaults(auth.NewSessionManager(""), dbc)
+	builtin.Defaults(dbc)
 	if root, ok := plugin.LocalRoot(); ok {
 		downloadsDir = root
 	}
@@ -114,8 +113,9 @@ func main() {
 	maybeStartOllama(ctx, ollamaParallel)
 	maybeStartVision(ctx)
 	maybeStartTextcls(ctx)
+	startDiarize(ctx)
 	device := strings.ToLower(envOr("WHISPER_DEVICE", envOr("VISION_DEVICE", "cpu")))
-	kindGroups := mlWorkerKindGroups(device)
+	kindGroups := filterSkippedKindGroups(mlWorkerKindGroups(device), os.Getenv("ML_SKIP_KINDS"))
 	for i := 0; i < slots; i++ {
 		for _, kinds := range kindGroups {
 			go mlWorker(ctx, dbc, fmt.Sprintf("%s-%s-%d", workerID, kinds[0], i), downloadsDir, ollama, wake, kinds)
@@ -140,13 +140,31 @@ func main() {
 
 func runTopicBackfill(ctx context.Context, dbc *db.DatabaseConnection) {
 	store := topics.New(dbc)
+	q := dbc.Queries(ctx)
 	idle := time.NewTicker(time.Minute)
 	defer idle.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		n, err := store.Backfill(ctx, 200)
+		tenants, err := q.ListTopicTenants(ctx)
+		if err != nil {
+			slog.Warn("topic tenant enumeration", "error", err)
+			tenants = nil
+		}
+		n := 0
+		for _, tenant := range tenants {
+			rowCtx := ctx
+			if tenant.Valid && tenant.Bytes != [16]byte{} {
+				rowCtx = plugin.WithTenantScope(ctx, tenant.String(), true)
+			}
+			bound, berr := store.Backfill(rowCtx, 200)
+			n += bound
+			if berr != nil {
+				err = berr
+				break
+			}
+		}
 		if err != nil {
 			slog.Warn("topic bind backfill", "error", err)
 			select {
@@ -185,6 +203,9 @@ func runMLMaintenance(ctx context.Context, dbc *db.DatabaseConnection) {
 		}
 		if err := enqueueTextcls(ctx, dbc); err != nil {
 			slog.Warn("enqueue textcls jobs", "error", err)
+		}
+		if err := enqueueDiarizeBackfill(ctx, dbc); err != nil {
+			slog.Warn("enqueue diarize jobs", "error", err)
 		}
 		if err := osint.RunMaintenance(ctx, dbc); err != nil {
 			slog.Warn("osint maintenance", "error", err)
@@ -299,17 +320,55 @@ func mlWorkerKindGroups(device string) [][]string {
 	switch strings.ToLower(strings.TrimSpace(device)) {
 	case "cuda", "rocm":
 		return [][]string{
-			{"visual_index", "transcribe", "context_windows", "refine_boundaries"},
+			{"visual_index", "transcribe", "context_windows", "refine_boundaries", "diarize"},
 			textclsKinds,
 		}
 	default:
 		return [][]string{
 			{"visual_index"},
 			{"transcribe"},
-			{"context_windows", "refine_boundaries"},
+			{"context_windows", "refine_boundaries", "diarize"},
 			textclsKinds,
 		}
 	}
+}
+
+// filterSkippedKindGroups removes kinds named in skipCSV (comma-separated,
+// spaces trimmed, empty entries ignored). A blank list returns groups
+// unchanged. Groups left with no kinds are omitted so they are not started.
+func filterSkippedKindGroups(groups [][]string, skipCSV string) [][]string {
+	skip := splitCSV(skipCSV)
+	if len(skip) == 0 {
+		return groups
+	}
+	drop := make(map[string]struct{}, len(skip))
+	for _, name := range skip {
+		drop[name] = struct{}{}
+	}
+	out := make([][]string, 0, len(groups))
+	for _, group := range groups {
+		kept := make([]string, 0, len(group))
+		removed := false
+		for _, kind := range group {
+			if _, ok := drop[kind]; ok {
+				removed = true
+				continue
+			}
+			kept = append(kept, kind)
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		if !removed {
+			out = append(out, group)
+			continue
+		}
+		out = append(out, kept)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func maybeStartTextcls(ctx context.Context) {

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
+	"thirdcoast.systems/rewind/cmd/web/ctxkeys"
 	"thirdcoast.systems/rewind/cmd/web/templates/components"
 	"thirdcoast.systems/rewind/internal/db"
 )
@@ -15,16 +16,30 @@ templ Settings(cookiesValue string, message string, isLoggedIn bool, username st
 }
 
 templ SettingsContent(cookiesValue string, message string, mcpToken string, tokens []*db.ListAPITokensByUserRow) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	@Container("") {
 		<div class="settings-workspace">
-			<header class="settings-heading"><p class="rw-eyebrow">YOUR ACCOUNT</p><h1>Settings</h1><p>Cookies, tokens, appearance, and shortcuts for this user.</p></header>
+			<header class="settings-heading"><p class="rw-eyebrow">YOUR ACCOUNT</p><h1>Settings</h1>
+				if liveProduct {
+					<p>Appearance, fonts, and a key for your assistant.</p>
+				} else {
+					<p>Cookies, tokens, appearance, and shortcuts for this user.</p>
+				}
+			</header>
 			<div class="settings-layout">
 				<nav class="settings-nav" aria-label="Settings sections">
 					<a href="#settings-connections">Connections</a><a href="#settings-fonts">Fonts</a><a href="#settings-interface">Interface</a>
 				</nav>
 				<div class="settings-main">
 					<section id="settings-connections" class="settings-section">
-						<header class="rw-section-heading"><div><h2>Connections</h2><p>Download credentials and access for external agents.</p></div></header>
+						<header class="rw-section-heading"><div><h2>Connections</h2>
+							if liveProduct {
+								<p>A key so your own assistant can work in this workspace.</p>
+							} else {
+								<p>Download credentials and access for external agents.</p>
+							}
+						</div></header>
+						if !liveProduct {
 						@components.Card(false) {
 							<div class="flex justify-between items-start mb-2 p-4 pb-0">
 								<h2 class={ "sub-heading" }>COOKIES</h2>
@@ -97,12 +112,22 @@ templ SettingsContent(cookiesValue string, message string, mcpToken string, toke
 								</form>
 							}
 						}
+						}
 						@components.Card(false) {
-							@components.CardHeader("MCP", "Connect your own agent (Claude Desktop, Cursor, ChatGPT) to search, analyze channels, follow, and download. Tokens are shown once.")
+							if liveProduct {
+								@components.CardHeader("MCP", "Connect your own assistant to this workspace. The token is shown once.")
+							} else {
+								@components.CardHeader("MCP", "Connect your own agent (Claude Desktop, Cursor, ChatGPT) to search, analyze channels, follow, and download. Tokens are shown once.")
+							}
 							@components.CardBody(true) {
 								<p class="text-white/60 text-xs mb-3 font-mono">
 									Endpoint: <code class="text-white">POST /mcp</code> with <code class="text-white">Authorization: Bearer rw_…</code>
 								</p>
+								if liveProduct {
+									<p class="text-xs mb-3">
+										<a class="underline" href="/docs/agents" title="Create a key, send it as a bearer token, and give the assistant the instruction file.">How to connect an assistant</a>
+									</p>
+								}
 								if mcpToken != "" {
 									<div class="bg-black border-2 border-white/40 p-3 mb-3">
 										<p class="text-xs text-white font-mono mb-1 uppercase tracking-wider">Copy this token now — it will not be shown again</p>
@@ -169,6 +194,7 @@ templ SettingsContent(cookiesValue string, message string, mcpToken string, toke
 								}
 							}
 						}
+						if !liveProduct {
 						@components.Card(false) {
 							@components.CardHeader("BOOKMARKLET", "Drag the button below to your bookmarks bar to quickly archive videos from any page you're browsing.")
 							@components.CardBody(true) {
@@ -198,6 +224,7 @@ templ SettingsContent(cookiesValue string, message string, mcpToken string, toke
 									</code>
 								</div>
 							}
+						}
 						}
 						<section id="settings-fonts" class="settings-section mt-8">
 							<header class="rw-section-heading"><div><h2>Fonts</h2><p>Download Google Fonts as TTF for title cards and burnt-in captions. Bundled Tomorrow and Unifraktur Cook stay available.</p></div></header>

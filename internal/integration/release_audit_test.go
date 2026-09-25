@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -87,6 +89,119 @@ func TestV003MigrationLedgerUpgrade(t *testing.T) {
 	var saved string
 	if err := pool.QueryRow(ctx, "SELECT state->>'saved' FROM player_sessions WHERE session_code='123456'").Scan(&saved); err != nil || saved != "scene" {
 		t.Fatalf("legacy scene lost: %q %v", saved, err)
+	}
+	if err := (&db.DatabaseConnection{Pool: pool}).Migrate(ctx); err != nil {
+		t.Fatalf("repeat upgrade: %v", err)
+	}
+}
+
+// Test the schema that was shipped in v0.1.0 (tenant_id nullable and src
+// globally unique) upgrading to the release schema. This stays in the
+// disposable release audit database so it cannot touch a developer library.
+func TestV010TenantSrcMigrationUpgrade(t *testing.T) {
+	ctx := context.Background()
+	const dsn = "postgres://rewind_test:disposable-test-only@127.0.0.1:15439/rewind_test?sslmode=disable"
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := "release_tenant_audit_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `CREATE TABLE goose_db_version (id bigserial PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now()); INSERT INTO goose_db_version(version_id,is_applied) VALUES(0,true)`); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) []byte {
+		cmd := exec.Command("git", append([]string{"-c", "safe.directory=" + filepath.ToSlash(root)}, args...)...)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("read released migrations: %v", err)
+		}
+		return out
+	}
+	dir := t.TempDir()
+	for _, file := range strings.Fields(string(git("ls-tree", "-r", "--name-only", "v0.1.0", "internal/db/sql/migrations"))) {
+		if err := os.WriteFile(filepath.Join(dir, filepath.Base(file)), git("show", "v0.1.0:"+file), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	goose.SetBaseFS(os.DirFS(dir))
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatal(err)
+	}
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	defer sqlDB.Close()
+	if err := goose.UpContext(ctx, sqlDB, "."); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyID := uuid.New()
+	legacyActor := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO videos(id,src,archived_by,title,media,video_path) VALUES($1,$2,$3,'legacy archived','file','/archive/legacy.mp4')`, legacyID, "legacy://archived", legacyActor); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&db.DatabaseConnection{Pool: pool}).Migrate(ctx); err != nil {
+		t.Fatalf("v0.1.0 upgrade rejected: %v", err)
+	}
+
+	var title, media, videoPath, tenant string
+	if err := pool.QueryRow(ctx, `SELECT title, media, video_path, tenant_id::text FROM videos WHERE id=$1`, legacyID).Scan(&title, &media, &videoPath, &tenant); err != nil {
+		t.Fatal(err)
+	}
+	if title != "legacy archived" {
+		t.Fatalf("archived video title=%q", title)
+	}
+	if media != "file" || videoPath != "/archive/legacy.mp4" {
+		t.Fatalf("archived video asset reference media=%q path=%q", media, videoPath)
+	}
+	if tenant != "00000000-0000-0000-0000-000000000000" {
+		t.Fatalf("legacy tenant=%q", tenant)
+	}
+
+	// A current OSS insert that omits tenant_id receives the zero tenant.
+	defaultID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO videos(id,src,archived_by,title) VALUES($1,'default://oss',$2,'default tenant')`, defaultID, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT tenant_id::text FROM videos WHERE id=$1`, defaultID).Scan(&tenant); err != nil {
+		t.Fatal(err)
+	}
+	if tenant != "00000000-0000-0000-0000-000000000000" {
+		t.Fatalf("default tenant=%q", tenant)
+	}
+
+	tenantA, tenantB := uuid.New(), uuid.New()
+	insert := `INSERT INTO videos(id,src,archived_by,title,tenant_id) VALUES($1,'same://src',$2,'tenant row',$3)`
+	if _, err := pool.Exec(ctx, insert, uuid.New(), uuid.New(), tenantA); err != nil {
+		t.Fatalf("first tenant source: %v", err)
+	}
+	if _, err := pool.Exec(ctx, insert, uuid.New(), uuid.New(), tenantB); err != nil {
+		t.Fatalf("same source in another tenant: %v", err)
+	}
+	_, err = pool.Exec(ctx, insert, uuid.New(), uuid.New(), tenantA)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" || pgErr.ConstraintName != "videos_src_tenant_unique" {
+		t.Fatalf("duplicate source in one tenant error=%v, pg=%+v", err, pgErr)
 	}
 	if err := (&db.DatabaseConnection{Pool: pool}).Migrate(ctx); err != nil {
 		t.Fatalf("repeat upgrade: %v", err)

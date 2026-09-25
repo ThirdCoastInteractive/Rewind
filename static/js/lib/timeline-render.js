@@ -43,14 +43,15 @@ export class Timeline {
     // Waveform underlay - render FIRST so it's behind everything
     if (ed.waveform?.peaks && ed.waveform?.manifest) {
       const canvas = document.createElement('canvas');
-      canvas.className = 'absolute inset-0 pointer-events-none';
+      canvas.className = 'absolute left-0 right-0 bottom-0 pointer-events-none';
       canvas.style.width = '100%';
-      canvas.style.height = '100%';
+      canvas.style.top = `${thumbHeight}px`;
+      canvas.style.height = `calc(100% - ${thumbHeight}px)`;
       canvas.style.opacity = '0.7';
       canvas.style.zIndex = '0';
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.max(1, Math.floor(layer.clientWidth * dpr));
-      canvas.height = Math.max(1, Math.floor(layer.clientHeight * dpr));
+      canvas.height = Math.max(1, Math.floor((layer.clientHeight - thumbHeight) * dpr));
       ed.drawWaveformToCanvas(canvas, ovStart, ovEnd);
       layer.appendChild(canvas);
     }
@@ -64,7 +65,8 @@ export class Timeline {
     }
 
     // Content layer fills entire height
-    const content = mkDiv('absolute inset-0');
+    const content = mkDiv('absolute left-0 right-0 bottom-0');
+    content.style.top = `${thumbHeight}px`;
     content.style.zIndex = '1';
     layer.appendChild(content);
 
@@ -149,7 +151,7 @@ export class Timeline {
         if (end <= ovStart) return;
         const left = pctOf(ts);
         const width = ((end - ts) / ovSpan) * 100;
-        const range = mkDiv('absolute top-0 bottom-0 bg-white/20');
+        const range = mkDiv('absolute top-0 bottom-0 bg-white/20 pointer-events-none');
         range.style.left = `${left}%`;
         range.style.width = `${width}%`;
         if (markerColor) {
@@ -157,12 +159,6 @@ export class Timeline {
           range.style.opacity = '0.35';
         }
 
-        range.dataset.markerEl = '';
-        range.addEventListener('click', (e) => {
-          e.stopPropagation();
-          ed.workHeadTime = clamp(ts, 0, ed.duration);
-          if (ed.video) ed.video.currentTime = ts;
-        });
         content.appendChild(range);
       } else {
         if (ts < ovStart) return;
@@ -410,19 +406,13 @@ export class Timeline {
 
         const left = ((a - ed.workStart) / windowSize) * 100;
         const width = ((b - a) / windowSize) * 100;
-        const range = mkDiv('absolute top-0 bottom-0 bg-white/20');
+        const range = mkDiv('absolute top-0 bottom-0 bg-white/20 pointer-events-none');
         range.style.left = `${left}%`;
         range.style.width = `${width}%`;
         if (markerColor) {
           range.style.background = markerColor;
           range.style.opacity = '0.35';
         }
-        range.dataset.markerEl = '';
-        range.addEventListener('click', (e) => {
-          e.stopPropagation();
-          ed.workHeadTime = clamp(ts, 0, ed.duration);
-          if (ed.video) ed.video.currentTime = ts;
-        });
         content.appendChild(range);
         return;
       }

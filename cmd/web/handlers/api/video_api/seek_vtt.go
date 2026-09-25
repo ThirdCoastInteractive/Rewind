@@ -2,8 +2,6 @@
 package video_api
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -11,6 +9,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/api/fileserver"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 // HandleSeekVTT serves GET /videos/:id/seek/levels/:level/seek.vtt, returning the WebVTT cue file for seek thumbnails.
 func HandleSeekVTT(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *fileserver.FileServer) echo.HandlerFunc {
@@ -26,15 +25,14 @@ func HandleSeekVTT(sm *auth.SessionManager, dbc *db.DatabaseConnection, fs *file
 		if err != nil {
 			return err
 		}
-		dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoUUID.String())
-		if err != nil {
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
 			return err
 		}
-		path := filepath.Join(dir, "seek", "levels", level, "seek.vtt")
-		if _, err := os.Stat(path); err != nil {
+		key := plugin.VideoKey(videoUUID.String(), "seek/levels/"+level+"/seek.vtt")
+		if err := fs.ServeKey(c, key, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256); err != nil {
 			return c.String(404, "seek thumbnails not available")
 		}
-		return fs.ServeDiskFileWithCache(c, path, "text/vtt", "private, max-age=86400, stale-while-revalidate=3600", fileserver.ETagStrongSHA256)
+		return nil
 	}
 }
 

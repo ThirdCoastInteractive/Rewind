@@ -143,9 +143,9 @@ type Querier interface {
 	BackupTranscriptRepair(ctx context.Context, arg *BackupTranscriptRepairParams) error
 	//BindWindowTopic
 	//
-	//  INSERT INTO context_window_topics (window_id, topic_slug, raw, match_kind)
-	//  VALUES ($1, $2, $3, $4)
-	//  ON CONFLICT (window_id, topic_slug) DO UPDATE SET
+	//  INSERT INTO context_window_topics (tenant_id, window_id, topic_slug, raw, match_kind)
+	//  VALUES ($1, $2, $3, $4, $5)
+	//  ON CONFLICT (tenant_id, window_id, topic_slug) DO UPDATE SET
 	//      raw = EXCLUDED.raw,
 	//      match_kind = EXCLUDED.match_kind
 	BindWindowTopic(ctx context.Context, arg *BindWindowTopicParams) error
@@ -495,19 +495,20 @@ type Querier interface {
 	//  SELECT count(DISTINCT v.channel_row_id)::bigint
 	//  FROM context_window_topics cwt
 	//  JOIN context_windows cw ON cw.id = cwt.window_id
-	//  JOIN videos v ON v.id = cw.video_id
-	//  WHERE cwt.topic_slug = $1
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+	//  WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
 	//    AND NOT cw.stale
 	//    AND cw.kind = 'window'
 	//    AND v.channel_row_id IS NOT NULL
-	CountTopicChannels(ctx context.Context, slug string) (int64, error)
+	CountTopicChannels(ctx context.Context, arg *CountTopicChannelsParams) (int64, error)
 	//CountTopicWindows
 	//
 	//  SELECT count(*)::bigint
 	//  FROM context_window_topics cwt
 	//  JOIN context_windows cw ON cw.id = cwt.window_id
-	//  WHERE cwt.topic_slug = $1 AND NOT cw.stale AND cw.kind = 'window'
-	CountTopicWindows(ctx context.Context, slug string) (int64, error)
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+	//  WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2 AND NOT cw.stale AND cw.kind = 'window'
+	CountTopicWindows(ctx context.Context, arg *CountTopicWindowsParams) (int64, error)
 	// CountUserCookies counts the number of cookies for a user
 	//
 	//  SELECT COUNT(*) as count
@@ -710,9 +711,9 @@ type Querier interface {
 	CreatePerson(ctx context.Context, arg *CreatePersonParams) (*Person, error)
 	//CreateShowNote
 	//
-	//  INSERT INTO show_notes (owner_id, title)
-	//  VALUES ($1, $2)
-	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+	//  INSERT INTO show_notes (owner_id, title, tenant_id)
+	//  VALUES ($1, $2, $3)
+	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 	CreateShowNote(ctx context.Context, arg *CreateShowNoteParams) (*ShowNote, error)
 	//CreateShowNoteAgentLease
 	//
@@ -981,12 +982,13 @@ type Querier interface {
 	//DeleteWikiLinksForPage
 	//
 	//  DELETE FROM wiki_links
-	//  WHERE from_tree = $1 AND from_slug = $2
+	//  WHERE tenant_id = $1
+	//    AND from_tree = $2 AND from_slug = $3
 	DeleteWikiLinksForPage(ctx context.Context, arg *DeleteWikiLinksForPageParams) error
 	//DeleteWindowTopics
 	//
-	//  DELETE FROM context_window_topics WHERE window_id = $1
-	DeleteWindowTopics(ctx context.Context, windowID pgtype.UUID) error
+	//  DELETE FROM context_window_topics WHERE tenant_id = $1 AND window_id = $2
+	DeleteWindowTopics(ctx context.Context, arg *DeleteWindowTopicsParams) error
 	// DequeueDownloadJob claims one queued download job. Playlist/channel-scan
 	// jobs are claimed before video downloads: they are quick flat enumerations
 	// whose expansion feeds the queue, and letting them ride FIFO behind a large
@@ -1044,7 +1046,10 @@ type Querier interface {
 	//            )
 	//          END
 	//        )
-	//      ORDER BY ij.created_at
+	//      -- Seek sheets decode the whole master. Claim every other asset job first.
+	//      ORDER BY
+	//        CASE WHEN btrim(coalesce(ij.asset_scope, '')) = 'seek' THEN 1 ELSE 0 END,
+	//        ij.created_at
 	//      LIMIT 1
 	//      FOR UPDATE OF ij SKIP LOCKED
 	//  )
@@ -1530,7 +1535,7 @@ type Querier interface {
 	FindReusableClipExport(ctx context.Context, arg *FindReusableClipExportParams) (*FindReusableClipExportRow, error)
 	//FindVideoForShowNoteSource
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count FROM videos
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id FROM videos
 	//  WHERE src = $1
 	//    AND media <> 'metadata'
 	//    AND video_path IS NOT NULL
@@ -1781,15 +1786,17 @@ type Querier interface {
 	// Get clip data needed for encoding
 	//
 	//  SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack,
-	//         c.title AS clip_title, v.video_path
+	//         c.title AS clip_title, v.video_path, v.tenant_id
 	//  FROM clips c
 	//  JOIN videos v ON v.id = c.video_id
 	//  WHERE c.id = $1
 	GetClipForExport(ctx context.Context, id pgtype.UUID) (*GetClipForExportRow, error)
 	// Bulk load clip data for the encoder (timestamps, crops).
 	//
-	//  SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list
+	//  SELECT c.id, c.video_id, c.start_ts, c.end_ts, c.duration, c.crops, c.filter_stack, c.shot_list,
+	//         v.video_path, v.tenant_id
 	//  FROM clips c
+	//  JOIN videos v ON v.id = c.video_id
 	//  WHERE c.id = ANY($1::uuid[])
 	GetClipsForStitch(ctx context.Context, ids []pgtype.UUID) ([]*GetClipsForStitchRow, error)
 	//GetCommenter
@@ -2057,7 +2064,7 @@ type Querier interface {
 	GetSessionInvalidation(ctx context.Context, id pgtype.UUID) (*GetSessionInvalidationRow, error)
 	//GetShowNote
 	//
-	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE id = $1
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE id = $1
 	GetShowNote(ctx context.Context, id pgtype.UUID) (*ShowNote, error)
 	//GetShowNoteAgentLease
 	//
@@ -2067,7 +2074,7 @@ type Querier interface {
 	GetShowNoteAgentLease(ctx context.Context, arg *GetShowNoteAgentLeaseParams) (*ShowNoteAgentLease, error)
 	//GetShowNoteByPublicCode
 	//
-	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes WHERE public_code = $1
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes WHERE public_code = $1
 	GetShowNoteByPublicCode(ctx context.Context, publicCode *string) (*ShowNote, error)
 	//GetShowNoteDocument
 	//
@@ -2099,6 +2106,12 @@ type Querier interface {
 	//  SELECT COALESCE(MAX(cursor), 0)::bigint FROM show_note_room_events
 	//  WHERE show_note_id = $1
 	GetShowNoteRoomCursor(ctx context.Context, showNoteID pgtype.UUID) (int64, error)
+	//GetSpeakerTurns
+	//
+	//  SELECT video_id, model, fingerprint, turns, created_at, updated_at
+	//  FROM speaker_turns
+	//  WHERE video_id = $1
+	GetSpeakerTurns(ctx context.Context, videoID pgtype.UUID) (*SpeakerTurn, error)
 	// Lookup a completed stitch export for use as a source.
 	//
 	//  SELECT id, status, file_path, duration_seconds, title
@@ -2167,15 +2180,15 @@ type Querier interface {
 	GetTopSources(ctx context.Context) ([]*GetTopSourcesRow, error)
 	//GetTopic
 	//
-	//  SELECT slug, title, origin, created_at FROM topics WHERE slug = $1
-	GetTopic(ctx context.Context, slug string) (*Topic, error)
+	//  SELECT slug, title, origin, created_at, tenant_id FROM topics WHERE tenant_id = $1 AND slug = $2
+	GetTopic(ctx context.Context, arg *GetTopicParams) (*Topic, error)
 	//GetTopicByAlias
 	//
 	//  SELECT t.slug, t.title, t.origin
 	//  FROM topic_aliases a
-	//  JOIN topics t ON t.slug = a.topic_slug
-	//  WHERE a.alias_norm = $1
-	GetTopicByAlias(ctx context.Context, aliasNorm string) (*GetTopicByAliasRow, error)
+	//  JOIN topics t ON t.tenant_id = a.tenant_id AND t.slug = a.topic_slug
+	//  WHERE a.tenant_id = $1 AND a.alias_norm = $2
+	GetTopicByAlias(ctx context.Context, arg *GetTopicByAliasParams) (*GetTopicByAliasRow, error)
 	//GetTotalClipExportSize
 	//
 	//  SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM clip_exports WHERE status = 'ready'
@@ -2199,10 +2212,17 @@ type Querier interface {
 	GetUserKeybindings(ctx context.Context, userID pgtype.UUID) ([]*GetUserKeybindingsRow, error)
 	// GetVideoByID returns a video by ID
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 	//  FROM videos
 	//  WHERE id = $1
 	GetVideoByID(ctx context.Context, id pgtype.UUID) (*Video, error)
+	// GetVideoByIDAndTenant returns a video by id scoped to one tenant.
+	//
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
+	//  FROM videos
+	//  WHERE id = $1
+	//    AND tenant_id = $2
+	GetVideoByIDAndTenant(ctx context.Context, arg *GetVideoByIDAndTenantParams) (*Video, error)
 	// GetVideoCommentToneRollup averages scored sentiment/toxicity for a video.
 	//
 	//  SELECT
@@ -2277,13 +2297,13 @@ type Querier interface {
 	GetWatchedChannelByUserAndChannel(ctx context.Context, arg *GetWatchedChannelByUserAndChannelParams) (*WatchedChannel, error)
 	//GetWikiPage
 	//
-	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-	//  WHERE tree = $1 AND slug = $2
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+	//  WHERE tenant_id = $1 AND tree = $2 AND slug = $3
 	GetWikiPage(ctx context.Context, arg *GetWikiPageParams) (*WikiPage, error)
 	//GetWikiRevision
 	//
-	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
-	//  WHERE tree = $1 AND slug = $2 AND revision = $3
+	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
+	//  WHERE tenant_id = $1 AND tree = $2 AND slug = $3 AND revision = $4
 	GetWikiRevision(ctx context.Context, arg *GetWikiRevisionParams) (*WikiRevision, error)
 	//GetYtdlpLogsForJob
 	//
@@ -2423,9 +2443,9 @@ type Querier interface {
 	InsertGeneratedContextWindow(ctx context.Context, arg *InsertGeneratedContextWindowParams) (*ContextWindow, error)
 	//InsertTopicAlias
 	//
-	//  INSERT INTO topic_aliases (alias_norm, topic_slug, raw, source)
-	//  VALUES ($1, $2, $3, $4)
-	//  ON CONFLICT (alias_norm) DO NOTHING
+	//  INSERT INTO topic_aliases (tenant_id, alias_norm, topic_slug, raw, source)
+	//  VALUES ($1, $2, $3, $4, $5)
+	//  ON CONFLICT (tenant_id, alias_norm) DO NOTHING
 	InsertTopicAlias(ctx context.Context, arg *InsertTopicAliasParams) error
 	// InsertVideo inserts a video row.
 	//
@@ -2454,7 +2474,8 @@ type Querier interface {
 	//      file_size,
 	//      probe_data,
 	//      search,
-	//      media
+	//      media,
+	//      tenant_id
 	//  )
 	//  VALUES (
 	//      $1,
@@ -2490,9 +2511,10 @@ type Querier interface {
 	//          $9::text[],
 	//          $8
 	//      ),
-	//      COALESCE(NULLIF(btrim($24), ''), 'file')
+	//      COALESCE(NULLIF(btrim($24), ''), 'file'),
+	//      COALESCE($25::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 	//  )
-	//  ON CONFLICT (src)
+	//  ON CONFLICT (tenant_id, src)
 	//  DO UPDATE SET
 	//      updated_at = NOW(),
 	//      title = EXCLUDED.title,
@@ -2520,7 +2542,7 @@ type Querier interface {
 	//          ELSE COALESCE(NULLIF(EXCLUDED.media, ''), videos.media)
 	//      END,
 	//      search = EXCLUDED.search
-	//  RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+	//  RETURNING id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 	InsertVideo(ctx context.Context, arg *InsertVideoParams) (*Video, error)
 	// InsertVideoRevision stores a refresh diff.
 	//
@@ -2549,35 +2571,34 @@ type Querier interface {
 	InsertVideoRevision(ctx context.Context, arg *InsertVideoRevisionParams) error
 	//InsertWikiLink
 	//
-	//  INSERT INTO wiki_links (from_tree, from_slug, to_tree, to_slug)
-	//  VALUES ($1, $2, $3, $4)
+	//  INSERT INTO wiki_links (tenant_id, from_tree, from_slug, to_tree, to_slug)
+	//  VALUES ($1, $2, $3, $4, $5)
 	//  ON CONFLICT DO NOTHING
 	InsertWikiLink(ctx context.Context, arg *InsertWikiLinkParams) error
 	//InsertWikiPage
 	//
 	//  INSERT INTO wiki_pages (
-	//      tree, slug, title, body, revision, creator_id, channel_id, updated_by
+	//      tenant_id, tree, slug, title, body, revision, creator_id, channel_id, updated_by
 	//  ) VALUES (
-	//      $1,
-	//      $2,
+	//      $1, $2,
 	//      $3,
 	//      $4,
-	//      1,
 	//      $5,
+	//      1,
 	//      $6,
-	//      $7
+	//      $7,
+	//      $8
 	//  )
-	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 	InsertWikiPage(ctx context.Context, arg *InsertWikiPageParams) (*WikiPage, error)
 	//InsertWikiRevision
 	//
 	//  INSERT INTO wiki_revisions (
-	//      tree, slug, revision, title, body, diff, summary,
+	//      tenant_id, tree, slug, revision, title, body, diff, summary,
 	//      actor_kind, actor_id, user_id, session_id,
 	//      client_name, client_version, token_name
 	//  ) VALUES (
-	//      $1,
-	//      $2,
+	//      $1, $2,
 	//      $3,
 	//      $4,
 	//      $5,
@@ -2589,9 +2610,10 @@ type Querier interface {
 	//      $11,
 	//      $12,
 	//      $13,
-	//      $14
+	//      $14,
+	//      $15
 	//  )
-	//  RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at
+	//  RETURNING id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id
 	InsertWikiRevision(ctx context.Context, arg *InsertWikiRevisionParams) (*WikiRevision, error)
 	//InsertYtdlpLog
 	//
@@ -2908,7 +2930,7 @@ type Querier interface {
 	//  OFFSET $3
 	ListChannelVideos(ctx context.Context, arg *ListChannelVideosParams) ([]*ListChannelVideosRow, error)
 	// ListChannels aggregates the library by uploader: per-channel video counts,
-	// totals, a representative latest video (for the thumbnail), the channel URL
+	// totals, a representative latest archived video that has a thumbnail, the channel URL
 	// (from the generated channel_url/uploader_url columns — never the info
 	// JSONB, which is far too heavy to touch per row), and whether a channel
 	// watch already covers it. Optional name filter for the list page search box.
@@ -2931,6 +2953,8 @@ type Querier interface {
 	//      agg.uploader, agg.video_count, agg.total_duration_seconds, agg.total_size_bytes, agg.latest_upload, agg.channel_url, agg.uploader_url,
 	//      (SELECT v2.id FROM videos v2
 	//       WHERE v2.uploader = agg.uploader
+	//         AND v2.media = 'file'
+	//         AND COALESCE(v2.thumbnail_path, '') <> ''
 	//       ORDER BY v2.upload_date DESC NULLS LAST, v2.created_at DESC
 	//       LIMIT 1) AS latest_video_id,
 	//      (w.id IS NOT NULL)::boolean AS watched
@@ -3028,12 +3052,16 @@ type Querier interface {
 	// Pre-aggregated commenter edges (strongest-N).
 	//
 	//  WITH sparse AS (
-	//    SELECT c.id
-	//    FROM commenters c
-	//    WHERE c.channel_id IS NOT NULL
-	//       OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-	//       OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-	//       OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+	//    SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+	//    UNION
+	//    SELECT w.commenter_id FROM commenter_watchlist w
+	//    UNION
+	//    SELECT f.commenter_id FROM osint_flags f
+	//    WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+	//    UNION
+	//    SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+	//    UNION
+	//    SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 	//  ), edge_rows AS (
 	//    SELECT e.id::text AS id,
 	//           e.from_channel_id,
@@ -3068,12 +3096,16 @@ type Querier interface {
 	// Sparse commenter nodes for /network (watchlisted, open flag, user link, or channel_id).
 	//
 	//  WITH sparse AS (
-	//    SELECT c.id
-	//    FROM commenters c
-	//    WHERE c.channel_id IS NOT NULL
-	//       OR EXISTS (SELECT 1 FROM commenter_watchlist w WHERE w.commenter_id = c.id)
-	//       OR EXISTS (SELECT 1 FROM osint_flags f WHERE f.commenter_id = c.id AND f.dismissed_at IS NULL)
-	//       OR EXISTS (SELECT 1 FROM commenter_links l WHERE l.kind = 'user' AND (l.a_id = c.id OR l.b_id = c.id))
+	//    SELECT c.id FROM commenters c WHERE c.channel_id IS NOT NULL
+	//    UNION
+	//    SELECT w.commenter_id FROM commenter_watchlist w
+	//    UNION
+	//    SELECT f.commenter_id FROM osint_flags f
+	//    WHERE f.dismissed_at IS NULL AND f.commenter_id IS NOT NULL
+	//    UNION
+	//    SELECT l.a_id FROM commenter_links l WHERE l.kind = 'user'
+	//    UNION
+	//    SELECT l.b_id FROM commenter_links l WHERE l.kind = 'user'
 	//  )
 	//  SELECT c.id,
 	//         c.source,
@@ -3223,7 +3255,7 @@ type Querier interface {
 	ListExecutionSegments(ctx context.Context, executionID pgtype.UUID) ([]*ListExecutionSegmentsRow, error)
 	//ListFaceCandidates
 	//
-	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='face_index' WHERE v.media='file' AND v.duration_seconds>0
 	//  AND EXISTS(SELECT 1 FROM face_index_selections s WHERE s.enabled AND (s.video_id=v.id OR s.channel_id=v.channel_row_id))
 	//  AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 	//  ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
@@ -3461,7 +3493,7 @@ type Querier interface {
 	ListRecentMLJobs(ctx context.Context) ([]*ListRecentMLJobsRow, error)
 	// ListRecentVideos returns recent videos (by archive date)
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 	//  FROM videos
 	//  WHERE media <> 'metadata'
 	//  ORDER BY created_at DESC
@@ -3469,7 +3501,7 @@ type Querier interface {
 	ListRecentVideos(ctx context.Context) ([]*Video, error)
 	// ListRecentlyPublishedVideos returns videos sorted by original publish date
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 	//  FROM videos
 	//  WHERE media <> 'metadata'
 	//    AND upload_date IS NOT NULL
@@ -3481,13 +3513,15 @@ type Querier interface {
 	//  SELECT t.slug, t.title, count(*)::bigint AS n
 	//  FROM context_window_topics a
 	//  JOIN context_window_topics b ON a.window_id = b.window_id AND a.topic_slug <> b.topic_slug
-	//  JOIN topics t ON t.slug = b.topic_slug
+	//    AND b.tenant_id = a.tenant_id
+	//  JOIN topics t ON t.tenant_id = b.tenant_id AND t.slug = b.topic_slug
 	//  JOIN context_windows cw ON cw.id = a.window_id AND NOT cw.stale AND cw.kind = 'window'
-	//  WHERE a.topic_slug = $1
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = a.tenant_id
+	//  WHERE a.tenant_id = $1 AND a.topic_slug = $2
 	//  GROUP BY t.slug, t.title
 	//  ORDER BY n DESC, t.title
 	//  LIMIT 12
-	ListRelatedTopics(ctx context.Context, slug string) ([]*ListRelatedTopicsRow, error)
+	ListRelatedTopics(ctx context.Context, arg *ListRelatedTopicsParams) ([]*ListRelatedTopicsRow, error)
 	// ListResolvedOutlinks returns archived-to-archived outlink edges for creator grouping.
 	//
 	//  SELECT
@@ -3567,7 +3601,7 @@ type Querier interface {
 	//
 	//
 	//  SELECT DISTINCT sn.id, sn.owner_id, sn.title, sn.description, sn.is_live,
-	//         sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at
+	//         sn.live_started_at, sn.public_code, sn.created_at, sn.updated_at, sn.tenant_id
 	//  FROM show_notes sn
 	//  LEFT JOIN show_note_hosts h ON h.show_note_id = sn.id
 	//  WHERE sn.owner_id = $1 OR h.user_id = $1
@@ -3575,7 +3609,7 @@ type Querier interface {
 	ListShowNotesForUser(ctx context.Context, userID pgtype.UUID) ([]*ListShowNotesForUserRow, error)
 	//ListShowNotesPendingWorkspaceMigration
 	//
-	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error FROM show_notes
+	//  SELECT id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id FROM show_notes
 	//  WHERE workspace_migrated_at IS NULL
 	//  ORDER BY created_at, id
 	ListShowNotesPendingWorkspaceMigration(ctx context.Context) ([]*ShowNote, error)
@@ -3675,11 +3709,11 @@ type Querier interface {
 	//         v.title AS video_title, v.uploader, t.slug AS topic_slug, t.title AS topic_title
 	//  FROM context_windows mine
 	//  JOIN context_window_topics mt ON mt.window_id = mine.id
-	//  JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.window_id <> mine.id
+	//  JOIN context_window_topics ot ON ot.topic_slug = mt.topic_slug AND ot.tenant_id = mt.tenant_id AND ot.window_id <> mine.id
 	//  JOIN context_windows cw ON cw.id = ot.window_id AND NOT cw.stale AND cw.kind = 'window'
-	//  JOIN videos v ON v.id = cw.video_id
-	//  JOIN videos mv ON mv.id = mine.video_id
-	//  JOIN topics t ON t.slug = ot.topic_slug
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = ot.tenant_id
+	//  JOIN videos mv ON mv.id = mine.video_id AND mv.tenant_id = mt.tenant_id
+	//  JOIN topics t ON t.tenant_id = ot.tenant_id AND t.slug = ot.topic_slug
 	//  WHERE mine.video_id = $1
 	//    AND NOT mine.stale
 	//    AND v.id <> mine.video_id
@@ -3687,6 +3721,10 @@ type Querier interface {
 	//  ORDER BY cw.updated_at DESC, cw.id
 	//  LIMIT $2
 	ListTopicNeighborsForVideo(ctx context.Context, arg *ListTopicNeighborsForVideoParams) ([]*ListTopicNeighborsForVideoRow, error)
+	//ListTopicTenants
+	//
+	//  SELECT DISTINCT tenant_id FROM videos ORDER BY tenant_id
+	ListTopicTenants(ctx context.Context) ([]pgtype.UUID, error)
 	//ListTopicWindows
 	//
 	//  SELECT cw.id, cw.video_id, cw.start_ts, cw.end_ts, cw.title, cw.summary,
@@ -3694,37 +3732,37 @@ type Querier interface {
 	//         cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 	//  FROM context_window_topics cwt
 	//  JOIN context_windows cw ON cw.id = cwt.window_id
-	//  JOIN videos v ON v.id = cw.video_id
-	//  JOIN topics t ON t.slug = cwt.topic_slug
-	//  WHERE cwt.topic_slug = $1
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+	//  JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+	//  WHERE cwt.topic_slug = $1 AND cwt.tenant_id = $2
 	//    AND NOT cw.stale
 	//    AND cw.kind = 'window'
 	//  ORDER BY cw.updated_at DESC, cw.id
-	//  LIMIT $2
+	//  LIMIT $3
 	ListTopicWindows(ctx context.Context, arg *ListTopicWindowsParams) ([]*ListTopicWindowsRow, error)
 	//ListTopics
 	//
-	//  SELECT slug, title, origin FROM topics
+	//  SELECT slug, title, origin FROM topics WHERE tenant_id = $1
 	//  ORDER BY title, slug
-	//  LIMIT $1
-	ListTopics(ctx context.Context, pageLimit int32) ([]*ListTopicsRow, error)
+	//  LIMIT $2
+	ListTopics(ctx context.Context, arg *ListTopicsParams) ([]*ListTopicsRow, error)
 	//ListTopicsNeedingStub
 	//
 	//  SELECT t.slug, t.title
 	//  FROM topics t
-	//  WHERE t.origin <> 'wiki'
+	//  WHERE t.tenant_id = $1 AND t.origin <> 'wiki'
 	//    AND NOT EXISTS (
-	//      SELECT 1 FROM wiki_pages w WHERE w.tree = 'topic' AND w.slug = t.slug
+	//      SELECT 1 FROM wiki_pages w WHERE w.tenant_id = t.tenant_id AND w.tree = 'topic' AND w.slug = t.slug
 	//    )
 	//    AND (
 	//      SELECT count(DISTINCT v.channel_row_id)
 	//      FROM context_window_topics cwt
 	//      JOIN context_windows cw ON cw.id = cwt.window_id
-	//      JOIN videos v ON v.id = cw.video_id
-	//      WHERE cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
+	//      JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+	//      WHERE cwt.tenant_id = t.tenant_id AND cwt.topic_slug = t.slug AND NOT cw.stale AND cw.kind = 'window' AND v.channel_row_id IS NOT NULL
 	//    ) >= 3
 	//  ORDER BY t.slug
-	ListTopicsNeedingStub(ctx context.Context) ([]*ListTopicsNeedingStubRow, error)
+	ListTopicsNeedingStub(ctx context.Context, tenantID pgtype.UUID) ([]*ListTopicsNeedingStubRow, error)
 	//ListTranscriptCoverage
 	//
 	//  SELECT lang,coverage,updated_at FROM video_transcripts WHERE video_id=$1 ORDER BY lang
@@ -3818,6 +3856,7 @@ type Querier interface {
 	//  SELECT id::text, video_path, thumbnail_path, file_hash, duration_seconds, assets_status
 	//  FROM videos
 	//  WHERE video_path IS NOT NULL AND btrim(video_path) <> ''
+	//  AND video_path NOT LIKE 'org/%'
 	//  AND (
 	//      -- Not yet a browser-playable .mp4 — needs normalization (remux/transcode).
 	//      lower(video_path) NOT LIKE '%.mp4'
@@ -3865,6 +3904,20 @@ type Querier interface {
 	//    AND btrim(author_id) <> ''
 	//  LIMIT $1::int
 	ListVideosNeedingCommenters(ctx context.Context, batchSize int32) ([]pgtype.UUID, error)
+	//ListVideosNeedingDiarize
+	//
+	//  SELECT t.video_id
+	//  FROM video_transcripts t
+	//  WHERE t.text <> ''
+	//    AND NOT EXISTS (
+	//        SELECT 1 FROM speaker_turns s
+	//        WHERE s.video_id = t.video_id
+	//          AND s.fingerprint = $1
+	//    )
+	//  GROUP BY t.video_id
+	//  ORDER BY max(t.updated_at) DESC
+	//  LIMIT $2
+	ListVideosNeedingDiarize(ctx context.Context, arg *ListVideosNeedingDiarizeParams) ([]pgtype.UUID, error)
 	// ListVideosNeedingProbe returns videos with a video_path but no probe_data, for backfill.
 	//
 	//  SELECT id, video_path
@@ -3887,8 +3940,8 @@ type Querier interface {
 	//
 	//  WITH params AS (
 	//      SELECT
-	//          NULLIF(btrim(COALESCE($20::text, '')), '') AS tsq,
-	//          NULLIF(btrim(COALESCE($21::text, '')), '') AS raw
+	//          NULLIF(btrim(COALESCE($21::text, '')), '') AS tsq,
+	//          NULLIF(btrim(COALESCE($22::text, '')), '') AS raw
 	//  ),
 	//  field_clauses AS (
 	//      SELECT value->>'field' AS field, value->>'text' AS phrase, row_number() OVER () AS ordinality
@@ -4165,29 +4218,31 @@ type Querier interface {
 	//      -- Has markers filter
 	//      AND ($16::boolean IS NULL OR $16 = FALSE
 	//           OR EXISTS (SELECT 1 FROM markers m WHERE m.video_id = v.id))
+	//      -- Tenant filter: NULL narg is OSS (all videos); RewindLive sets Actor.TenantID.
+	//      AND ($17::uuid IS NULL OR v.tenant_id = $17)
 	//  ORDER BY
-	//      CASE WHEN $17 = 'relevance' THEN r.rank END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'relevance' THEN r.rank END DESC NULLS LAST,
 	//      -- Date sorts (archived)
-	//      CASE WHEN $17 = 'newest' THEN v.created_at END DESC NULLS LAST,
-	//      CASE WHEN $17 = 'oldest' THEN v.created_at END ASC NULLS LAST,
+	//      CASE WHEN $18 = 'newest' THEN v.created_at END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'oldest' THEN v.created_at END ASC NULLS LAST,
 	//      -- Date sorts (published)
-	//      CASE WHEN $17 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
-	//      CASE WHEN $17 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
+	//      CASE WHEN $18 = 'published-newest' THEN v.upload_date END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'published-oldest' THEN v.upload_date END ASC NULLS LAST,
 	//      -- Title sorts
-	//      CASE WHEN $17 = 'alpha' THEN v.title END ASC NULLS LAST,
-	//      CASE WHEN $17 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'alpha' THEN v.title END ASC NULLS LAST,
+	//      CASE WHEN $18 = 'alpha-desc' THEN v.title END DESC NULLS LAST,
 	//      -- Duration sorts
-	//      CASE WHEN $17 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
-	//      CASE WHEN $17 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'duration' THEN v.duration_seconds END ASC NULLS LAST,
+	//      CASE WHEN $18 = 'duration-desc' THEN v.duration_seconds END DESC NULLS LAST,
 	//      -- Activity sorts
-	//      CASE WHEN $17 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $17 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $17 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
-	//      CASE WHEN $17 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'most-clips' THEN (SELECT COUNT(*) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'most-markers' THEN (SELECT COUNT(*) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'recently-clipped' THEN (SELECT MAX(c.created_at) FROM clips c WHERE c.video_id = v.id) END DESC NULLS LAST,
+	//      CASE WHEN $18 = 'recently-marked' THEN (SELECT MAX(m.created_at) FROM markers m WHERE m.video_id = v.id) END DESC NULLS LAST,
 	//      -- Default fallback
 	//      v.created_at DESC
-	//  LIMIT $19
-	//  OFFSET $18
+	//  LIMIT $20
+	//  OFFSET $19
 	ListVideosPaginated(ctx context.Context, arg *ListVideosPaginatedParams) ([]*ListVideosPaginatedRow, error)
 	// ListVideosWithAssetErrors returns videos that have recorded asset generation errors.
 	//
@@ -4213,7 +4268,7 @@ type Querier interface {
 	ListVisionVideos(ctx context.Context, query string) ([]*ListVisionVideosRow, error)
 	//ListVisualCandidates
 	//
-	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id FROM videos v LEFT JOIN vision_asset_checks a ON a.video_id=v.id AND a.kind='visual_index'
 	//  WHERE v.media='file' AND v.duration_seconds>0 AND (a.checked_at IS NULL OR a.checked_at<now()-interval '1 hour')
 	//  ORDER BY a.checked_at NULLS FIRST,v.created_at DESC LIMIT 50
 	ListVisualCandidates(ctx context.Context) ([]*Video, error)
@@ -4259,64 +4314,70 @@ type Querier interface {
 	//
 	//  SELECT p.tree, p.slug, p.title, p.revision, p.updated_at
 	//  FROM wiki_links l
-	//  JOIN wiki_pages p ON p.tree = l.from_tree AND p.slug = l.from_slug
-	//  WHERE l.to_tree = $1 AND l.to_slug = $2
+	//  JOIN wiki_pages p ON p.tenant_id = l.tenant_id AND p.tree = l.from_tree AND p.slug = l.from_slug
+	//  WHERE l.tenant_id = $1 AND l.to_tree = $2 AND l.to_slug = $3
 	//  ORDER BY p.tree, p.slug
 	ListWikiBacklinks(ctx context.Context, arg *ListWikiBacklinksParams) ([]*ListWikiBacklinksRow, error)
 	//ListWikiLinks
 	//
 	//  SELECT from_tree, from_slug, to_tree, to_slug
 	//  FROM wiki_links
+	//  WHERE tenant_id = $1
 	//  ORDER BY from_tree, from_slug, to_tree, to_slug
-	ListWikiLinks(ctx context.Context) ([]*WikiLink, error)
+	ListWikiLinks(ctx context.Context, tenantID pgtype.UUID) ([]*ListWikiLinksRow, error)
 	//ListWikiLinksFromPage
 	//
 	//  SELECT to_tree, to_slug
 	//  FROM wiki_links
-	//  WHERE from_tree = $1 AND from_slug = $2
+	//  WHERE tenant_id = $1 AND from_tree = $2 AND from_slug = $3
 	//  ORDER BY to_tree, to_slug
 	ListWikiLinksFromPage(ctx context.Context, arg *ListWikiLinksFromPageParams) ([]*ListWikiLinksFromPageRow, error)
 	//ListWikiPages
 	//
-	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-	//  WHERE ($1::text = '' OR tree = $1)
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+	//  WHERE tenant_id = $1
+	//    AND ($2::text = '' OR tree = $2)
 	//  ORDER BY tree, slug
-	ListWikiPages(ctx context.Context, tree string) ([]*WikiPage, error)
+	ListWikiPages(ctx context.Context, arg *ListWikiPagesParams) ([]*WikiPage, error)
 	//ListWikiPagesForChannel
 	//
-	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-	//  WHERE channel_id = $1
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+	//  WHERE tenant_id = $1 AND channel_id = $2
 	//  ORDER BY tree, slug
-	ListWikiPagesForChannel(ctx context.Context, channelID pgtype.UUID) ([]*WikiPage, error)
+	ListWikiPagesForChannel(ctx context.Context, arg *ListWikiPagesForChannelParams) ([]*WikiPage, error)
 	//ListWikiPagesForCreator
 	//
-	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at FROM wiki_pages
-	//  WHERE creator_id = $1
+	//  SELECT tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id FROM wiki_pages
+	//  WHERE tenant_id = $1 AND creator_id = $2
 	//  ORDER BY tree, slug
-	ListWikiPagesForCreator(ctx context.Context, creatorID pgtype.UUID) ([]*WikiPage, error)
+	ListWikiPagesForCreator(ctx context.Context, arg *ListWikiPagesForCreatorParams) ([]*WikiPage, error)
 	//ListWikiRevisions
 	//
-	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at FROM wiki_revisions
+	//  SELECT id, tree, slug, revision, title, body, diff, summary, actor_kind, actor_id, user_id, session_id, client_name, client_version, token_name, created_at, tenant_id FROM wiki_revisions
 	//  WHERE tree = $1 AND slug = $2
+	//    AND tenant_id = $3
 	//  ORDER BY revision DESC
 	ListWikiRevisions(ctx context.Context, arg *ListWikiRevisionsParams) ([]*WikiRevision, error)
 	//ListWindowTopicBinds
 	//
 	//  SELECT cwt.window_id, t.slug, t.title, cwt.match_kind
 	//  FROM context_window_topics cwt
-	//  JOIN topics t ON t.slug = cwt.topic_slug
+	//  JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
 	//  JOIN context_windows cw ON cw.id = cwt.window_id AND NOT cw.stale
-	//  WHERE cwt.window_id = ANY($1::uuid[])
+	//  JOIN videos v ON v.id = cw.video_id
+	//  WHERE cwt.window_id = ANY($1::uuid[]) AND cwt.tenant_id = v.tenant_id
 	//  ORDER BY t.title, cwt.window_id
 	ListWindowTopicBinds(ctx context.Context, windowIds []pgtype.UUID) ([]*ListWindowTopicBindsRow, error)
 	//ListWindowsForTopicBind
 	//
-	//  SELECT id, title, topics, entities, kind
+	//  SELECT context_windows.id, context_windows.video_id, context_windows.title, context_windows.topics, context_windows.entities, context_windows.kind
 	//  FROM context_windows
+	//  JOIN videos ON videos.id = context_windows.video_id
 	//  WHERE NOT stale AND kind = 'window' AND topic_resolved_at IS NULL
-	//  ORDER BY updated_at DESC, id
-	//  LIMIT $1
-	ListWindowsForTopicBind(ctx context.Context, pageLimit int32) ([]*ListWindowsForTopicBindRow, error)
+	//    AND videos.tenant_id = $1
+	//  ORDER BY context_windows.updated_at DESC, context_windows.id
+	//  LIMIT $2
+	ListWindowsForTopicBind(ctx context.Context, arg *ListWindowsForTopicBindParams) ([]*ListWindowsForTopicBindRow, error)
 	//ListWorkspacePreflightDocuments
 	//
 	//  SELECT sn.id, d.markdown, d.revision
@@ -4506,17 +4567,25 @@ type Querier interface {
 	// Authorizes viewer-scoped content streaming: true if the video is referenced by
 	// a block in this show note.
 	//
-	//  SELECT COUNT(*) > 0 FROM show_note_blocks
-	//  WHERE show_note_id = $1 AND video_id = $2
+	//  SELECT COUNT(*) > 0
+	//  FROM show_note_blocks b
+	//  JOIN show_notes sn ON sn.id = b.show_note_id
+	//  JOIN videos v ON v.id = b.video_id AND v.tenant_id = sn.tenant_id
+	//  WHERE b.show_note_id = $1 AND b.video_id = $2
 	NoteReferencesVideo(ctx context.Context, arg *NoteReferencesVideoParams) (bool, error)
 	//NoteWorkspaceReferencesVideo
 	//
 	//  SELECT EXISTS (
 	//      SELECT 1 FROM show_note_references r
+	//      JOIN show_notes sn ON sn.id = r.show_note_id
 	//      LEFT JOIN clips c ON c.id = r.clip_id
 	//      LEFT JOIN markers m ON m.id = r.marker_id
+	//      LEFT JOIN videos rv ON rv.id = r.video_id
+	//      LEFT JOIN videos cv ON cv.id = c.video_id
+	//      LEFT JOIN videos mv ON mv.id = m.video_id
 	//      WHERE r.show_note_id = $1
 	//        AND (r.video_id = $2 OR c.video_id = $2 OR m.video_id = $2)
+	//        AND (rv.tenant_id = sn.tenant_id OR cv.tenant_id = sn.tenant_id OR mv.tenant_id = sn.tenant_id)
 	//  )
 	NoteWorkspaceReferencesVideo(ctx context.Context, arg *NoteWorkspaceReferencesVideoParams) (bool, error)
 	//NotifyStitchJob
@@ -5236,19 +5305,19 @@ type Querier interface {
 	//         cwt.match_kind, cwt.raw, t.slug AS topic_slug, t.title AS topic_title
 	//  FROM context_window_topics cwt
 	//  JOIN context_windows cw ON cw.id = cwt.window_id
-	//  JOIN videos v ON v.id = cw.video_id
-	//  JOIN topics t ON t.slug = cwt.topic_slug
-	//  WHERE NOT cw.stale AND cw.kind = 'window'
+	//  JOIN videos v ON v.id = cw.video_id AND v.tenant_id = cwt.tenant_id
+	//  JOIN topics t ON t.tenant_id = cwt.tenant_id AND t.slug = cwt.topic_slug
+	//  WHERE cwt.tenant_id = $1 AND cwt.tenant_id = v.tenant_id AND NOT cw.stale AND cw.kind = 'window'
 	//    AND (
-	//      t.slug = $1
-	//      OR t.title ILIKE '%' || $1 || '%'
+	//      t.slug = $2
+	//      OR t.title ILIKE '%' || $2 || '%'
 	//      OR EXISTS (
 	//        SELECT 1 FROM topic_aliases a
-	//        WHERE a.topic_slug = t.slug AND (a.alias_norm = $2 OR a.raw ILIKE '%' || $1 || '%')
+	//        WHERE a.tenant_id = cwt.tenant_id AND a.topic_slug = t.slug AND (a.alias_norm = $3 OR a.raw ILIKE '%' || $2 || '%')
 	//      )
 	//    )
 	//  ORDER BY cw.updated_at DESC, cw.id
-	//  LIMIT $3
+	//  LIMIT $4
 	SearchTopicWindows(ctx context.Context, arg *SearchTopicWindowsParams) ([]*SearchTopicWindowsRow, error)
 	// SearchTranscripts finds videos whose cleaned transcript matches tsquery.
 	// Optional uploader restricts to one channel.
@@ -5265,8 +5334,9 @@ type Querier interface {
 	//    AND ($3::text IS NULL OR v.uploader = $3)
 	//    AND ($4::uuid IS NULL OR ch.creator_id = $4)
 	//    AND ($5::uuid IS NULL OR ch.id = $5)
+	//    AND ($6::uuid IS NULL OR v.tenant_id = $6)
 	//  ORDER BY rank DESC,vt.video_id,vt.lang
-	//  LIMIT $7 OFFSET $6
+	//  LIMIT $8 OFFSET $7
 	SearchTranscripts(ctx context.Context, arg *SearchTranscriptsParams) ([]*SearchTranscriptsRow, error)
 	// SearchUnassignedChannels ranks unlinked channels by name/url match.
 	// Empty query returns no rows — callers pass a creator name for suggestions.
@@ -5373,7 +5443,7 @@ type Querier interface {
 	//    FROM hits
 	//    GROUP BY video_id
 	//  )
-	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count
+	//  SELECT v.id, v.created_at, v.updated_at, v.src, v.archived_by, v.title, v.info, v.comments, v.video_path, v.thumbnail_path, v.description, v.tags, v.uploader, v.uploader_id, v.channel_id, v.upload_date, v.duration_seconds, v.view_count, v.like_count, v.thumb_gradient_start, v.thumb_gradient_end, v.thumb_gradient_angle, v.file_hash, v.file_size, v.assets_status, v.search, v.probe_data, v.comments_checked_at, v.channel_url, v.uploader_url, v.channel_row_id, v.format, v.metadata_refreshed_at, v.links_harvested_at, v.media, v.subtitle_state, v.subtitle_checked_at, v.subtitle_last_error, v.transcript_version, v.comment_count, v.tenant_id
 	//  FROM ranked r
 	//  JOIN videos v ON v.id = r.video_id
 	//  ORDER BY r.rank DESC, v.created_at DESC
@@ -5392,14 +5462,15 @@ type Querier interface {
 	SearchVisualEmbeddings(ctx context.Context, arg *SearchVisualEmbeddingsParams) ([]*SearchVisualEmbeddingsRow, error)
 	//SearchWikiPages
 	//
-	//  SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at,
+	//  SELECT p.tree, p.slug, p.title, p.body, p.revision, p.creator_id, p.channel_id, p.updated_by, p.updated_at, p.tenant_id,
 	//         ts_rank(s.search, websearch_to_tsquery('simple', $1))::float8 AS rank
 	//  FROM wiki_pages p
-	//  JOIN wiki_search s ON s.tree = p.tree AND s.slug = p.slug
+	//  JOIN wiki_search s ON s.tenant_id = p.tenant_id AND s.tree = p.tree AND s.slug = p.slug
 	//  WHERE s.search @@ websearch_to_tsquery('simple', $1)
-	//    AND ($2::text = '' OR p.tree = $2)
+	//    AND p.tenant_id = $2
+	//    AND ($3::text = '' OR p.tree = $3)
 	//  ORDER BY rank DESC, p.updated_at DESC
-	//  LIMIT $3
+	//  LIMIT $4
 	SearchWikiPages(ctx context.Context, arg *SearchWikiPagesParams) ([]*SearchWikiPagesRow, error)
 	//SeedRuntimeSetting
 	//
@@ -5425,12 +5496,13 @@ type Querier interface {
 	//
 	//  SELECT id, user_name, password, email, email_verified, verify_hash, enabled, role, created_at, updated_at, deleted_at, sessions_invalidated_at FROM users WHERE user_name = $1 AND deleted_at IS NULL
 	SelectUserByUserName(ctx context.Context, userName string) (*User, error)
-	// SelectVideoBySrc returns a video by src.
+	// SelectVideoBySrc returns a video by src and tenant.
 	//
-	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count
+	//  SELECT id, created_at, updated_at, src, archived_by, title, info, comments, video_path, thumbnail_path, description, tags, uploader, uploader_id, channel_id, upload_date, duration_seconds, view_count, like_count, thumb_gradient_start, thumb_gradient_end, thumb_gradient_angle, file_hash, file_size, assets_status, search, probe_data, comments_checked_at, channel_url, uploader_url, channel_row_id, format, metadata_refreshed_at, links_harvested_at, media, subtitle_state, subtitle_checked_at, subtitle_last_error, transcript_version, comment_count, tenant_id
 	//  FROM videos
 	//  WHERE src = $1
-	SelectVideoBySrc(ctx context.Context, src string) (*Video, error)
+	//    AND tenant_id = $2
+	SelectVideoBySrc(ctx context.Context, arg *SelectVideoBySrcParams) (*Video, error)
 	// Reparent + reorder a block (drag-drop). Caller renormalizes sibling positions.
 	//
 	//  UPDATE show_note_blocks
@@ -5850,7 +5922,7 @@ type Querier interface {
 	//      public_code     = COALESCE($5, public_code),
 	//      updated_at      = NOW()
 	//  WHERE id = $6
-	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error
+	//  RETURNING id, owner_id, title, description, is_live, live_started_at, public_code, scene_state, created_at, updated_at, workspace_migrated_at, workspace_migration_error, tenant_id
 	UpdateShowNote(ctx context.Context, arg *UpdateShowNoteParams) (*ShowNote, error)
 	//UpdateShowNoteDocumentProjection
 	//
@@ -5977,9 +6049,10 @@ type Querier interface {
 	//      updated_by = $5,
 	//      updated_at = NOW()
 	//  WHERE tree = $6
-	//    AND slug = $7
-	//    AND revision = $8
-	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at
+	//    AND tenant_id = $7
+	//    AND slug = $8
+	//    AND revision = $9
+	//  RETURNING tree, slug, title, body, revision, creator_id, channel_id, updated_by, updated_at, tenant_id
 	UpdateWikiPage(ctx context.Context, arg *UpdateWikiPageParams) (*WikiPage, error)
 	// UpsertAdminEmails sets admin emails (creates row if missing)
 	//
@@ -6345,6 +6418,16 @@ type Querier interface {
 	//      updated_at = NOW()
 	//  RETURNING id, show_note_id, occurrence_key, ordinal, kind, source_uri, label, context, section_path, start_seconds, end_seconds, status, video_id, clip_id, marker_id, download_job_id, line_start, line_end, parsed_revision, diagnostic, updated_at
 	UpsertShowNoteReference(ctx context.Context, arg *UpsertShowNoteReferenceParams) (*ShowNoteReference, error)
+	//UpsertSpeakerTurns
+	//
+	//  INSERT INTO speaker_turns (video_id, model, fingerprint, turns)
+	//  VALUES ($1, $2, $3, $4)
+	//  ON CONFLICT (video_id) DO UPDATE SET
+	//      model = EXCLUDED.model,
+	//      fingerprint = EXCLUDED.fingerprint,
+	//      turns = EXCLUDED.turns,
+	//      updated_at = now()
+	UpsertSpeakerTurns(ctx context.Context, arg *UpsertSpeakerTurnsParams) error
 	//UpsertSpeechScore
 	//
 	//  INSERT INTO speech_scores (
@@ -6372,16 +6455,16 @@ type Querier interface {
 	UpsertTag(ctx context.Context, arg *UpsertTagParams) (*Tag, error)
 	//UpsertTopic
 	//
-	//  INSERT INTO topics (slug, title, origin)
-	//  VALUES ($1, $2, $3)
-	//  ON CONFLICT (slug) DO UPDATE SET
+	//  INSERT INTO topics (tenant_id, slug, title, origin)
+	//  VALUES ($1, $2, $3, $4)
+	//  ON CONFLICT (tenant_id, slug) DO UPDATE SET
 	//      title = CASE WHEN topics.origin = 'wiki' THEN topics.title ELSE EXCLUDED.title END,
 	//      origin = CASE
 	//          WHEN topics.origin = 'wiki' THEN topics.origin
 	//          WHEN EXCLUDED.origin = 'wiki' THEN EXCLUDED.origin
 	//          ELSE topics.origin
 	//      END
-	//  RETURNING slug, title, origin, created_at
+	//  RETURNING slug, title, origin, created_at, tenant_id
 	UpsertTopic(ctx context.Context, arg *UpsertTopicParams) (*Topic, error)
 	//UpsertUserKeybinding
 	//

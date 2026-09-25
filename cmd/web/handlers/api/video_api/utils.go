@@ -7,11 +7,12 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // VideoExtensions returns extensions to check for video files, in priority order.
 // mp4 is preferred (current remux target), with fallbacks for legacy videos.
-var VideoExtensions = []string{".mp4", ".webm", ".mkv"}
+var VideoExtensions = plugin.MasterExts()
 
 // Regex patterns for seek-related parameters
 var (
@@ -25,27 +26,37 @@ func isTruthyQueryParam(v string) bool {
 	return s == "1" || s == "true" || s == "yes" || s == "on"
 }
 
-// safeVideoDirForDeletion validates and returns the video directory path for safe deletion.
-// Returns the directory path and true if valid, or empty string and false if invalid.
-func safeVideoDirForDeletion(videoUUID pgtype.UUID) (string, bool) {
-	// We derive the on-disk directory from the UUID. Still enforce: {parent=downloads|download}/{uuid}
-	candidates := []string{
-		filepath.Join(string(filepath.Separator)+"downloads", videoUUID.String()),
-		filepath.Join(string(filepath.Separator)+"download", videoUUID.String()),
-	}
-	for _, dir := range candidates {
-		dir = filepath.Clean(dir)
-		if filepath.Base(dir) != videoUUID.String() {
-			continue
-		}
-		parent := strings.ToLower(strings.TrimSpace(filepath.Base(filepath.Dir(dir))))
-		if parent != "downloads" && parent != "download" {
-			continue
-		}
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return dir, true
-		}
-	}
+// removeLocalDir reports whether delete_disk should remove a local directory.
+// A missing directory is not a reason to refuse the delete: Live masters are
+// R2 objects, and purgeGeneratedMedia already removes those.
+func removeLocalDir(deleteDisk, hasSafeDir bool) bool {
+	return deleteDisk && hasSafeDir
+}
 
-	return "", false
+// safeVideoDirForDeletion returns the blob-local directory for a video if it
+// is a real directory under the Disk root and named as the video UUID.
+func safeVideoDirForDeletion(videoUUID pgtype.UUID) (string, bool) {
+	id := videoUUID.String()
+	root, ok := plugin.LocalRoot()
+	if !ok {
+		return "", false
+	}
+	dir, err := plugin.VideoDir(id)
+	if err != nil {
+		return "", false
+	}
+	dir = filepath.Clean(dir)
+	root = filepath.Clean(root)
+	if filepath.Base(dir) != id {
+		return "", false
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() {
+		return "", false
+	}
+	return dir, true
 }

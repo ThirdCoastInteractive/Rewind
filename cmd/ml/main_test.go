@@ -12,7 +12,7 @@ func TestMLWorkerKindGroups(t *testing.T) {
 	if len(cuda) != 2 {
 		t.Fatalf("cuda groups=%d want 2", len(cuda))
 	}
-	want := []string{"visual_index", "transcribe", "context_windows", "refine_boundaries"}
+	want := []string{"visual_index", "transcribe", "context_windows", "refine_boundaries", "diarize"}
 	if !reflect.DeepEqual(cuda[0], want) {
 		t.Fatalf("cuda kinds=%v want %v", cuda[0], want)
 	}
@@ -28,15 +28,112 @@ func TestMLWorkerKindGroups(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cpu[0], []string{"visual_index"}) ||
 		!reflect.DeepEqual(cpu[1], []string{"transcribe"}) ||
-		!reflect.DeepEqual(cpu[2], []string{"context_windows", "refine_boundaries"}) ||
+		!reflect.DeepEqual(cpu[2], []string{"context_windows", "refine_boundaries", "diarize"}) ||
 		!reflect.DeepEqual(cpu[3], textclsKinds) {
 		t.Fatalf("cpu split unexpected: %v", cpu)
 	}
 }
 
+func TestFilterSkippedKindGroups(t *testing.T) {
+	cuda := [][]string{
+		{"visual_index", "transcribe", "context_windows", "refine_boundaries"},
+		{"comment_classify", "speech_tone"},
+	}
+	cpu := [][]string{
+		{"visual_index"},
+		{"transcribe"},
+		{"context_windows", "refine_boundaries"},
+		{"comment_classify", "speech_tone"},
+	}
+	cases := []struct {
+		name   string
+		groups [][]string
+		skip   string
+		want   [][]string
+	}{
+		{
+			name:   "unset",
+			groups: cuda,
+			skip:   "",
+			want:   cuda,
+		},
+		{
+			name:   "whitespace only",
+			groups: cuda,
+			skip:   "  ,  , ",
+			want:   cuda,
+		},
+		{
+			name:   "cuda drops transcribe and context windows",
+			groups: cuda,
+			skip:   "transcribe,context_windows",
+			want: [][]string{
+				{"visual_index", "refine_boundaries"},
+				{"comment_classify", "speech_tone"},
+			},
+		},
+		{
+			name:   "cpu trims spaces and ignores empty entries",
+			groups: cpu,
+			skip:   " transcribe , , context_windows ",
+			want: [][]string{
+				{"visual_index"},
+				{"refine_boundaries"},
+				{"comment_classify", "speech_tone"},
+			},
+		},
+		{
+			name:   "partial textcls group",
+			groups: cpu,
+			skip:   "speech_tone",
+			want: [][]string{
+				{"visual_index"},
+				{"transcribe"},
+				{"context_windows", "refine_boundaries"},
+				{"comment_classify"},
+			},
+		},
+		{
+			name:   "unknown kind leaves groups",
+			groups: cpu,
+			skip:   "not_a_kind",
+			want:   cpu,
+		},
+		{
+			name:   "every kind dropped",
+			groups: cuda,
+			skip:   "visual_index,transcribe,context_windows,refine_boundaries,comment_classify,speech_tone",
+			want:   nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := cloneKindGroups(tc.groups)
+			got := filterSkippedKindGroups(tc.groups, tc.skip)
+			if !reflect.DeepEqual(tc.groups, before) {
+				t.Fatalf("input mutated: %v", tc.groups)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func cloneKindGroups(groups [][]string) [][]string {
+	if groups == nil {
+		return nil
+	}
+	out := make([][]string, len(groups))
+	for i, group := range groups {
+		out[i] = append([]string(nil), group...)
+	}
+	return out
+}
+
 func TestMLJobSkipsOllamaForTextcls(t *testing.T) {
-	if !mlJobSkipsOllama("comment_classify") || !mlJobSkipsOllama("speech_tone") {
-		t.Fatal("textcls kinds must not take the Ollama lock")
+	if !mlJobSkipsOllama("comment_classify") || !mlJobSkipsOllama("speech_tone") || !mlJobSkipsOllama("diarize") {
+		t.Fatal("textcls and diarize kinds must not take the Ollama lock")
 	}
 	if mlJobSkipsOllama("transcribe") {
 		t.Fatal("transcribe uses the model lock")

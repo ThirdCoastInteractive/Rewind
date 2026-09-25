@@ -28,11 +28,19 @@ func waveformDirForVideoPath(videoPath string) (string, error) {
 	if videoPath == "" {
 		return "", errors.New("missing video path")
 	}
-	return filepath.Join(filepath.Dir(videoPath), "waveform"), nil
+	return waveformDirForVideoDir(filepath.Dir(videoPath))
 }
 
-func ensureWaveformAssets(ctx context.Context, videoPath string, durationSeconds *int32) (bool, error) {
-	wfDir, err := waveformDirForVideoPath(videoPath)
+func waveformDirForVideoDir(videoDir string) (string, error) {
+	videoDir = strings.TrimSpace(videoDir)
+	if videoDir == "" {
+		return "", errors.New("missing video dir")
+	}
+	return filepath.Join(videoDir, "waveform"), nil
+}
+
+func ensureWaveformAssets(ctx context.Context, ffmpegSrc, videoDir string, durationSeconds *int32) (bool, error) {
+	wfDir, err := waveformDirForVideoDir(videoDir)
 	if err != nil {
 		return false, err
 	}
@@ -72,26 +80,26 @@ func ensureWaveformAssets(ctx context.Context, videoPath string, durationSeconds
 	}
 
 	// Probe video to check for audio track before attempting generation
-	probeResult, err := ffmpeg.Probe(ctx, videoPath)
+	probeResult, err := ffmpeg.Probe(ctx, ffmpegSrc)
 	if err != nil {
 		return false, fmt.Errorf("probe failed: %w", err)
 	}
 
 	if probeResult.AudioCodec == "" || probeResult.AudioCodec == "none" {
 		// Video has no audio - create marker so we don't keep trying
-		markerContent := fmt.Sprintf("Video has no audio track\nProbed: %s\nVideo codec: %s\n", videoPath, probeResult.VideoCodec)
+		markerContent := fmt.Sprintf("Video has no audio track\nProbed: %s\nVideo codec: %s\n", ffmpegSrc, probeResult.VideoCodec)
 		if err := os.WriteFile(noAudioMarker, []byte(markerContent), 0644); err != nil {
 			return false, fmt.Errorf("write no-audio marker: %w", err)
 		}
 		return false, nil
 	}
 
-	dur, err := resolveDurationSeconds(ctx, videoPath, durationSeconds)
+	dur, err := resolveDurationSeconds(ctx, ffmpegSrc, durationSeconds)
 	if err != nil {
 		return false, err
 	}
 
-	if err := generateWaveformPeaks(ctx, videoPath, peaksPath, bucketMS, sampleRate); err != nil {
+	if err := generateWaveformPeaks(ctx, ffmpegSrc, peaksPath, bucketMS, sampleRate); err != nil {
 		return true, err
 	}
 

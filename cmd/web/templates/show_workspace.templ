@@ -1,6 +1,7 @@
 package templates
 
 import "fmt"
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 
 func workspacePanelURL(noteID string, panel string) string {
 	url := "/show-notes/" + noteID + "/panel/" + panel
@@ -27,6 +28,7 @@ templ workspacePanelHeader(title string, noteID string, panel string) {
 }
 
 templ ShowWorkspaceContent(data ShowNoteData) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	<div
 		class="show-workspace flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden"
 		data-show-workspace
@@ -35,6 +37,7 @@ templ ShowWorkspaceContent(data ShowNoteData) {
 		data-username={ data.Username }
 		data-role={ data.Role }
 		data-panel={ data.Panel }
+		data-live={ fmt.Sprint(liveProduct) }
 		data-signals={ fmt.Sprintf("{_pLive:%t,_pCode:'%s',screenSharing:false,programOn:false,programVideoId:'',autoAdvance:false,videoPaused:false,videoVolume:1,videoMuted:false,videoLoop:false,videoT:0,videoDur:0,_contentState:''}", data.IsLive, data.Code) }
 		data-init={ fmt.Sprintf("@get('/api/show-notes/%s/producer/stream', {openWhenHidden:true}); @get('/api/show-notes/%s/scene/stream', {openWhenHidden:true})", data.ID, data.ID) }
 	>

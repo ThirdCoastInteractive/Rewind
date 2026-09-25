@@ -2,7 +2,6 @@
 package video_api
 
 import (
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,54 +27,28 @@ func HandleStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		if err != nil {
 			return err
 		}
+		if dbc == nil {
+			return c.String(404, "video not found")
+		}
+		row, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
+		if err != nil || row == nil {
+			return c.String(404, "video not found")
+		}
 		videoID := videoUUID.String()
-		if b := plugin.Blobs(); b != nil {
-			keys := []string{plugin.VideoKey(videoID, videoID+".video.mp4")}
-			if row, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID); err == nil && row != nil && row.VideoPath != nil {
-				if k := blobKey(*row.VideoPath, videoID); k != "" {
-					keys = append([]string{k}, keys...)
-				}
-			}
-			for _, key := range keys {
-				if u, err := b.PublicURL(c.Request().Context(), key, 15*time.Minute); err == nil && u != "" {
-					return c.Redirect(http.StatusFound, u)
-				}
-			}
+		var stored string
+		if row.VideoPath != nil {
+			stored = *row.VideoPath
 		}
-		var videoPath string
-		var f io.ReadSeekCloser
-		if b := plugin.Blobs(); b != nil {
-			for _, ext := range VideoExtensions {
-				r, _, openErr := b.Open(c.Request().Context(), plugin.VideoKey(videoID, videoID+".video"+ext))
-				if openErr == nil {
-					videoPath = videoID + ".video" + ext
-					f = r
-					break
-				}
-			}
-		}
-		if f == nil {
-			dir, err := fileserver.GetVideoDirForID(c.Request().Context(), videoID)
-			if err != nil {
-				return err
-			}
-			for _, ext := range VideoExtensions {
-				p := filepath.Join(dir, videoID+".video"+ext)
-				fh, openErr := os.Open(p)
-				if openErr == nil {
-					videoPath = p
-					f = fh
-					break
-				}
-			}
-		}
-		if f == nil {
+		keys := streamKeys(videoID, stored)
+		u, r, name, err := fileserver.OpenOrRedirect(c.Request().Context(), plugin.Blobs(), keys)
+		if err != nil {
 			return c.String(404, "video file not available")
 		}
-		defer f.Close()
-
-		// Detect content type
-		ext := filepath.Ext(videoPath)
+		if u != "" {
+			return c.Redirect(http.StatusFound, u)
+		}
+		defer r.Close()
+		ext := filepath.Ext(name)
 		contentType := "video/mp4"
 		switch ext {
 		case ".webm":
@@ -83,30 +56,77 @@ func HandleStream(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Hand
 		case ".mkv":
 			contentType = "video/x-matroska"
 		}
-
 		c.Response().Header().Set("Content-Type", contentType)
 		c.Response().Header().Set("Cache-Control", "private, no-cache")
 		c.Response().Header().Set("Accept-Ranges", "bytes")
-
-		http.ServeContent(c.Response(), c.Request(), filepath.Base(videoPath), time.Time{}, f)
+		http.ServeContent(c.Response(), c.Request(), filepath.Base(name), time.Time{}, r)
 		return nil
 	}
 }
 
-// blobKey turns a stored video_path into a Blob key when it isn't a filesystem path.
+func streamKeys(videoID, storedPath string) []string {
+	var keys []string
+	seen := map[string]bool{}
+	add := func(k string) {
+		if k == "" || seen[k] {
+			return
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	add(blobKey(storedPath, videoID))
+	if key := localStoredKey(storedPath, videoID); key != "" {
+		add(key)
+	}
+	for _, k := range plugin.MasterKeys(videoID) {
+		add(k)
+	}
+	return keys
+}
+
+// localStoredKey maps legacy absolute filesystem paths back to the current
+// blob key when the local object really exists. Leading slash keys remain
+// valid remote object keys and are therefore kept as the first candidate.
+func localStoredKey(stored, videoID string) string {
+	if strings.TrimSpace(stored) == "" || strings.TrimSpace(videoID) == "" {
+		return ""
+	}
+	if !filepath.IsAbs(stored) && filepath.VolumeName(stored) == "" {
+		return ""
+	}
+	base := filepath.Base(filepath.Clean(stored))
+	if base == "" || base == "." || base == string(filepath.Separator) {
+		return ""
+	}
+	b := plugin.Blobs()
+	if b == nil {
+		return ""
+	}
+	key := plugin.VideoKey(videoID, base)
+	p, ok := b.LocalPath(key)
+	if !ok {
+		return ""
+	}
+	if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() {
+		return ""
+	}
+	return key
+}
+
+// blobKey turns a stored video_path into a Blob key.
 func blobKey(stored, videoID string) string {
 	s := strings.TrimSpace(stored)
 	if s == "" {
 		return ""
 	}
-	if strings.Contains(s, string(filepath.Separator)) && (strings.HasPrefix(s, "/") || len(filepath.VolumeName(s)) > 0) {
+	if vol := filepath.VolumeName(s); vol != "" {
 		base := filepath.Base(s)
 		if base != "" && videoID != "" {
 			return plugin.VideoKey(videoID, base)
 		}
 		return ""
 	}
-	return strings.TrimPrefix(s, "/")
+	return s
 }
 
 // HandleThumbnail serves the video thumbnail.

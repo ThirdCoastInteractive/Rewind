@@ -31,6 +31,14 @@ type Config struct {
 	TURNUrls     string `mapstructure:"TURN_URLS"`
 	TURNUsername string `mapstructure:"TURN_USERNAME"`
 	TURNPassword string `mapstructure:"TURN_PASSWORD"`
+	// SFUTurnTLSOnly restricts only the SFU's own ICE agent to TURN-over-TLS
+	// on port 443 and relay candidates. Browser ICE configuration is unchanged.
+	SFUTurnTLSOnly bool `mapstructure:"SFU_TURN_TLS_ONLY"`
+	// CFTurnKeyID and CFTurnAPIToken are server-only credentials used to mint
+	// short-lived Cloudflare TURN credentials. They are optional when static
+	// STUN/TURN configuration is in use.
+	CFTurnKeyID    string `mapstructure:"CF_TURN_KEY_ID"`
+	CFTurnAPIToken string `mapstructure:"CF_TURN_API_TOKEN"`
 }
 
 // use reflect to bind environment variables based on mapstructure tags

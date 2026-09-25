@@ -11,13 +11,14 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/shownote"
 )
 
 // canEditShowNote reports whether the user may edit the show note: the owner, or
 // a roster member with the 'owner'/'host' role.
 func canEditShowNote(ctx context.Context, dbc *db.DatabaseConnection, noteID, userID pgtype.UUID) bool {
 	q := dbc.Queries(ctx)
-	note, err := q.GetShowNote(ctx, noteID)
+	note, err := shownote.RequireTenant(ctx, dbc, noteID)
 	if err != nil {
 		return false
 	}
@@ -58,7 +59,7 @@ func requireOwner(c echo.Context, sm *auth.SessionManager, dbc *db.DatabaseConne
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
-	note, err := dbc.Queries(c.Request().Context()).GetShowNote(c.Request().Context(), noteID)
+	note, err := shownote.RequireTenant(c.Request().Context(), dbc, noteID)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, echo.NewHTTPError(404, "not found")
 	}

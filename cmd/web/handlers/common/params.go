@@ -9,6 +9,9 @@ import (
 	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
+// Private echo.Context key for ActorFrom cache (do not cache nil).
+const actorContextKey = "common.plugin.actor"
+
 // RequireUUIDParam extracts a UUID route parameter or returns a 400 error.
 func RequireUUIDParam(c echo.Context, param string) (pgtype.UUID, error) {
 	u, err := ParseUUID(c.Param(param))
@@ -34,9 +37,9 @@ func RequireSessionUser(c echo.Context, sm *auth.SessionManager) (pgtype.UUID, s
 	if err != nil {
 		return pgtype.UUID{}, "", echo.NewHTTPError(http.StatusUnauthorized)
 	}
-	if a := plugin.Auth(); a != nil {
-		actor, aerr := a.Current(c.Request())
-		if aerr != nil {
+	if plugin.Auth() != nil {
+		actor := ActorFrom(c)
+		if actor == nil {
 			return pgtype.UUID{}, "", echo.NewHTTPError(http.StatusUnauthorized)
 		}
 		if g := plugin.Guards(); g != nil && !g.Allow(c.Request().Context(), actor, plugin.ActionVideoRead, "") {
@@ -48,4 +51,49 @@ func RequireSessionUser(c echo.Context, sm *auth.SessionManager) (pgtype.UUID, s
 		return pgtype.UUID{}, "", echo.NewHTTPError(http.StatusInternalServerError, "invalid session")
 	}
 	return u, username, nil
+}
+
+// ActorFrom is the request actor. Caches on echo.Context after the first
+// plugin.Auth().Current. Nil if unauthenticated or no plugin.
+func ActorFrom(c echo.Context) *plugin.Actor {
+	if v := c.Get(actorContextKey); v != nil {
+		if a, ok := v.(*plugin.Actor); ok {
+			return a
+		}
+	}
+	a := plugin.Auth()
+	if a == nil {
+		return nil
+	}
+	actor, err := a.Current(c.Request())
+	if err != nil || actor == nil {
+		return nil
+	}
+	c.Set(actorContextKey, actor)
+	return actor
+}
+
+// ActorTenantID is plugin.Actor.TenantID, or empty for OSS / staff.
+func ActorTenantID(c echo.Context) string {
+	actor := ActorFrom(c)
+	if actor == nil {
+		return ""
+	}
+	return actor.TenantID
+}
+
+// AllowVideo is Authz.Allow for a video id. Missing guards mean OSS (allow).
+func AllowVideo(c echo.Context, action, videoID string) bool {
+	g := plugin.Guards()
+	if g == nil {
+		return true
+	}
+	if plugin.Auth() == nil {
+		return true
+	}
+	actor := ActorFrom(c)
+	if actor == nil {
+		return false
+	}
+	return g.Allow(c.Request().Context(), actor, action, videoID)
 }

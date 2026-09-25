@@ -89,6 +89,10 @@ services:
       TEXTCLS_APP_DIR: /opt/textcls
       TEXTCLS_MODEL_DIR: /models/textcls
       TEXTCLS_DEVICE: ${TEXTCLS_DEVICE:-cpu}
+      DIARIZE_URL: http://127.0.0.1:3005
+      DIARIZE_APP_DIR: /opt/diarize
+      DIARIZE_MODEL_DIR: /models/diarize
+      DIARIZE_TOKEN: ${DIARIZE_TOKEN:-${ENCRYPTION_KEY}}
       VISUAL_BACKFILL_ENABLED: ${VISUAL_BACKFILL_ENABLED:-false}
       RUNTIME_DIR: /runtime
       OLLAMA_VERSION: ${OLLAMA_VERSION:-0.33.2}
@@ -99,6 +103,7 @@ services:
       - ./bin/models/ollama:/models/ollama
       - ./bin/models/vision:/models/vision
       - ./bin/models/textcls:/models/textcls
+      - ./bin/models/diarize:/models/diarize
       - ./bin/runtime:/runtime
     depends_on:
       postgres:

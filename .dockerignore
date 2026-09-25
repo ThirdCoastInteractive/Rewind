@@ -1,5 +1,6 @@
 # Ignore version control
 .git
+.worktrees/
 .gitignore
 .claude/
 .codex/

@@ -10,10 +10,15 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
 )
+
 // HandleCropUpdate serves PUT /clips/:clipId/crops/:cropId, modifying an existing crop region.
 func HandleCropUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
+		user, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return err
+		}
 		clipIDStr := c.Param("clipId")
 		cropID := c.Param("cropId")
 		clipUUID, err := common.RequireUUIDParam(c, "clipId")
@@ -25,6 +30,9 @@ func HandleCropUpdate(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		clip, err := q.GetClip(ctx, clipUUID)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusNotFound, "Clip not found")
+		}
+		if err := requireClipMutate(c, sm, q, clip, user); err != nil {
+			return err
 		}
 
 		var req struct {

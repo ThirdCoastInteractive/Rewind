@@ -11,6 +11,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/topics"
+	"thirdcoast.systems/rewind/internal/wiki"
 )
 
 // WikiStore is the vault surface MCP tools call. Satisfied by internal/wiki at merge.
@@ -231,7 +232,7 @@ func listTopicWindowsMCP(dbc *db.DatabaseConnection) func(context.Context, *mcps
 			return nil, nil, fmt.Errorf("slug or query is required")
 		}
 		rows, err := dbc.Queries(ctx).SearchTopicWindows(ctx, &db.SearchTopicWindowsParams{
-			Query: q, AliasNorm: topics.Normalize(q), PageLimit: limit,
+			TenantID: wiki.TenantFromContext(ctx), Query: q, AliasNorm: topics.Normalize(q), PageLimit: limit,
 		})
 		if err != nil {
 			return nil, nil, err

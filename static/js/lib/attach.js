@@ -14,7 +14,7 @@ export const AttachMixin = {
   _attachVideoListeners() {
     if (!this.video) return;
 
-    this.video.addEventListener('loadedmetadata', () => {
+    const onLoadedMetadata = () => {
       this.duration = this.video.duration;
       this.overviewStart = 0;
       this.overviewEnd = this.duration;
@@ -25,7 +25,12 @@ export const AttachMixin = {
         this.workHeadTime = 0;
       }
       this.render();
-    });
+      this.updateTransportTime();
+    };
+    this.video.addEventListener('loadedmetadata', onLoadedMetadata);
+    if (this.video.readyState >= 1 && isFiniteNumber(this.video.duration) && this.video.duration > 0) {
+      onLoadedMetadata();
+    }
 
     this.video.addEventListener('timeupdate', () => {
       this.renderPlayheads();

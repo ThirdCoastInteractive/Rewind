@@ -17,6 +17,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/contextwindow"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // streamsManifest mirrors the ingest service's StreamsManifest type.
@@ -81,8 +82,7 @@ func HandleVideoDetailPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) 
 		if err != nil {
 			return err
 		}
-
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
 		if err != nil || videoRow == nil {
 			return c.String(404, "video not found")
 		}

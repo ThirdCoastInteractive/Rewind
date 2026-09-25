@@ -1,17 +1,16 @@
 package video_api
 
 import (
-	"errors"
 	"log/slog"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/starfederation/datastar-go/datastar"
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/cmd/web/templates"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // validAssetScopes are the individual asset types that can be regenerated.
@@ -48,14 +47,8 @@ func HandleRegenerateAssets(sm *auth.SessionManager, dbc *db.DatabaseConnection)
 			assetScope = &raw
 		}
 
-		// Verify the video exists
-		_, err = dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return c.String(404, "video not found")
-			}
-			slog.Error("failed to fetch video for asset regeneration", "error", err, "video_id", videoUUID)
-			return c.String(500, "failed to fetch video")
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoWrite); err != nil {
+			return err
 		}
 
 		// Create a special ingest job that will regenerate assets.

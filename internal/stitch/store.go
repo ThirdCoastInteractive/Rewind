@@ -90,11 +90,10 @@ func hashRequest(value any) (string, []byte, error) {
 }
 
 func (s *Store) snapshot(ctx context.Context, tx pgx.Tx, owner, project pgtype.UUID, lock bool) (Snapshot, []pgtype.UUID, []pgtype.UUID, error) {
-	q := `SELECT id, revision, editor_enabled, document, undo_stack, redo_stack, description, tags FROM stitch_projects WHERE id=$1`
-	args := []any{project}
+	q := `SELECT id, revision, editor_enabled, document, undo_stack, redo_stack, description, tags FROM stitch_projects WHERE id=$1 AND created_by=$2`
+	args := []any{project, owner}
 	if lock {
-		q += ` AND created_by=$2 FOR UPDATE`
-		args = append(args, owner)
+		q += ` FOR UPDATE`
 	}
 	var id pgtype.UUID
 	var rev int64
@@ -284,6 +283,14 @@ func (s *Store) commit(ctx context.Context, owner, project pgtype.UUID, expected
 	if snap.Revision != expected {
 		return Result{}, &ConflictError{CurrentRevision: snap.Revision}
 	}
+	// Re-check persisted sources inside the write transaction before any
+	// import operation reads transcripts or other source metadata. This keeps
+	// MCP/direct store callers subject to the same Live workspace boundary as
+	// HTTP handlers, including sources moved after the last edit.
+	snap.Document, err = validateSources(ctx, tx, owner, snap.Document)
+	if err != nil {
+		return Result{}, err
+	}
 	for _, op := range ops {
 		if op.Type == "insert_segment" && op.Segment != nil && len(op.Segment.Legacy) > 0 {
 			var raw map[string]json.RawMessage
@@ -379,8 +386,10 @@ func (s *Store) History(ctx context.Context, ownerID, projectID pgtype.UUID, aft
 	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
+	// Projects are owner-only; the edit log carries titles and operations, so
+	// it follows the same rule as the document.
 	var exists bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stitch_projects WHERE id=$1)`, projectID).Scan(&exists); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stitch_projects WHERE id=$1 AND created_by=$2)`, projectID, ownerID).Scan(&exists); err != nil {
 		return nil, err
 	}
 	if !exists {

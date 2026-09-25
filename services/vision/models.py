@@ -65,6 +65,10 @@ def install(name):
         url = f"https://huggingface.co/immich-app/{name}/resolve/{spec['revision']}/{file}"
         fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=".install-")
         try:
+            # The installer may run as root while the vision service runs as
+            # an unprivileged user. Publish public model artifacts as
+            # world-readable files before the atomic rename.
+            os.fchmod(fd, 0o644)
             with os.fdopen(fd, "wb") as out, urllib.request.urlopen(url, timeout=120) as source:
                 while block := source.read(1024 * 1024):
                     out.write(block)
@@ -76,6 +80,7 @@ def install(name):
     manifest["fingerprint"] = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
     temporary = directory / "manifest.json.new"
     temporary.write_text(json.dumps(manifest, indent=2))
+    temporary.chmod(0o644)
     os.replace(temporary, directory / "manifest.json")
     return manifest
 

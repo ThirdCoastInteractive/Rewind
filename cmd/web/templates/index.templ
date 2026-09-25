@@ -18,35 +18,54 @@ templ Index(username string) {
 templ IndexContent() {
 	{{ accessLevel, _ := ctx.Value(ctxkeys.AccessLevel).(string) }}
 	{{ registrationEnabled, _ := ctx.Value(ctxkeys.RegistrationEnabled).(bool) }}
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
 	@Container("") {
 		<div class="mb-6 border-b-2 border-white/10 pb-4">
 			<h1 class="page-heading tracking-tight mb-1">
-				REWIND
+				if liveProduct {
+					REWIND LIVE
+				} else {
+					REWIND
+				}
 			</h1>
 			<p class="font-mono text-xs text-white/60 max-w-3xl">
-				Your archive at a glance.
+				if liveProduct {
+					Stream everywhere. Archive everything. Clip without downloads.
+				} else {
+					Your archive at a glance.
+				}
 			</p>
 		</div>
+		if liveProduct && accessLevel == "unauthenticated" {
+			<div class="flex gap-3 mb-8">
+				<a href="/login" class="px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80">Log in</a>
+				if registrationEnabled {
+					<a href="/register" class="px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40">Create account</a>
+				}
+			</div>
+		}
 		if accessLevel != "unauthenticated" {
-			<!-- Archive a URL (video, playlist, or channel) -->
-			<form method="post" action="/archive" class="mb-8">
-				<label class="block font-mono text-xs uppercase tracking-wider text-white/40 mb-2">Archive a video, playlist, or channel</label>
-				<div class="flex gap-2">
-					<input
-						type="url"
-						name="url"
-						required
-						placeholder="https://youtube.com/watch?v=…  ·  /playlist?list=…  ·  /@channel"
-						class="flex-1 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
-					/>
-					<button type="submit" class="px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80 transition-colors">
-						Archive
-					</button>
-				</div>
-				<p class="font-mono text-xs text-white/30 mt-1">
-					Playlist or channel URLs batch-archive every video; already-archived videos are skipped.
-				</p>
-			</form>
+			if !liveProduct {
+				<!-- Archive a URL (video, playlist, or channel) -->
+				<form method="post" action="/archive" class="mb-8">
+					<label class="block font-mono text-xs uppercase tracking-wider text-white/40 mb-2">Archive a video, playlist, or channel</label>
+					<div class="flex gap-2">
+						<input
+							type="url"
+							name="url"
+							required
+							placeholder="https://youtube.com/watch?v=…  ·  /playlist?list=…  ·  /@channel"
+							class="flex-1 px-3 py-2 text-sm font-mono border-2 bg-black text-white border-white/20 focus:border-white/40 outline-none"
+						/>
+						<button type="submit" class="px-4 py-2 text-xs font-mono uppercase tracking-wider border-2 border-white/40 bg-white text-black hover:bg-white/80 transition-colors">
+							Archive
+						</button>
+					</div>
+					<p class="font-mono text-xs text-white/30 mt-1">
+						Playlist or channel URLs batch-archive every video; already-archived videos are skipped.
+					</p>
+				</form>
+			}
 			<!-- Stats row -->
 			<div
 				id="home-stats"
@@ -130,7 +149,7 @@ templ IndexContent() {
 					}
 				</div>
 			</div>
-		} else {
+		} else if !liveProduct {
 			@components.Card(false) {
 				@components.CardBody(true) {
 					<div class="text-center py-6">

@@ -6,6 +6,7 @@ import (
 	"thirdcoast.systems/rewind/cmd/web/auth"
 	"thirdcoast.systems/rewind/cmd/web/handlers/common"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleClips returns clips for a video.
@@ -20,9 +21,8 @@ func HandleClips(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 			return err
 		}
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
-		if err != nil || videoRow == nil {
-			return c.String(404, "video not found")
+		if _, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead); err != nil {
+			return err
 		}
 
 		clips, err := dbc.Queries(c.Request().Context()).ListClipsByVideo(c.Request().Context(), videoUUID)

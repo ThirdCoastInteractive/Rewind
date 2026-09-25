@@ -23,13 +23,13 @@ func wikiStore(dbc *db.DatabaseConnection) *wiki.Store {
 
 // HandleWikiIndex serves GET /wiki — trees, recent pages, search box.
 func HandleWikiIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
-	store := wikiStore(dbc)
 	return func(c echo.Context) error {
 		_, username, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.Redirect(http.StatusFound, "/login")
 		}
 		ctx := c.Request().Context()
+		store := wiki.NewForContext(dbc, ctx)
 		q := strings.TrimSpace(c.QueryParam("q"))
 		var recent []wiki.Page
 		var hits []wiki.SearchHit
@@ -65,12 +65,12 @@ func HandleWikiIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.H
 // HandleWikiPage serves GET /wiki/:tree/* for show, edit, and history.
 // Nested slugs use Echo's * catch-all (e.g. ben-avery/2026-09-03/edit).
 func HandleWikiPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
-	store := wikiStore(dbc)
 	return func(c echo.Context) error {
 		_, username, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.Redirect(http.StatusFound, "/login")
 		}
+		store := wiki.NewForContext(dbc, c.Request().Context())
 		tree := c.Param("tree")
 		if !wiki.ValidTree(tree) {
 			return echo.NewHTTPError(http.StatusNotFound, "unknown wiki tree")
@@ -101,12 +101,13 @@ func HandleWikiPage(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Ha
 
 // HandleWikiSave serves POST /wiki/save — put page with revision check.
 func HandleWikiSave(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
-	store := wikiStore(dbc)
 	return func(c echo.Context) error {
 		userID, username, err := common.RequireSessionUser(c, sm)
 		if err != nil {
 			return c.Redirect(http.StatusFound, "/login")
 		}
+		ctx := c.Request().Context()
+		store := wiki.NewForContext(dbc, ctx)
 		tree := strings.TrimSpace(c.FormValue("tree"))
 		slug := wiki.NormalizeSlug(c.FormValue("slug"))
 		title := strings.TrimSpace(c.FormValue("title"))
@@ -119,7 +120,6 @@ func HandleWikiSave(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Ha
 		if title == "" || summary == "" {
 			return renderWikiEdit(c, store, username, tree, slug, "Title and summary are required.", expected)
 		}
-		ctx := c.Request().Context()
 		page, err := store.Put(ctx, wiki.PutInput{
 			Tree:             tree,
 			Slug:             slug,

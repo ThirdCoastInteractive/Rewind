@@ -48,6 +48,9 @@ func HandleEnqueueExport(sm *auth.SessionManager, dbc *db.DatabaseConnection) ec
 		if err != nil || clipRow == nil {
 			return c.String(404, "clip not found")
 		}
+		if err := requireClipMutate(c, sm, q, clipRow, userUUID); err != nil {
+			return err
+		}
 
 		clipIDStr := clipRow.ID.String()
 

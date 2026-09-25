@@ -33,8 +33,8 @@ export class SeekThumbnails {
     this._pendingKind = null;
     this._pendingEvt = null;
 
-    // Filmstrip render sequence counter (cancels stale async renders)
-    this._renderSeq = 0;
+    // Filmstrip render sequence counters (cancels stale async renders per row)
+    this._renderSeqByKind = new Map();
   }
 
   // ---------------------------------------------------------------------------
@@ -183,9 +183,10 @@ export class SeekThumbnails {
     const levelName = (lvl?.name || '').toString();
     if (!levelName) return;
 
-    const seq = ++this._renderSeq;
+    const seq = (this._renderSeqByKind.get(kind) || 0) + 1;
+    this._renderSeqByKind.set(kind, seq);
     const cues = await this.ensureVttLoaded(levelName);
-    if (seq !== this._renderSeq) return;
+    if (seq !== this._renderSeqByKind.get(kind)) return;
     if (!cues || cues.length === 0) return;
 
     const interval = Number(lvl?.interval_seconds);

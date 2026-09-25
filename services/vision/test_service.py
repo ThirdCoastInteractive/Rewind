@@ -1,10 +1,13 @@
 from io import BytesIO
 import json
 import numpy as np
+import os
 from PIL import Image
+import stat
 from fastapi.testclient import TestClient
 import app
 from inference import array_string
+import models
 
 client = TestClient(app.app)
 
@@ -46,3 +49,32 @@ def test_face_tasks_and_models_are_removed():
         'text': 'test'
     })
     assert response.status_code == 422
+
+def test_install_publishes_runtime_readable_files(monkeypatch, tmp_path):
+    class FakeResponse:
+        def __init__(self):
+            self.sent = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, _size):
+            if self.sent:
+                return b''
+            self.sent = True
+            return b'model'
+
+    monkeypatch.setattr(models, 'ROOT', tmp_path)
+    monkeypatch.setattr(models.urllib.request, 'urlopen', lambda *args, **kwargs: FakeResponse())
+    original_umask = os.umask(0o077)
+    try:
+        models.install('ViT-B-32__openai')
+    finally:
+        os.umask(original_umask)
+
+    directory = tmp_path / 'ViT-B-32__openai'
+    for relative in [*models.MODELS['ViT-B-32__openai']['files'], 'manifest.json']:
+        assert stat.S_IMODE((directory / relative).stat().st_mode) == 0o644

@@ -12,10 +12,6 @@ import (
 	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
-func pluginauth() plugin.Authn {
-	return plugin.Auth()
-}
-
 const (
 	// SessionName is the cookie name used to store the user session.
 	SessionName = "rewind_session"
@@ -123,7 +119,7 @@ func (sm *SessionManager) ReadCookie(r *http.Request) (userID, username string, 
 // GetSession returns the current user through plugin.Auth when registered,
 // otherwise the session cookie (tests that never call plugin.Use).
 func (sm *SessionManager) GetSession(r *http.Request) (userID, username string, err error) {
-	if a := pluginauth(); a != nil {
+	if a := plugin.Auth(); a != nil {
 		actor, err := a.Current(r)
 		if err != nil || actor == nil {
 			return "", "", ErrNotAuthenticated
@@ -136,7 +132,7 @@ func (sm *SessionManager) GetSession(r *http.Request) (userID, username string, 
 
 // GetAccessLevel reads authorization through plugin.Auth roles when registered.
 func (sm *SessionManager) GetAccessLevel(r *http.Request) AccessLevel {
-	if a := pluginauth(); a != nil {
+	if a := plugin.Auth(); a != nil {
 		actor, err := a.Current(r)
 		if err != nil || actor == nil {
 			return AccessUnauthenticated

@@ -35,21 +35,25 @@ var thumbnailVariants = []thumbnailVariant{
 	{Label: "2xl", MaxWidth: 1536},
 }
 
-func generateThumbnail(ctx context.Context, videoPath string) (string, error) {
-	if strings.TrimSpace(videoPath) == "" {
+func generateThumbnail(ctx context.Context, ffmpegSrc, videoDir, videoID string) (string, error) {
+	if strings.TrimSpace(ffmpegSrc) == "" {
 		return "", errors.New("missing video path")
 	}
-	videoID := filepath.Base(filepath.Dir(videoPath))
-	videoDir := filepath.Dir(videoPath)
+	if strings.TrimSpace(videoID) == "" {
+		videoID = filepath.Base(videoDir)
+	}
+	if strings.TrimSpace(videoDir) == "" {
+		return "", errors.New("missing video dir")
+	}
 	legacy := filepath.Join(videoDir, videoID+".thumbnail.jpg")
 	if _, err := os.Stat(legacy); err == nil {
 		if ok := thumbnailIsAcceptable(legacy, maxThumbnailWidth()); ok {
-			ensureThumbnailVariants(ctx, videoPath, videoID)
+			ensureThumbnailVariants(ctx, ffmpegSrc, videoDir, videoID)
 			return legacy, nil
 		}
 	}
 
-	if err := ensureThumbnailVariants(ctx, videoPath, videoID); err != nil {
+	if err := ensureThumbnailVariants(ctx, ffmpegSrc, videoDir, videoID); err != nil {
 		return "", err
 	}
 
@@ -62,12 +66,22 @@ func generateThumbnail(ctx context.Context, videoPath string) (string, error) {
 	return "", fmt.Errorf("thumbnail missing after generation")
 }
 
-func generateThumbnailVariant(ctx context.Context, videoPath, out string, maxWidth int) error {
-	result := ffmpeg.ExtractThumbnail(ctx, videoPath, out, &ffmpeg.ThumbnailOptions{
-		Offset:   5 * time.Second,
-		MaxWidth: maxWidth,
-		Quality:  4,
-	})
+func generateThumbnailVariant(ctx context.Context, ffmpegSrc, out string, maxWidth int) error {
+	var result ffmpeg.RunResult
+	if strings.EqualFold(filepath.Ext(ffmpegSrc), ".jpg") {
+		result = ffmpeg.RunCapture(ctx, ffmpegSrc, out,
+			ffmpeg.ScaleWidth(maxWidth),
+			ffmpeg.Frames(1),
+			ffmpeg.Quality(4),
+			ffmpeg.SingleImage(),
+		)
+	} else {
+		result = ffmpeg.ExtractThumbnail(ctx, ffmpegSrc, out, &ffmpeg.ThumbnailOptions{
+			Offset:   5 * time.Second,
+			MaxWidth: maxWidth,
+			Quality:  4,
+		})
+	}
 	if result.Logs != "" {
 		slog.Info("ffmpeg thumbnail output", "output", out, "logs", result.Logs)
 	}
@@ -78,19 +92,29 @@ func generateThumbnailVariant(ctx context.Context, videoPath, out string, maxWid
 	return nil
 }
 
-func ensureThumbnailVariants(ctx context.Context, videoPath, videoID string) error {
+func ensureThumbnailVariants(ctx context.Context, ffmpegSrc, videoDir, videoID string) error {
 	if strings.TrimSpace(videoID) == "" {
 		return errors.New("missing video id")
 	}
-	videoDir := filepath.Dir(videoPath)
-	for _, variant := range thumbnailVariants {
-		path := thumbnailVariantPath(videoDir, videoID, variant.Label)
-		if _, err := os.Stat(path); err == nil {
-			if ok := thumbnailIsAcceptable(path, variant.MaxWidth); ok {
-				continue
-			}
+	if strings.TrimSpace(videoDir) == "" {
+		return errors.New("missing video dir")
+	}
+	sourceLabel := thumbnailVariants[len(thumbnailVariants)-1].Label
+	sourcePath := thumbnailVariantPath(videoDir, videoID, sourceLabel)
+	if !thumbnailIsAcceptable(sourcePath, thumbnailVariants[len(thumbnailVariants)-1].MaxWidth) {
+		if err := generateThumbnailVariant(ctx, ffmpegSrc, sourcePath, thumbnailVariants[len(thumbnailVariants)-1].MaxWidth); err != nil {
+			return err
 		}
-		if err := generateThumbnailVariant(ctx, videoPath, path, variant.MaxWidth); err != nil {
+	}
+	for _, variant := range thumbnailVariants {
+		if variant.Label == sourceLabel {
+			continue
+		}
+		path := thumbnailVariantPath(videoDir, videoID, variant.Label)
+		if thumbnailIsAcceptable(path, variant.MaxWidth) {
+			continue
+		}
+		if err := generateThumbnailVariant(ctx, sourcePath, path, variant.MaxWidth); err != nil {
 			return err
 		}
 	}

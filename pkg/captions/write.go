@@ -17,7 +17,7 @@ func CuesFromStoredTranscript(cuesJSON []byte, raw string) ([]Cue, error) {
 	var cues []Cue
 	if len(cuesJSON) > 0 && string(cuesJSON) != "null" {
 		if err := json.Unmarshal(cuesJSON, &cues); err == nil && len(cues) > 0 {
-			return cues, nil
+			return ReadableLines(cues), nil
 		}
 	}
 	if strings.TrimSpace(raw) == "" {
@@ -30,7 +30,7 @@ func CuesFromStoredTranscript(cuesJSON []byte, raw string) ([]Cue, error) {
 	if len(doc.Cues) == 0 {
 		return nil, fmt.Errorf("stored transcript has no timed cues")
 	}
-	return doc.Cues, nil
+	return ReadableLines(doc.Cues), nil
 }
 
 // WriteVTTFile atomically writes a canonical WebVTT sidecar.

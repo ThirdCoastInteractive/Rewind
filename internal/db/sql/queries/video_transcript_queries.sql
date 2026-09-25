@@ -52,6 +52,7 @@ WHERE sqlc.arg(tsquery)::text <> ''
   AND (sqlc.narg('uploader')::text IS NULL OR v.uploader = sqlc.narg('uploader'))
   AND (sqlc.narg('creator_id')::uuid IS NULL OR ch.creator_id = sqlc.narg('creator_id'))
   AND (sqlc.narg('channel_id')::uuid IS NULL OR ch.id = sqlc.narg('channel_id'))
+  AND (sqlc.narg('tenant_id')::uuid IS NULL OR v.tenant_id = sqlc.narg('tenant_id'))
 ORDER BY rank DESC,vt.video_id,vt.lang
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 

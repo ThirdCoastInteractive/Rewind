@@ -47,6 +47,9 @@ func HandleIndex(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Handl
 		if err != nil {
 			return c.String(401, "unauthorized")
 		}
+		if common.DenyUnscopedLibrary(c) {
+			return c.String(403, "forbidden")
+		}
 
 		signals := &videosListSignals{}
 		if err := datastar.ReadSignals(c.Request(), signals); err != nil {
@@ -160,6 +163,7 @@ func patchVideosList(c echo.Context, dbc *db.DatabaseConnection, sse *datastar.S
 			PageOffset:       p.Offset(),
 			PageLimit:        int32(p.PageSize),
 		}
+		common.WithActorTenant(c, dbParams)
 		rows, err := dbc.Queries(ctx).ListVideosPaginated(ctx, dbParams)
 		if err != nil {
 			slog.Error("failed to fetch videos", "error", err)

@@ -14,6 +14,7 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/internal/sponsorblock"
 	"thirdcoast.systems/rewind/internal/videoid"
+	"thirdcoast.systems/rewind/pkg/plugin"
 )
 
 // HandleMarkers returns markers for a video including SponsorBlock segments.
@@ -28,9 +29,9 @@ func HandleMarkers(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.Han
 			return err
 		}
 
-		videoRow, err := dbc.Queries(c.Request().Context()).GetVideoByID(c.Request().Context(), videoUUID)
-		if err != nil || videoRow == nil {
-			return c.String(404, "video not found")
+		videoRow, err := common.RequireVideo(c, dbc.Queries(c.Request().Context()), videoUUID, plugin.ActionVideoRead)
+		if err != nil {
+			return err
 		}
 
 		markers, err := dbc.Queries(c.Request().Context()).ListMarkersByVideo(c.Request().Context(), videoUUID)

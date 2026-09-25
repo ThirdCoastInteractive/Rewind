@@ -71,7 +71,11 @@
   }
 
   .video-card-title {
-    @apply text-sm font-mono text-white mb-1 truncate group-hover:text-white/80 transition-colors;
+    @apply text-sm font-mono text-white mb-1 truncate transition-colors;
+  }
+
+  .video-card:hover .video-card-title {
+    @apply text-white/80;
   }
 
   .video-card-skeleton {

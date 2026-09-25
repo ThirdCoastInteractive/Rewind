@@ -1,22 +1,30 @@
 package templates
 
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 import "thirdcoast.systems/rewind/cmd/web/templates/components"
 
 templ CutTopBar(video VideoDetail) {
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	{{ recordingsLabel := "ALL VIDEOS" }}
+	if liveProduct {
+		{{ recordingsLabel = "RECORDINGS" }}
+	}
 	@components.EditorToolbar("/videos/"+video.ID, "BACK TO WATCH", "", "", "") {
 		@components.LinkButton("/videos", "ghost", "sm", "list", false) {
-			ALL VIDEOS
+			{ recordingsLabel }
 		}
 	}
 }
 
 templ CutVideoPane(video VideoDetail) {
-	<div class="flex-1 min-h-0 relative bg-black border-2 border-white/10">
+	{{ liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool) }}
+	<div class="flex-1 min-h-64 aspect-video md:aspect-auto md:min-h-0 relative bg-black border-2 border-white/10">
 		<video
 			id="cutVideoPlayer"
 			class="absolute inset-0 w-full h-full object-contain"
 			preload="metadata"
 			playsinline
+			data-remote-master={ map[bool]string{true: "1", false: "0"}[liveProduct] }
 		>
 			<source src={ "/api/videos/" + video.ID + "/stream" } type="video/mp4"/>
 			<track kind="subtitles" src={ "/api/videos/" + video.ID + "/captions.vtt" } srclang="en" label="English" default/>

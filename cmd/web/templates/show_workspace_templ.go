@@ -9,6 +9,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import "fmt"
+import "thirdcoast.systems/rewind/cmd/web/ctxkeys"
 
 func workspacePanelURL(noteID string, panel string) string {
 	url := "/show-notes/" + noteID + "/panel/" + panel
@@ -53,7 +54,7 @@ func workspacePanelHeader(title string, noteID string, panel string) templ.Compo
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 22, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 23, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -66,7 +67,7 @@ func workspacePanelHeader(title string, noteID string, panel string) templ.Compo
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(workspacePanelURL(noteID, panel)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 23, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 24, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -101,6 +102,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		liveProduct, _ := ctx.Value(ctxkeys.LiveProduct).(bool)
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"show-workspace flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden\" data-show-workspace data-note-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -108,7 +110,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 33, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 35, Col: 24}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -121,7 +123,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.UserID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 34, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 36, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -134,7 +136,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Username)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 35, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 37, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -147,7 +149,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Role)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 36, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 38, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
@@ -160,101 +162,114 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Panel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 37, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 39, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-signals=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-live=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{_pLive:%t,_pCode:'%s',screenSharing:false,programOn:false,programVideoId:'',autoAdvance:false,videoPaused:false,videoVolume:1,videoMuted:false,videoLoop:false,videoT:0,videoDur:0,_contentState:''}", data.IsLive, data.Code))
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(liveProduct))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 38, Col: 253}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 40, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-init=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-signals=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/show-notes/%s/producer/stream', {openWhenHidden:true}); @get('/api/show-notes/%s/scene/stream', {openWhenHidden:true})", data.ID, data.ID))
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("{_pLive:%t,_pCode:'%s',screenSharing:false,programOn:false,programVideoId:'',autoAdvance:false,videoPaused:false,videoVolume:1,videoMuted:false,videoLoop:false,videoT:0,videoDur:0,_contentState:''}", data.IsLive, data.Code))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 39, Col: 176}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 41, Col: 253}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><div class=\"shrink-0 flex items-center gap-2 border border-white/10 bg-neutral-950 px-2 py-1.5\"><a href=\"/show-notes\" class=\"text-white/35 hover:text-white text-xs\"><i class=\"fa-sharp fa-solid fa-arrow-left\" aria-hidden=\"true\"></i></a> <input class=\"min-w-0 flex-1 bg-transparent text-sm text-white outline-none\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-init=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Title)
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/show-notes/%s/producer/stream', {openWhenHidden:true}); @get('/api/show-notes/%s/scene/stream', {openWhenHidden:true})", data.ID, data.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 45, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 42, Col: 176}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" aria-label=\"Show title\" data-on:change=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\"><div class=\"shrink-0 flex items-center gap-2 border border-white/10 bg-neutral-950 px-2 py-1.5\"><a href=\"/show-notes\" class=\"text-white/35 hover:text-white text-xs\"><i class=\"fa-sharp fa-solid fa-arrow-left\" aria-hidden=\"true\"></i></a> <input class=\"min-w-0 flex-1 bg-transparent text-sm text-white outline-none\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@put('/api/show-notes/%s', {payload:{title:evt.target.value}})", data.ID))
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 47, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 48, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"><div class=\"hidden sm:flex gap-1\"><button type=\"button\" data-layout=\"planning\" class=\"btn-ghost btn-sm\">Planning</button> <button type=\"button\" data-layout=\"recording\" class=\"btn-ghost btn-sm\">Recording</button> <button type=\"button\" data-layout=\"directing\" class=\"btn-ghost btn-sm\">Directing</button></div><span data-collab-status class=\"text-xs text-white/35 uppercase\">Connecting</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" aria-label=\"Show title\" data-on:change=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@put('/api/show-notes/%s', {payload:{title:evt.target.value}})", data.ID))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 50, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"><div class=\"hidden sm:flex gap-1\"><button type=\"button\" data-layout=\"planning\" class=\"btn-ghost btn-sm\">Planning</button> <button type=\"button\" data-layout=\"recording\" class=\"btn-ghost btn-sm\">Recording</button> <button type=\"button\" data-layout=\"directing\" class=\"btn-ghost btn-sm\">Directing</button></div><span data-collab-status class=\"text-xs text-white/35 uppercase\">Connecting</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.Role != "viewer" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button type=\"button\" class=\"px-2 py-1 text-xs border border-green-500/50 text-green-400\" data-show=\"!$_pLive\" data-on:click=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/show-notes/%s/live')", data.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 56, Col: 187}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">Go live</button> <button type=\"button\" class=\"px-2 py-1 text-xs border border-red-500/50 text-red-400\" data-show=\"$_pLive\" data-on:click=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button type=\"button\" class=\"px-2 py-1 text-xs border border-green-500/50 text-green-400\" data-show=\"!$_pLive\" data-on:click=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/show-notes/%s/offline')", data.ID))
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/show-notes/%s/live')", data.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 57, Col: 185}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 59, Col: 187}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">End live</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">Go live</button> <button type=\"button\" class=\"px-2 py-1 text-xs border border-red-500/50 text-red-400\" data-show=\"$_pLive\" data-on:click=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@post('/api/show-notes/%s/offline')", data.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 60, Col: 185}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">End live</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"show-workspace-grid\"><section class=\"workspace-panel\" data-workspace-panel=\"notes\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><div class=\"show-workspace-grid\"><section class=\"workspace-panel\" data-workspace-panel=\"notes\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -262,17 +277,17 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"shrink-0 flex flex-wrap items-center gap-1 border-b border-white/10 p-1.5\"><button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"# \">H1</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Video](rewind://video/) @ 0:00\">/video</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Clip](rewind://clip/) @ 0:00–0:30\">/clip</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Marker](rewind://marker/) @ 0:00\">/marker</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"> Break — \">/break</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"shrink-0 flex flex-wrap items-center gap-1 border-b border-white/10 p-1.5\"><button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"# \">H1</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Video](rewind://video/) @ 0:00\">/video</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Clip](rewind://clip/) @ 0:00–0:30\">/clip</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"- [Marker](rewind://marker/) @ 0:00\">/marker</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-command=\"> Break — \">/break</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.Role != "viewer" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<button type=\"button\" class=\"btn-ghost btn-sm\" data-selection-action=\"comment\">Comment</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-selection-action=\"ask\">Ask room</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<button type=\"button\" class=\"btn-ghost btn-sm\" data-selection-action=\"comment\">Comment</button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-selection-action=\"ask\">Ask room</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<span class=\"ml-auto text-xs text-white/25\">Markdown · type / for commands</span></div><div data-editor class=\"show-workspace-editor flex-1 min-h-0 overflow-hidden\"></div></section><section class=\"workspace-panel\" data-workspace-panel=\"room\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<span class=\"ml-auto text-xs text-white/25\">Markdown · type / for commands</span></div><div data-editor class=\"show-workspace-editor flex-1 min-h-0 overflow-hidden\"></div></section><section class=\"workspace-panel\" data-workspace-panel=\"room\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -280,7 +295,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex border-b border-white/10 text-xs uppercase tracking-wider\"><button type=\"button\" data-room-tab=\"room\" class=\"flex-1 p-2 text-white border-b border-white\">Room</button> <button type=\"button\" data-room-tab=\"review\" class=\"flex-1 p-2 text-white/35\">Review</button></div><div data-room-view=\"room\" data-room-messages class=\"flex-1 min-h-0 overflow-y-auto\"></div><div data-room-view=\"review\" data-review-threads class=\"flex-1 min-h-0 overflow-y-auto hidden\"></div><form data-room-form data-room-view=\"room\" class=\"shrink-0 border-t border-white/10 p-2 flex gap-2\"><textarea rows=\"2\" class=\"form-input flex-1 text-xs\" placeholder=\"Message the room or ask an agent…\"></textarea> <button class=\"btn-primary btn-sm\" type=\"submit\">Send</button></form></section><section class=\"workspace-panel\" data-workspace-panel=\"call\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div class=\"flex border-b border-white/10 text-xs uppercase tracking-wider\"><button type=\"button\" data-room-tab=\"room\" class=\"flex-1 p-2 text-white border-b border-white\">Room</button> <button type=\"button\" data-room-tab=\"review\" class=\"flex-1 p-2 text-white/35\">Review</button></div><div data-room-view=\"room\" data-room-messages class=\"flex-1 min-h-0 overflow-y-auto\"></div><div data-room-view=\"review\" data-review-threads class=\"flex-1 min-h-0 overflow-y-auto hidden\"></div><form data-room-form data-room-view=\"room\" class=\"shrink-0 border-t border-white/10 p-2 flex gap-2\"><textarea rows=\"2\" class=\"form-input flex-1 text-xs\" placeholder=\"Message the room or ask an agent…\"></textarea> <button class=\"btn-primary btn-sm\" type=\"submit\">Send</button></form></section><section class=\"workspace-panel\" data-workspace-panel=\"call\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -288,7 +303,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div data-call-grid class=\"relative flex-1 min-h-0 grid grid-cols-2 auto-rows-fr gap-1 p-1 bg-black\"><div data-call-idle class=\"absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black p-4 text-center\"><i class=\"fa-sharp fa-solid fa-video-slash text-2xl text-white/45\" aria-hidden=\"true\"></i><div><p data-call-state class=\"font-mono text-xs uppercase tracking-wider text-white/70\">Call is off</p><p class=\"mt-1 text-[11px] text-white/40\">Camera and microphone are not in use.</p></div><button type=\"button\" class=\"btn-primary btn-sm\" data-call-start>Start call</button></div></div><div data-call-controls hidden class=\"hidden shrink-0 flex items-center justify-center gap-2 border-t border-white/10 p-2\"><button type=\"button\" class=\"btn-ghost btn-sm\" data-call-mic title=\"Mute microphone\" aria-label=\"Mute microphone\" aria-pressed=\"false\"><i class=\"fa-sharp fa-solid fa-microphone\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-call-camera title=\"Turn off camera\" aria-label=\"Turn off camera\" aria-pressed=\"false\"><i class=\"fa-sharp fa-solid fa-video\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-call-screen title=\"Share screen\" aria-label=\"Share screen\"><i class=\"fa-sharp fa-solid fa-display\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-danger btn-sm\" data-call-leave>Leave call</button></div></section><section class=\"workspace-panel\" data-workspace-panel=\"program\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div data-call-grid class=\"relative flex-1 min-h-0 grid grid-cols-2 auto-rows-fr gap-1 p-1 bg-black\"><div data-call-idle class=\"absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black p-4 text-center\"><i class=\"fa-sharp fa-solid fa-video-slash text-2xl text-white/45\" aria-hidden=\"true\"></i><div><p data-call-state class=\"font-mono text-xs uppercase tracking-wider text-white/70\">Call is off</p><p class=\"mt-1 text-[11px] text-white/40\">Camera and microphone are not in use.</p></div><button type=\"button\" class=\"btn-primary btn-sm\" data-call-start>Start call</button></div></div><div data-call-controls hidden class=\"hidden shrink-0 flex items-center justify-center gap-2 border-t border-white/10 p-2\"><button type=\"button\" class=\"btn-ghost btn-sm\" data-call-mic title=\"Mute microphone\" aria-label=\"Mute microphone\" aria-pressed=\"false\"><i class=\"fa-sharp fa-solid fa-microphone\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-call-camera title=\"Turn off camera\" aria-label=\"Turn off camera\" aria-pressed=\"false\"><i class=\"fa-sharp fa-solid fa-video\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-ghost btn-sm\" data-call-screen title=\"Share screen\" aria-label=\"Share screen\"><i class=\"fa-sharp fa-solid fa-display\" aria-hidden=\"true\"></i></button> <button type=\"button\" class=\"btn-danger btn-sm\" data-call-leave>Leave call</button></div></section><section class=\"workspace-panel\" data-workspace-panel=\"program\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -296,7 +311,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"flex-1 min-h-0 relative bg-black overflow-hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"flex-1 min-h-0 relative bg-black overflow-hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -308,7 +323,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div></section><section class=\"workspace-panel\" data-workspace-panel=\"controls\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div></section><section class=\"workspace-panel\" data-workspace-panel=\"controls\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -316,20 +331,20 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"grid grid-cols-2 min-h-0 flex-1\"><div class=\"border-r border-white/10 p-2 overflow-y-auto\"><div class=\"text-xs text-white/35 uppercase mb-2\">Scenes & sources</div><div id=\"scene-tabs\" class=\"text-xs\"></div><div id=\"scene-sources\" class=\"text-xs mt-3\"></div><div id=\"scene-props\" class=\"text-xs mt-3\"></div></div><div class=\"p-2 overflow-y-auto\"><div class=\"text-xs text-white/35 uppercase mb-2\">Rundown</div><div data-init=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div class=\"grid grid-cols-2 min-h-0 flex-1\"><div class=\"border-r border-white/10 p-2 overflow-y-auto\"><div class=\"text-xs text-white/35 uppercase mb-2\">Scenes & sources</div><div id=\"scene-tabs\" class=\"text-xs\"></div><div id=\"scene-sources\" class=\"text-xs mt-3\"></div><div id=\"scene-props\" class=\"text-xs mt-3\"></div></div><div class=\"p-2 overflow-y-auto\"><div class=\"text-xs text-white/35 uppercase mb-2\">Rundown</div><div data-init=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/show-notes/%s/content-sources')", data.ID))
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/api/show-notes/%s/content-sources')", data.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 127, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 130, Col: 89}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -337,144 +352,131 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div></div></section></div><div id=\"webrtc-room\" class=\"hidden\" data-room=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 134, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-role=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></div></div></section></div><div id=\"webrtc-room\" class=\"hidden\" data-room=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(workspaceWebRTCRole(data.Panel))
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 134, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" data-auto-connect=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" data-role=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
-		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(data.Panel == "program" || data.Panel == "controls"))
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(workspaceWebRTCRole(data.Panel))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 134, Col: 190}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" data-user-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" data-auto-connect=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 string
-		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.UserID)
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(data.Panel == "program" || data.Panel == "controls"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 134, Col: 219}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 190}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" data-username=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" data-user-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
-		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Username)
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.UserID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 134, Col: 251}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 219}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"></div><div id=\"scene-editor-root\" class=\"hidden\" data-note-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" data-username=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var22 string
-		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ID)
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Username)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 135, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 251}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" data-client-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"></div><div id=\"scene-editor-root\" class=\"hidden\" data-note-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var23 string
-		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ClientID)
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 135, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 138, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" data-user-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" data-client-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
-		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.UserID)
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ClientID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 135, Col: 129}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 138, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" data-scene-b64=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" data-user-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
-		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.SceneB64)
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.UserID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 135, Col: 162}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 138, Col: 129}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\"></div><script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" data-scene-b64=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
-		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, sceneScript()))
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.SceneB64)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 136, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 138, Col: 162}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"></script><script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"></div><script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 string
-		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/webrtc-room.js"))
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, sceneScript()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 137, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 139, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 		if templ_7745c5c3_Err != nil {
@@ -485,9 +487,9 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var28 string
-		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/producer-scene-editor.js"))
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/webrtc-room.js"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 138, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 140, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 		if templ_7745c5c3_Err != nil {
@@ -498,15 +500,28 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var29 string
-		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/show-workspace.js"))
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/producer-scene-editor.js"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 139, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 141, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\"></script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\"></script><script src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(versionedAsset(ctx, "/static/dist/show-workspace.js"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `show_workspace.templ`, Line: 142, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\"></script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -514,7 +529,7 @@ func ShowWorkspaceContent(data ShowNoteData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

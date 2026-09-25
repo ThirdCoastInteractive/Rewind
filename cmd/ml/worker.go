@@ -91,7 +91,7 @@ func mlWorker(ctx context.Context, dbc *db.DatabaseConnection, workerID, downloa
 
 func mlJobSkipsOllama(kind string) bool {
 	switch kind {
-	case "context_windows", "visual_index", "refine_boundaries", "comment_classify", "speech_tone":
+	case "context_windows", "visual_index", "refine_boundaries", "comment_classify", "speech_tone", "diarize":
 		return true
 	default:
 		return false
@@ -129,6 +129,8 @@ func processMLJob(ctx context.Context, dbc *db.DatabaseConnection, job *db.MlJob
 		model = runtimecfg.String(ctx, "vision.clip_model")
 	case "comment_classify", "speech_tone":
 		model = runtimecfg.String(ctx, "textcls.sentiment_model")
+	case "diarize":
+		model = runtimecfg.String(ctx, "diarize.model")
 	}
 	if job.Kind == "transcribe" {
 		err = probeWhisperCLI(hctx, loadWhisperConfig(hctx))
@@ -158,6 +160,8 @@ func processMLJob(ctx context.Context, dbc *db.DatabaseConnection, job *db.MlJob
 				err = handleCommentClassify(hctx, dbc, job)
 			case "speech_tone":
 				err = handleSpeechTone(hctx, dbc, job)
+			case "diarize":
+				err = handleDiarize(hctx, dbc, job, downloadsDir)
 			default:
 				err = fmt.Errorf("unknown ml job kind %q", job.Kind)
 			}

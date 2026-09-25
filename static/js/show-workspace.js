@@ -7,6 +7,7 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap } from '@codemir
 import { markdown } from '@codemirror/lang-markdown';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
+import { parseShowNoteReference, parseTimestampCue, renderYouTubeCue, renderYouTubeEmbed } from './lib/shownote-embeds.js';
 
 const pendingReferenceActions = new Set();
 
@@ -26,14 +27,28 @@ class MediaWidget extends WidgetType {
   }
 
   eq(other) {
+    if (other.reference.kind === 'youtube' && this.reference.kind === 'youtube') {
+      return other.reference.uri === this.reference.uri &&
+        other.reference.time === this.reference.time &&
+        other.reference.sourceKey === this.reference.sourceKey &&
+        other.reference.start === this.reference.start &&
+        other.reference.end === this.reference.end &&
+        other.reference.label === this.reference.label &&
+        other.reference.isCue === this.reference.isCue;
+    }
     return other.reference.uri === this.reference.uri &&
       other.reference.time === this.reference.time &&
+      other.reference.sourceKey === this.reference.sourceKey &&
+      other.reference.start === this.reference.start &&
+      other.reference.end === this.reference.end &&
+      other.reference.label === this.reference.label &&
       other.reference.projection?.Status === this.reference.projection?.Status &&
       other.reference.projection?.Diagnostic === this.reference.projection?.Diagnostic;
   }
 
   toDOM() {
     const ref = this.reference;
+    if (ref.kind === 'youtube') return ref.isCue ? renderYouTubeCue(ref.source, ref) : renderYouTubeEmbed(ref);
     const projection = ref.projection;
     const card = document.createElement('div');
     card.className = `sn-media-card${projection?.Diagnostic ? ' has-diagnostic' : ''}`;
@@ -51,7 +66,7 @@ class MediaWidget extends WidgetType {
     if (projection?.Diagnostic?.startsWith('displayed ') && projection.ID) {
       actions.appendChild(mediaActionButton('Refresh displayed time', ref, 'refresh_time'));
       actions.appendChild(mediaActionButton('Create new object', ref, projection.Kind === 'clip' ? 'create_clip' : 'create_marker'));
-    } else if (ref.external && (!projection || projection.Status === 'unresolved')) {
+    } else if (ref.external && document.querySelector('[data-show-workspace]')?.dataset.live !== 'true' && (!projection || projection.Status === 'unresolved')) {
       const confirm = document.createElement('button');
       confirm.type = 'button';
       const pending = pendingReferenceActions.has(referenceKey(ref));
@@ -77,6 +92,10 @@ class MediaWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+
+  destroy(dom) {
+    dom?.__rewindDestroy?.();
+  }
 }
 
 function mediaActionButton(label, reference, action) {
@@ -99,51 +118,37 @@ function internalHref(ref) {
   return ref.uri;
 }
 
-function parseReference(line) {
-  const match = line.match(/^\s*(?:(?:\d+[.)]|[-+*])\s+)?\[([^\]]*)\]\(([^)\s]+)\)(.*)$/) ||
-    line.match(/^\s*(?:(?:\d+[.)]|[-+*])\s+)?(https?:\/\/\S+)(.*)$/);
-  if (!match) return null;
-  const markdownLink = match.length === 4;
-  const label = markdownLink ? match[1] : match[1];
-  const uri = markdownLink ? match[2] : match[1];
-  const suffix = markdownLink ? match[3] : match[2];
-  const internal = uri.match(/^rewind:\/\/(video|clip|marker)\/([^/]+)$/);
-  const relativeVideo = uri.match(/^\/(?:videos?|watch)\/([^/]+)/);
-  const relativeClip = uri.match(/^\/(?:clips?|videos\/[^/]+\/clips?)\/([^/]+)/);
-  const relativeMarker = uri.match(/^\/(?:markers?|videos\/[^/]+\/markers?)\/([^/]+)/);
-  let kind = 'external';
-  let id = '';
-  if (internal) [kind, id] = [internal[1], internal[2]];
-  else if (relativeClip) [kind, id] = ['clip', relativeClip[1]];
-  else if (relativeMarker) [kind, id] = ['marker', relativeMarker[1]];
-  else if (relativeVideo) [kind, id] = ['video', relativeVideo[1]];
-  const time = (suffix.match(/@\s*([^\n]+)/) || [])[1] || '';
-  return {
-    label,
-    uri,
-    time,
-    kind,
-    id,
-    external: kind === 'external',
-  };
-}
-
 const refreshPreviewEffect = StateEffect.define();
 
 function buildLivePreview(state, noteID) {
   const ranges = [];
   const active = state.doc.lineAt(state.selection.main.head).number;
+  let cueSource = null;
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const line = state.doc.line(number);
     const heading = line.text.match(/^(#{1,6})\s+/);
+    if (heading) cueSource = null;
     if (heading && line.number !== active) {
       ranges.push(Decoration.replace({}).range(line.from, line.from + heading[0].length));
       ranges.push(Decoration.line({ class: `sn-heading sn-heading-${heading[1].length}` }).range(line.from));
     }
-    const ref = parseReference(line.text);
+    const parsedReference = parseShowNoteReference(line.text);
+    let ref = parsedReference;
+    if (!ref && cueSource) {
+      const cue = parseTimestampCue(line.text);
+      if (cue) ref = { ...cue, kind: 'youtube', isCue: true, source: cueSource, sourceKey: cueSource.sourceKey, uri: cueSource.uri, videoId: cueSource.videoId, providerURL: cueSource.providerURL, external: true, label: cue.label || cueSource.label };
+      else cueSource = null;
+    }
+    if (parsedReference?.kind === 'youtube') cueSource = parsedReference;
+    else if (parsedReference) cueSource = null;
     if (ref) {
       ref.projection = (window.__rewindReferences || []).find((candidate) => candidate.LineStart === line.number && candidate.SourceUri === ref.uri);
-      ref.key = ref.projection?.ID || `${line.number}:${ref.uri}`;
+      // Projection IDs arrive asynchronously and can change during autosave.
+      // Bind the player to the note occurrence so a projection refresh does
+      // not destroy a playing iframe or lose its range timer.
+      const occurrenceKey = `${line.number}:${ref.uri}`;
+      ref.key = ref.projection?.ID || occurrenceKey;
+      ref.sourceKey = `${noteID}:${occurrenceKey}`;
       const uriOffset = line.text.indexOf(ref.uri);
       if (uriOffset >= 0) {
         ranges.push(Decoration.mark({ class: 'sn-reference-link' }).range(line.from + uriOffset, line.from + uriOffset + ref.uri.length));
@@ -359,6 +364,7 @@ function schedulePushedRefresh(noteID) {
 }
 
 async function settleReferenceFromEvent(noteID, event) {
+  if (document.querySelector('[data-show-workspace]')?.dataset.live === 'true') return;
   if (event.type !== 'reference_download_updated' || !event.payload?.video_id || !event.payload?.reference_id) return;
   await pageFetch(`/api/show-notes/${noteID}/references/${event.payload.reference_id}/materialize`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settle_archive' }),
@@ -521,6 +527,7 @@ function setupWorkspace(root) {
   }));
   document.querySelectorAll('[data-selection-action]').forEach((button) => button.addEventListener('click', () => handleSelectionAction(root, button.dataset.selectionAction)));
   pageListen(window, 'rewind:resolve-reference', async (event) => {
+    if (root.dataset.live === 'true' && event.detail?.external) return;
     const pendingKey = referenceKey(event.detail);
     pendingReferenceActions.add(pendingKey);
     refreshLivePreview();
@@ -534,7 +541,7 @@ function setupWorkspace(root) {
       let response = await pageFetch(`/api/show-notes/${root.dataset.noteId}/references/${reference.ID}/materialize`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }),
       });
-      if (action === 'use_match' && response.status === 409 && window.confirm('This source is not archived yet. Add it to the download queue?')) {
+      if (root.dataset.live !== 'true' && action === 'use_match' && response.status === 409 && window.confirm('This source is not archived yet. Add it to the download queue?')) {
         response = await pageFetch(`/api/show-notes/${root.dataset.noteId}/references/${reference.ID}/materialize`, {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'archive' }),
         });
@@ -554,4 +561,3 @@ function setupWorkspace(root) {
 
 const root = document.querySelector('[data-show-workspace]');
 if (root) setupWorkspace(root);
-

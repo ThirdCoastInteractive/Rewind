@@ -63,7 +63,7 @@ func consumes(service, key, owner string) bool {
 	case "web":
 		return strings.HasPrefix(key, "agent.") || strings.HasPrefix(key, "exports.")
 	case "ml":
-		return strings.HasPrefix(key, "ml.") || strings.HasPrefix(key, "whisper.") || strings.HasPrefix(key, "vision.")
+		return strings.HasPrefix(key, "ml.") || strings.HasPrefix(key, "whisper.") || strings.HasPrefix(key, "vision.") || strings.HasPrefix(key, "diarize.")
 	case "downloader":
 		return strings.HasPrefix(key, "downloads.")
 	case "ingest":

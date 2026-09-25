@@ -11,10 +11,15 @@ import (
 	"thirdcoast.systems/rewind/internal/db"
 	"thirdcoast.systems/rewind/pkg/utils/crops"
 )
+
 // HandleCropDelete serves DELETE /clips/:clipId/crops/:cropId, removing a crop region from a clip.
 func HandleCropDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
+		user, _, err := common.RequireSessionUser(c, sm)
+		if err != nil {
+			return err
+		}
 		clipIDStr := c.Param("clipId")
 		cropID := c.Param("cropId")
 		clipUUID, err := common.RequireUUIDParam(c, "clipId")
@@ -26,6 +31,9 @@ func HandleCropDelete(sm *auth.SessionManager, dbc *db.DatabaseConnection) echo.
 		clip, err := q.GetClip(ctx, clipUUID)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusNotFound, "Clip not found")
+		}
+		if err := requireClipMutate(c, sm, q, clip, user); err != nil {
+			return err
 		}
 
 		existingCrops := clip.Crops

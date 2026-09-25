@@ -27,6 +27,7 @@ import (
 
 	"thirdcoast.systems/rewind/internal/config"
 	"thirdcoast.systems/rewind/internal/db"
+	"thirdcoast.systems/rewind/internal/turn"
 )
 
 // threadSafeWriter serializes concurrent writes to a single WebSocket.
@@ -48,19 +49,23 @@ type websocketMessage struct {
 }
 
 type peerConnectionState struct {
-	pc       *webrtc.PeerConnection
-	ws       *threadSafeWriter
-	userID   string
-	username string
-	kind     string // "camera" (default) | "screen"; screen peers are publish-only
+	pc         *webrtc.PeerConnection
+	ws         *threadSafeWriter
+	userID     string
+	username   string
+	kind       string // "camera" (default) | "screen"; screen peers are publish-only
+	needsSync  bool
+	forceOffer bool
 }
 
 // trackOwner records which publisher a forwarded track belongs to, so the SFU
 // can relay a stable stream→host mapping to subscribers.
 type trackOwner struct {
-	streamID string
-	userID   string
-	username string
+	streamID   string
+	userID     string
+	username   string
+	source     *webrtc.PeerConnection
+	sourceSSRC uint32
 }
 
 // room holds the peers and forwarded tracks for one show note.
@@ -84,9 +89,11 @@ type identityMsg struct {
 
 // Server is the SFU: an HTTP handler plus the room registry and Pion API.
 type Server struct {
-	api      *webrtc.API
-	ice      []webrtc.ICEServer
-	director *directorManager
+	api              *webrtc.API
+	turn             *turn.Provider
+	turnTLSOnly      bool
+	director         *directorManager
+	keyFrameDispatch func(*room)
 
 	mu    sync.Mutex
 	rooms map[string]*room
@@ -94,8 +101,8 @@ type Server struct {
 	upgrader websocket.Upgrader
 }
 
-// NewServer builds the Pion API (default codecs + interceptors) and ICE config.
-func NewServer(dbc *db.DatabaseConnection, cfg *config.Config) (*Server, error) {
+// NewServer builds the Pion API (default codecs + interceptors) and lazy ICE provider.
+func NewServer(dbc *db.DatabaseConnection, cfg *config.Config, providers ...*turn.Provider) (*Server, error) {
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		return nil, err
@@ -126,41 +133,34 @@ func NewServer(dbc *db.DatabaseConnection, cfg *config.Config) (*Server, error) 
 		webrtc.WithSettingEngine(se),
 	)
 
+	iceProvider, err := selectTURNProvider(cfg, providers...)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
-		api:      api,
-		ice:      buildICEServers(cfg),
-		director: &directorManager{dbc: dbc},
-		rooms:    make(map[string]*room),
+		api:         api,
+		turn:        iceProvider,
+		turnTLSOnly: cfg != nil && cfg.SFUTurnTLSOnly,
+		director:    &directorManager{dbc: dbc},
+		rooms:       make(map[string]*room),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true }, // behind the web proxy
 		},
 	}, nil
 }
 
-// buildICEServers parses comma-separated STUN/TURN URLs from config.
-func buildICEServers(cfg *config.Config) []webrtc.ICEServer {
-	var servers []webrtc.ICEServer
-	if urls := splitURLs(cfg.STUNUrls); len(urls) > 0 {
-		servers = append(servers, webrtc.ICEServer{URLs: urls})
+func selectTURNProvider(cfg *config.Config, providers ...*turn.Provider) (*turn.Provider, error) {
+	if len(providers) > 0 && providers[0] != nil {
+		return providers[0], nil
 	}
-	if urls := splitURLs(cfg.TURNUrls); len(urls) > 0 {
-		servers = append(servers, webrtc.ICEServer{
-			URLs:       urls,
-			Username:   cfg.TURNUsername,
-			Credential: cfg.TURNPassword,
-		})
-	}
-	return servers
-}
-
-func splitURLs(s string) []string {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
-		if v := strings.TrimSpace(p); v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
+	return turn.NewProvider(turn.Config{
+		STUNURLs:     cfg.STUNUrls,
+		TURNURLs:     cfg.TURNUrls,
+		TURNUsername: cfg.TURNUsername,
+		TURNPassword: cfg.TURNPassword,
+		TurnKeyID:    cfg.CFTurnKeyID,
+		TurnAPIToken: cfg.CFTurnAPIToken,
+	})
 }
 
 // Handler returns the SFU HTTP mux (signaling WebSocket + health check).
@@ -191,7 +191,7 @@ func (s *Server) getRoom(id string) *room {
 
 // addTrack creates a forwarding track for an inbound remote track, records its
 // publisher identity, and re-signals.
-func (s *Server) addTrack(r *room, t *webrtc.TrackRemote, userID, username, kind string) *webrtc.TrackLocalStaticRTP {
+func (s *Server) addTrack(r *room, t *webrtc.TrackRemote, source *webrtc.PeerConnection, userID, username, kind string) *webrtc.TrackLocalStaticRTP {
 	r.listLock.Lock()
 	defer func() {
 		r.listLock.Unlock()
@@ -203,7 +203,13 @@ func (s *Server) addTrack(r *room, t *webrtc.TrackRemote, userID, username, kind
 		return nil
 	}
 	r.trackLocals[t.ID()] = trackLocal
-	r.trackOwners[t.ID()] = trackOwner{streamID: t.StreamID(), userID: userID, username: username}
+	r.trackOwners[t.ID()] = trackOwner{
+		streamID:   t.StreamID(),
+		userID:     userID,
+		username:   username,
+		source:     source,
+		sourceSSRC: uint32(t.SSRC()),
+	}
 	if kind == "" {
 		kind = "camera"
 	}
@@ -222,24 +228,45 @@ func (s *Server) removeTrack(r *room, t *webrtc.TrackLocalStaticRTP) {
 	delete(r.trackOwners, t.ID())
 }
 
-// signalPeerConnections syncs every peer's senders with the room's track set and
-// renegotiates as needed. Closed peers are pruned. Bounded retries avoid spinning.
+// signalPeerConnections marks every peer dirty, syncs senders, and renegotiates
+// stable peers. A peer with an outstanding local offer stays dirty until its
+// answer arrives; this prevents overlapping offers while preserving updates.
 func (s *Server) signalPeerConnections(r *room) {
 	r.listLock.Lock()
-	defer func() {
-		r.listLock.Unlock()
-		s.dispatchKeyFrame(r)
-		s.broadcastIdentities(r)
-	}()
+	for i := range r.peers {
+		r.peers[i].needsSync = true
+	}
+	s.syncPeerConnectionsLocked(r)
+	r.listLock.Unlock()
+	s.dispatchKeyFrame(r)
+	s.broadcastIdentities(r)
+}
 
+// drainPeerConnections handles a successful answer without marking clean peers
+// dirty. This is the only path that drains work accumulated during an offer.
+func (s *Server) drainPeerConnections(r *room) {
+	r.listLock.Lock()
+	s.syncPeerConnectionsLocked(r)
+	r.listLock.Unlock()
+	// The subscriber's new sender binding does not exist when the initial offer
+	// is signaled. Request a fresh source keyframe after its answer is applied.
+	s.dispatchKeyFrame(r)
+}
+
+func (s *Server) syncPeerConnectionsLocked(r *room) {
 	attemptSync := func() (tryAgain bool) {
-		for i := range r.peers {
+		for i := 0; i < len(r.peers); i++ {
 			if r.peers[i].pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 				r.peers = append(r.peers[:i], r.peers[i+1:]...)
+				i--
 				return true
+			}
+			if !r.peers[i].needsSync || !peerReadyForOffer(&r.peers[i]) {
+				continue
 			}
 
 			existing := map[string]bool{}
+			changed := false
 			for _, sender := range r.peers[i].pc.GetSenders() {
 				if sender.Track() == nil {
 					continue
@@ -250,6 +277,8 @@ func (s *Server) signalPeerConnections(r *room) {
 					if err := r.peers[i].pc.RemoveTrack(sender); err != nil {
 						return true
 					}
+					changed = true
+					r.peers[i].forceOffer = true
 				}
 			}
 			// Never forward a peer its own published tracks.
@@ -271,10 +300,20 @@ func (s *Server) signalPeerConnections(r *room) {
 					if owner, ok := r.trackOwners[id]; ok && owner.userID != "" && owner.userID == r.peers[i].userID {
 						continue
 					}
-					if _, err := r.peers[i].pc.AddTrack(r.trackLocals[id]); err != nil {
+					sender, err := r.peers[i].pc.AddTrack(r.trackLocals[id])
+					if err != nil {
 						return true
 					}
+					changed = true
+					r.peers[i].forceOffer = true
+					if owner, ok := r.trackOwners[id]; ok && owner.source != nil {
+						go drainSenderRTCP(sender, owner.source, owner.sourceSSRC)
+					}
 				}
+			}
+			if !changed && !r.peers[i].forceOffer {
+				r.peers[i].needsSync = false
+				continue
 			}
 
 			offer, err := r.peers[i].pc.CreateOffer(nil)
@@ -291,6 +330,8 @@ func (s *Server) signalPeerConnections(r *room) {
 			if err = r.peers[i].ws.WriteJSON(&websocketMessage{Event: "offer", Data: string(b)}); err != nil {
 				return true
 			}
+			r.peers[i].needsSync = false
+			r.peers[i].forceOffer = false
 		}
 		return false
 	}
@@ -308,6 +349,10 @@ func (s *Server) signalPeerConnections(r *room) {
 			break
 		}
 	}
+}
+
+func peerReadyForOffer(peer *peerConnectionState) bool {
+	return peer.needsSync && peer.pc.SignalingState() == webrtc.SignalingStateStable
 }
 
 // broadcastIdentities pushes the current stream→host mapping to every peer, so
@@ -348,6 +393,10 @@ func (s *Server) broadcastIdentities(r *room) {
 // dispatchKeyFrame asks every sender's source for a fresh keyframe (PLI) so newly
 // subscribed peers render immediately rather than waiting for the next one.
 func (s *Server) dispatchKeyFrame(r *room) {
+	if s.keyFrameDispatch != nil {
+		s.keyFrameDispatch(r)
+		return
+	}
 	r.listLock.Lock()
 	defer r.listLock.Unlock()
 	for i := range r.peers {
@@ -384,6 +433,18 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	iceServers, err := s.turn.Servers(req.Context())
+	if err != nil {
+		slog.Error("sfu: TURN credentials unavailable", "error", err)
+		http.Error(w, "ICE service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	pionICEServers, icePolicy, err := prepareICEServers(iceServers, s.turnTLSOnly)
+	if err != nil {
+		slog.Error("sfu: ICE configuration unavailable", "error", err)
+		http.Error(w, "ICE service unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		slog.Error("sfu: ws upgrade", "error", err)
@@ -392,7 +453,10 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 	ws := &threadSafeWriter{Conn: conn}
 	defer ws.Close()
 
-	pc, err := s.api.NewPeerConnection(webrtc.Configuration{ICEServers: s.ice})
+	pc, err := s.api.NewPeerConnection(webrtc.Configuration{
+		ICEServers:         pionICEServers,
+		ICETransportPolicy: icePolicy,
+	})
 	if err != nil {
 		slog.Error("sfu: new peer connection", "error", err)
 		return
@@ -411,7 +475,15 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 
 	r := s.getRoom(roomID)
 	r.listLock.Lock()
-	r.peers = append(r.peers, peerConnectionState{pc: pc, ws: ws, userID: userID, username: username, kind: kind})
+	r.peers = append(r.peers, peerConnectionState{
+		pc:         pc,
+		ws:         ws,
+		userID:     userID,
+		username:   username,
+		kind:       kind,
+		needsSync:  true,
+		forceOffer: true,
+	})
 	r.listLock.Unlock()
 
 	pc.OnICECandidate(func(i *webrtc.ICECandidate) {
@@ -426,6 +498,9 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 	})
 
 	pc.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
+		if p == webrtc.PeerConnectionStateConnected || p == webrtc.PeerConnectionStateFailed {
+			logSelectedCandidate(pc, userID, p)
+		}
 		switch p {
 		case webrtc.PeerConnectionStateFailed:
 			_ = pc.Close()
@@ -436,20 +511,29 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 	})
 
 	pc.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		trackLocal := s.addTrack(r, t, userID, username, kind)
+		trackLocal := s.addTrack(r, t, pc, userID, username, kind)
 		if trackLocal == nil {
 			return
 		}
 		defer s.removeTrack(r, trackLocal)
 
 		buf := make([]byte, 1500)
+		var lastWriteLog time.Time
 		for {
 			n, _, err := t.Read(buf)
 			if err != nil {
 				return
 			}
-			if _, err = trackLocal.Write(buf[:n]); err != nil {
-				return
+			// TrackLocalStaticRTP fans out to every subscriber. A binding can
+			// reject a packet while its peer is still negotiating or closing;
+			// keep forwarding to the healthy bindings instead of removing the
+			// room's shared track on that transient error.
+			if err := writeForwardedRTP(trackLocal, buf[:n]); err != nil {
+				now := time.Now()
+				if lastWriteLog.IsZero() || now.Sub(lastWriteLog) >= 5*time.Second {
+					slog.Warn("sfu: forwarded RTP binding rejected packet", "track", t.ID(), "user", userID, "error", err)
+					lastWriteLog = now
+				}
 			}
 		}
 	})
@@ -500,7 +584,103 @@ func (s *Server) handleSignal(w http.ResponseWriter, req *http.Request) {
 			if err := json.Unmarshal([]byte(message.Data), &answer); err != nil {
 				continue
 			}
-			_ = pc.SetRemoteDescription(answer)
+			if err := pc.SetRemoteDescription(answer); err != nil {
+				slog.Warn("sfu: set remote answer", "user", userID, "error", err)
+				continue
+			}
+			s.drainPeerConnections(r)
 		}
 	}
+}
+
+// writeForwardedRTP deliberately keeps a packet source alive when one of the
+// TrackLocal bindings rejects a packet. TrackLocalStaticRTP reports combined
+// binding errors while still writing to the healthy bindings.
+func writeForwardedRTP(track *webrtc.TrackLocalStaticRTP, packet []byte) error {
+	_, err := track.Write(packet)
+	return err
+}
+
+// drainSenderRTCP keeps Pion's sender interceptors active and relays decoder
+// feedback to the publisher that owns the forwarded track. Without draining
+// this reader, subscriber PLI/NACK packets remain queued at the SFU and a
+// newly subscribed decoder can receive RTP without ever receiving a keyframe.
+// NACK packets are intentionally consumed by Pion's sender interceptor rather
+// than forwarded, because the SFU sender owns the subscriber-side SSRC.
+func drainSenderRTCP(sender *webrtc.RTPSender, source *webrtc.PeerConnection, sourceSSRC uint32) {
+	for {
+		packets, _, err := sender.ReadRTCP()
+		if err != nil {
+			return
+		}
+		feedback := forwardableRTCP(packets, sourceSSRC)
+		if len(feedback) == 0 {
+			continue
+		}
+		_ = source.WriteRTCP(feedback)
+	}
+}
+
+func forwardableRTCP(packets []rtcp.Packet, sourceSSRC uint32) []rtcp.Packet {
+	feedback := make([]rtcp.Packet, 0, len(packets))
+	for _, packet := range packets {
+		switch packet := packet.(type) {
+		case *rtcp.PictureLossIndication:
+			copy := *packet
+			copy.MediaSSRC = sourceSSRC
+			feedback = append(feedback, &copy)
+		case *rtcp.FullIntraRequest:
+			copy := *packet
+			// FIR targets are carried in the FCI entries; RFC 5104 requires
+			// the common MediaSSRC field to remain zero.
+			copy.MediaSSRC = 0
+			copy.FIR = append([]rtcp.FIREntry(nil), packet.FIR...)
+			for i := range copy.FIR {
+				copy.FIR[i].SSRC = sourceSSRC
+			}
+			feedback = append(feedback, &copy)
+		}
+	}
+	return feedback
+}
+
+// logSelectedCandidate records only non-sensitive ICE metadata. In particular,
+// it omits candidate URLs, addresses, credentials, and SDP so this remains
+// useful in production logs without exposing TURN material.
+func logSelectedCandidate(pc *webrtc.PeerConnection, userID string, state webrtc.PeerConnectionState) {
+	attrs := []any{"user", userID, "state", state.String()}
+	stats := pc.GetStats()
+	for _, raw := range stats {
+		transport, ok := raw.(webrtc.TransportStats)
+		if !ok || transport.SelectedCandidatePairID == "" {
+			continue
+		}
+		pair, ok := stats[transport.SelectedCandidatePairID].(webrtc.ICECandidatePairStats)
+		if !ok {
+			continue
+		}
+		local, localOK := stats[pair.LocalCandidateID].(webrtc.ICECandidateStats)
+		remote, remoteOK := stats[pair.RemoteCandidateID].(webrtc.ICECandidateStats)
+		if localOK {
+			attrs = append(attrs, "local_candidate_type", local.CandidateType.String(), "local_protocol", local.Protocol, "local_relay_protocol", local.RelayProtocol)
+		}
+		if remoteOK {
+			attrs = append(attrs, "remote_candidate_type", remote.CandidateType.String(), "remote_protocol", remote.Protocol)
+		}
+		attrs = append(attrs, "nominated", pair.Nominated)
+		break
+	}
+	slog.Info("sfu: peer ICE state", attrs...)
+}
+
+func toPionICEServers(servers []turn.Server) []webrtc.ICEServer {
+	out := make([]webrtc.ICEServer, 0, len(servers))
+	for _, server := range servers {
+		out = append(out, webrtc.ICEServer{
+			URLs:       append([]string(nil), server.URLs...),
+			Username:   server.Username,
+			Credential: server.Credential,
+		})
+	}
+	return out
 }
