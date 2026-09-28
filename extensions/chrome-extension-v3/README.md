@@ -48,3 +48,4 @@ After changing shared files, run:
 - No cookie-session auth is used for extension endpoints.
 - Cookies are optional and toggleable per site; when enabled, the popup uploads a Netscape-format cookie file via `/api/extension/cookies` before archiving. Cookies are still recommended for Kick.
 - On a detected live tab the primary button becomes **Start archiving this stream**, with optional **From the beginning** and **Wait for stream (minutes)** controls. The popup inspects the active tab on demand (no always-on content script) and may send a harvested HLS/DASH `media_url`.
+- X broadcasts (`x.com/i/broadcasts/…` and `/i/events/…`, including `twitter.com`) are live while the page shows a LIVE chip, “Started … ago”, or a player with no end. The archive keeps the page URL so yt-dlp can refresh the playlist. Leave **Send cookies** on for restricted broadcasts.

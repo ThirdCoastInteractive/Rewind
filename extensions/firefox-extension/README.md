@@ -19,4 +19,4 @@ This manifest sets `browser_specific_settings.gecko.id` to `rewind@local`.
 Use that value in `EXTENSION_ALLOWED_CLIENT_IDS` on the server.
 
 ## Live streams
-On a detected live tab the primary button becomes **Start archiving this stream**, with optional **From the beginning** and **Wait for stream (minutes)** controls. Cookies are still recommended for Kick. The popup inspects the active tab on demand via `tabs.executeScript` (no always-on content script).
+On a detected live tab the primary button becomes **Start archiving this stream**, with optional **From the beginning** and **Wait for stream (minutes)** controls. Cookies are still recommended for Kick and for restricted X broadcasts. The popup inspects the active tab on demand via `tabs.executeScript` (no always-on content script). X broadcast and event URLs count as live while the page shows a LIVE chip, “Started … ago”, or a player with no end.

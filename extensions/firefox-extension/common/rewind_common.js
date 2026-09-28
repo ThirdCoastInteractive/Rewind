@@ -102,10 +102,50 @@
 
   // Injected into the page via adapter.executeScript — must be self-contained (no closures).
   function inspectPageLive() {
+    // x.com/twitter.com broadcasts and events keep the same URL after they end.
+    function isXHost(host) {
+      return host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com');
+    }
+
+    function isXBroadcast(host, segs) {
+      if (!isXHost(host) || segs.length < 3 || segs[0].toLowerCase() !== 'i') return false;
+      const kind = segs[1].toLowerCase();
+      return kind === 'broadcasts' || kind === 'events';
+    }
+
+    // On air: the pink LIVE chip, "Started … ago", or a video with no end.
+    function xBroadcastOnAir() {
+      const marked = document.querySelectorAll('[aria-label], [data-testid]');
+      for (let i = 0; i < marked.length; i++) {
+        const el = marked[i];
+        const label = String(el.getAttribute('aria-label') || '').trim();
+        if (/^live\b/i.test(label)) return true;
+        const id = String(el.getAttribute('data-testid') || '');
+        if (/^live(?:badge|indicator|-badge)?$/i.test(id)) return true;
+      }
+
+      const leaves = document.querySelectorAll('span, div, p');
+      for (let i = 0; i < leaves.length; i++) {
+        const el = leaves[i];
+        if (el.childElementCount !== 0) continue;
+        const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text || text.length > 80) continue;
+        if (/^live$/i.test(text)) return true;
+        if (/^started\s+.+\s+ago$/i.test(text)) return true;
+      }
+
+      const videos = document.querySelectorAll('video');
+      for (let i = 0; i < videos.length; i++) {
+        if (videos[i].duration === Infinity) return true;
+      }
+      return false;
+    }
+
     try {
       const href = String(location.href || '');
       const title = String(document.title || '').trim();
       let live = false;
+      let xBroadcast = false;
 
       try {
         const u = new URL(href);
@@ -116,11 +156,15 @@
         const hasVideo = Boolean(document.querySelector('video'));
         const isKick = host === 'kick.com' || host.endsWith('.kick.com');
         const isTwitch = host === 'twitch.tv' || host.endsWith('.twitch.tv');
+        xBroadcast = isXBroadcast(host, segs);
 
         if (isKick && segs.length === 1 && segs[0].toLowerCase() !== 'video' && hasVideo) {
           live = true;
         }
         if (isTwitch && segs.length === 1 && segs[0].toLowerCase() !== 'videos' && hasVideo) {
+          live = true;
+        }
+        if (xBroadcast && xBroadcastOnAir()) {
           live = true;
         }
         if (path.toLowerCase().includes('/live') || href.toLowerCase().includes('/live')) {
@@ -171,6 +215,9 @@
           }
         }
       }
+
+      // Signed X playlists expire. Archive the page URL and let yt-dlp refresh it.
+      if (xBroadcast) mediaUrl = '';
 
       return { live: Boolean(live), title, mediaUrl: mediaUrl || '' };
     } catch {
